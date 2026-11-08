@@ -9,3 +9,4 @@ public interface IPasswordHasher
     bool VerifyPassword(string password, string passwordHash);
     string HashToken(string rawToken);
 }
+

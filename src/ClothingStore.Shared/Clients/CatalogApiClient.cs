@@ -21,6 +21,7 @@ public sealed class CatalogApiClient
         var result = await _httpClient.GetFromJsonAsync<PublicStoreSettingsDto>("/api/public/store-info", ct);
         return result ?? new PublicStoreSettingsDto(
             "Aura Vestuário",
+            "aura-vestuario",
             "5511999999999",
             "Catálogo digital de moda contemporânea.",
             null,
@@ -70,3 +71,4 @@ public sealed class CatalogApiClient
         return await response.Content.ReadFromJsonAsync<ProductDetailDto>(cancellationToken: ct);
     }
 }
+

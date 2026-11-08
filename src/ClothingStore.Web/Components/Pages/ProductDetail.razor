@@ -1,11 +1,12 @@
 @page "/produto/{Slug}"
+@page "/loja/{StoreSlug}/produto/{Slug}"
 @inject CatalogDataGateway CatalogGateway
 
 <PageTitle>@(_product?.Name ?? "Produto") — @_store.StoreName</PageTitle>
 
 <div class="container">
     <div style="padding-top: 1.5rem;">
-        <a href="/catalogo" style="font-size: 0.9rem; color: var(--text-secondary);">&larr; Voltar para o Catálogo</a>
+        <a href="/loja/@_store.StoreSlug/catalogo" style="font-size: 0.9rem; color: var(--text-secondary);">&larr; Voltar para o Catálogo (@_store.StoreName)</a>
     </div>
 
     @if (_product is null)
@@ -15,7 +16,7 @@
             <p style="color: var(--text-secondary); margin: 0.75rem 0 1.5rem;">
                 Esta peça pode ter sido removida ou ocultada do catálogo.
             </p>
-            <a href="/catalogo" class="btn btn-dark">Ver Catálogo Completo</a>
+            <a href="/loja/@_store.StoreSlug/catalogo" class="btn btn-dark">Ver Catálogo Completo</a>
         </div>
     }
     else
@@ -67,83 +68,91 @@
                     </p>
                 }
 
-                <!-- Seletor de Cor -->
-                <div style="margin-bottom: 1.35rem;">
-                    <div class="filter-group-title">
-                        1. Selecione a Cor: <span style="color: var(--text-primary);">@(_selectedColor ?? "Escolha uma opção")</span>
-                    </div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 0.55rem;">
-                        @foreach (var colorGroup in GetDistinctColors())
-                        {
-                            var isSelected = string.Equals(_selectedColor, colorGroup.Color, StringComparison.OrdinalIgnoreCase);
-                            <button type="button"
-                                    class="selector-btn @(isSelected ? "active" : "")"
-                                    @onclick="() => SelectColor(colorGroup.Color)">
-                                <span class="color-dot" style="background-color: @colorGroup.ColorHex;"></span>
-                                <span>@colorGroup.Color</span>
-                            </button>
-                        }
-                    </div>
-                </div>
-
-                <!-- Seletor de Tamanho -->
-                <div style="margin-bottom: 1.5rem;">
-                    <div class="filter-group-title">
-                        2. Selecione o Tamanho: <span style="color: var(--text-primary);">@(_selectedSize ?? "Escolha uma opção")</span>
-                    </div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 0.55rem;">
-                        @foreach (var variant in GetVariantsForSelectedColor())
-                        {
-                            var isSelected = string.Equals(_selectedSize, variant.Size, StringComparison.OrdinalIgnoreCase);
-                            var outClass = variant.IsOutOfStock ? "out-of-stock" : "";
-                            <button type="button"
-                                    class="selector-btn @(isSelected ? "active" : "") @outClass"
-                                    @onclick="() => SelectSize(variant.Size)">
-                                <span>@variant.Size</span>
-                                <span style="font-size: 0.75rem; opacity: 0.8;">
-                                    (@(variant.StockQuantity > 0 ? $"{variant.StockQuantity} un." : "Esgotado"))
-                                </span>
-                            </button>
-                        }
-                    </div>
-                </div>
-
-                <!-- Status de Disponibilidade da Variante Selecionada -->
-                @{
+                @if (_product.Variants.Count > 0)
+                {
                     var selectedVariant = GetSelectedVariant();
-                }
-                <div style="padding: 0.9rem 1rem; border-radius: var(--radius-sm); background: var(--bg-subtle); margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                    @if (selectedVariant is not null)
-                    {
-                        <div>
-                            <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                                Código da Variante: <strong>@selectedVariant.Sku</strong>
-                            </div>
-                            <div style="font-weight: 600;">
-                                Combinação: @selectedVariant.Color &bull; Tamanho @selectedVariant.Size
-                            </div>
-                        </div>
 
-                        @if (selectedVariant.IsOutOfStock)
+                    <!-- Seletor de Cor -->
+                    <div style="margin-bottom: 1.35rem;">
+                        <div class="filter-group-title">
+                            1. Selecione a Cor: <span style="color: var(--text-primary);">@(_selectedColor ?? "Escolha uma opção")</span>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 0.55rem;">
+                            @foreach (var colorGroup in GetDistinctColors())
+                            {
+                                var isSelected = string.Equals(_selectedColor, colorGroup.Color, StringComparison.OrdinalIgnoreCase);
+                                <button type="button"
+                                        class="selector-btn @(isSelected ? "active" : "")"
+                                        @onclick="() => SelectColor(colorGroup.Color)">
+                                    <span class="color-dot" style="background-color: @colorGroup.ColorHex;"></span>
+                                    <span>@colorGroup.Color</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Seletor de Tamanho -->
+                    <div style="margin-bottom: 1.5rem;">
+                        <div class="filter-group-title">
+                            2. Selecione o Tamanho: <span style="color: var(--text-primary);">@(_selectedSize ?? "Escolha uma opção")</span>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 0.55rem;">
+                            @foreach (var variant in GetVariantsForSelectedColor())
+                            {
+                                var isSelected = string.Equals(_selectedSize, variant.Size, StringComparison.OrdinalIgnoreCase);
+                                var outClass = variant.IsOutOfStock ? "out-of-stock" : "";
+                                <button type="button"
+                                        class="selector-btn @(isSelected ? "active" : "") @outClass"
+                                        @onclick="() => SelectSize(variant.Size)">
+                                    <span>@variant.Size</span>
+                                    <span style="font-size: 0.75rem; opacity: 0.8;">
+                                        (@(variant.StockQuantity > 0 ? $"{variant.StockQuantity} un." : "Esgotado"))
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Status de Disponibilidade da Variante Selecionada -->
+                    <div style="padding: 0.9rem 1rem; border-radius: var(--radius-sm); background: var(--bg-subtle); margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                        @if (selectedVariant is not null)
                         {
-                            <span class="stock-badge badge-out-of-stock" style="position: static;">Sem estoque no momento</span>
-                        }
-                        else if (selectedVariant.IsLowStock)
-                        {
-                            <span class="stock-badge badge-low-stock" style="position: static;">Últimas @selectedVariant.StockQuantity unidades!</span>
+                            <div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    Código da Variante: <strong>@selectedVariant.Sku</strong>
+                                </div>
+                                <div style="font-weight: 600;">
+                                    Combinação: @selectedVariant.Color &bull; Tamanho @selectedVariant.Size
+                                </div>
+                            </div>
+
+                            @if (selectedVariant.IsOutOfStock)
+                            {
+                                <span class="stock-badge badge-out-of-stock" style="position: static;">Sem estoque no momento</span>
+                            }
+                            else if (selectedVariant.IsLowStock)
+                            {
+                                <span class="stock-badge badge-low-stock" style="position: static;">Últimas @selectedVariant.StockQuantity unidades!</span>
+                            }
+                            else
+                            {
+                                <span class="stock-badge badge-in-stock" style="position: static;">Em estoque (@selectedVariant.StockQuantity unidades)</span>
+                            }
                         }
                         else
                         {
-                            <span class="stock-badge badge-in-stock" style="position: static;">Em estoque (@selectedVariant.StockQuantity unidades)</span>
+                            <span style="font-size: 0.9rem; color: var(--text-secondary);">
+                                Selecione a cor e o tamanho acima para ver a disponibilidade exata.
+                            </span>
                         }
-                    }
-                    else
-                    {
-                        <span style="font-size: 0.9rem; color: var(--text-secondary);">
-                            Selecione a cor e o tamanho acima para ver a disponibilidade exata.
-                        </span>
-                    }
-                </div>
+                    </div>
+                }
+                else
+                {
+                    <div style="padding: 0.9rem 1rem; border-radius: var(--radius-sm); background: var(--bg-subtle); margin-bottom: 1.5rem; color: var(--text-secondary); font-size: 0.92rem;">
+                        Consulte disponibilidade de tamanhos e cores diretamente pelo nosso WhatsApp abaixo.
+                    </div>
+                }
 
                 <!-- Botão Oficial Consultar pelo WhatsApp -->
                 <a href="@GetWhatsAppConsultationUrl()"
@@ -158,33 +167,36 @@
                     <div>"@WhatsAppLinkBuilder.BuildProductConsultationMessage(_product.Name, _selectedColor, _selectedSize)"</div>
                 </div>
 
-                <!-- Tabela Resumo de Todas as Variantes do Produto -->
-                <div style="margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
-                    <div class="filter-group-title">Disponibilidade por Cor e Tamanho</div>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 0.5rem;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--text-muted);">
-                                <th style="padding: 0.45rem 0;">Cor</th>
-                                <th style="padding: 0.45rem 0;">Tamanho</th>
-                                <th style="padding: 0.45rem 0;">SKU</th>
-                                <th style="padding: 0.45rem 0; text-align: right;">Disponibilidade</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var v in _product.Variants)
-                            {
-                                <tr style="border-bottom: 1px solid var(--bg-subtle);">
-                                    <td style="padding: 0.5rem 0;">@v.Color</td>
-                                    <td style="padding: 0.5rem 0; font-weight: 600;">@v.Size</td>
-                                    <td style="padding: 0.5rem 0; color: var(--text-muted);">@v.Sku</td>
-                                    <td style="padding: 0.5rem 0; text-align: right; font-weight: 600;">
-                                        @(v.StockQuantity > 0 ? $"{v.StockQuantity} un." : "Esgotado")
-                                    </td>
+                @if (_product.Variants.Count > 0)
+                {
+                    <!-- Tabela Resumo de Todas as Variantes do Produto -->
+                    <div style="margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
+                        <div class="filter-group-title">Disponibilidade por Cor e Tamanho</div>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 0.5rem;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--text-muted);">
+                                    <th style="padding: 0.45rem 0;">Cor</th>
+                                    <th style="padding: 0.45rem 0;">Tamanho</th>
+                                    <th style="padding: 0.45rem 0;">SKU</th>
+                                    <th style="padding: 0.45rem 0; text-align: right;">Disponibilidade</th>
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                @foreach (var v in _product.Variants)
+                                {
+                                    <tr style="border-bottom: 1px solid var(--bg-subtle);">
+                                        <td style="padding: 0.5rem 0;">@v.Color</td>
+                                        <td style="padding: 0.5rem 0; font-weight: 600;">@v.Size</td>
+                                        <td style="padding: 0.5rem 0; color: var(--text-muted);">@v.Sku</td>
+                                        <td style="padding: 0.5rem 0; text-align: right; font-weight: 600;">
+                                            @(v.StockQuantity > 0 ? $"{v.StockQuantity} un." : "Esgotado")
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
             </div>
         </div>
     }
@@ -192,9 +204,12 @@
 
 @code {
     [Parameter]
+    public string? StoreSlug { get; set; }
+
+    [Parameter]
     public string Slug { get; set; } = string.Empty;
 
-    private PublicStoreSettingsDto _store = new("Aura Vestuário", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private PublicStoreSettingsDto _store = new("Aura Vestuário", "aura-vestuario", "5511999999999", "", null, DateTimeOffset.UtcNow);
     private ProductDetailDto? _product;
     private string? _activeImageUrl;
     private string? _selectedColor;
@@ -204,6 +219,8 @@
     {
         _store = await CatalogGateway.GetStoreInfoAsync();
         _product = await CatalogGateway.GetProductDetailAsync(Slug);
+        _selectedColor = null;
+        _selectedSize = null;
 
         if (_product is not null)
         {
@@ -280,3 +297,4 @@
             _selectedSize);
     }
 }
+

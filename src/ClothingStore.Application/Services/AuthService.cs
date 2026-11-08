@@ -137,3 +137,4 @@ public sealed class AuthService
             employee.HasStockManagementPermission(roleName),
             employee.IsActive && user.IsActive);
 }
+

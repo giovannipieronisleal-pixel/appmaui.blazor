@@ -71,6 +71,8 @@ public class DomainAndRepositoryTests
             "Loja de roupas minimalista");
 
         Assert.AreEqual("5511987654321", settings.WhatsappNumber);
+        Assert.AreEqual("atelier-moda", settings.StoreSlug);
+        Assert.AreEqual("http://localhost:5190/loja/atelier-moda", settings.BuildStoreCatalogUrl("http://localhost:5190"));
 
         var message = WhatsAppLinkBuilder.BuildProductConsultationMessage("Camiseta Básica", "Preta", "M");
         Assert.AreEqual(
@@ -177,6 +179,7 @@ public class DomainAndRepositoryTests
 
             var publicSettings = await catalogService.GetPublicStoreSettingsAsync();
             Assert.AreEqual("Maison Lumière", publicSettings.StoreName);
+            Assert.AreEqual("maison-lumiere", publicSettings.StoreSlug);
             Assert.AreEqual("5521998876655", publicSettings.WhatsappNumber);
             Assert.AreEqual("https://exemplo.com/logo-maison.png", publicSettings.LogoPublicUrl);
 
@@ -207,6 +210,122 @@ public class DomainAndRepositoryTests
             await productService.ToggleVisibilityAsync(camisetaDetail.Id, false);
             var hiddenProduct = await catalogService.GetPublicProductDetailAsync("camiseta-basica");
             Assert.IsNull(hiddenProduct);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+            if (Directory.Exists(tempUploads))
+                Directory.Delete(tempUploads, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task CatalogFilters_ProductCrud_ImageUpload_PasswordReset_And_CrossProcessSync_ShouldWork()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"clothingstore_sync_{Guid.NewGuid():N}.json");
+        var tempUploads = Path.Combine(Path.GetTempPath(), $"clothingstore_uploads_{Guid.NewGuid():N}");
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Jwt:SecretKey"] = "TestSecretKeyForUnitTesting_1234567890_ABCDEF!"
+                })
+                .Build();
+
+            var hasher = new Pbkdf2PasswordHasher();
+            var jwtService = new JwtTokenService(config);
+
+            // Instância 1: representa o App MAUI
+            var repoMaui = new ClothingStoreRepository(hasher, tempFile);
+            // Instância 2: representa o Site Blazor Web em outro processo lendo o mesmo arquivo
+            var repoWeb = new ClothingStoreRepository(hasher, tempFile);
+
+            using var httpClient = new HttpClient();
+            var imageStorage = new SupabaseImageStorageService(httpClient, config, tempUploads);
+
+            var authService = new AuthService(repoMaui, hasher, jwtService);
+            var productServiceMaui = new ProductManagementService(repoMaui, imageStorage);
+            var adminServiceMaui = new EmployeeAndSettingsService(repoMaui, hasher, imageStorage);
+            var catalogServiceWeb = new CatalogService(repoWeb);
+
+            // 1. Testar todos os filtros do catálogo público no site
+            var allPublicProducts = await catalogServiceWeb.GetCatalogProductsAsync(new CatalogQueryFilter());
+            Assert.AreEqual(4, allPublicProducts.Count);
+
+            var byCategory = await catalogServiceWeb.GetCatalogProductsAsync(new CatalogQueryFilter(CategorySlug: "camisetas"));
+            Assert.AreEqual(1, byCategory.Count);
+            Assert.AreEqual("Camiseta Básica", byCategory[0].Name);
+
+            var byColor = await catalogServiceWeb.GetCatalogProductsAsync(new CatalogQueryFilter(Color: "Bege"));
+            Assert.AreEqual(1, byColor.Count);
+            Assert.AreEqual("Calça Alfaiataria Reta", byColor[0].Name);
+
+            var bySize = await catalogServiceWeb.GetCatalogProductsAsync(new CatalogQueryFilter(Size: "G"));
+            Assert.AreEqual(3, bySize.Count);
+
+            var bySearch = await catalogServiceWeb.GetCatalogProductsAsync(new CatalogQueryFilter(Search: "Linho"));
+            Assert.AreEqual(1, bySearch.Count);
+            Assert.AreEqual("Camisa Puro Linho Relaxed", bySearch[0].Name);
+
+            var onlyInStock = await catalogServiceWeb.GetCatalogProductsAsync(new CatalogQueryFilter(OnlyInStock: true));
+            Assert.AreEqual(4, onlyInStock.Count);
+
+            // 2. Criar novo produto no MAUI, fazer upload de foto e adicionar variante -> verificar sincronização imediata no repoWeb
+            var categories = await productServiceMaui.GetAllCategoriesAsync();
+            var newProduct = await productServiceMaui.CreateProductAsync(new SaveProductRequest
+            {
+                CategoryId = categories[0].Id,
+                Name = "Jaqueta Bomber Minimal",
+                Description = "Jaqueta estruturada impermeável.",
+                BasePrice = 349.90m,
+                IsVisibleOnSite = true
+            });
+
+            using var fakeImageStream = new MemoryStream([137, 80, 78, 71, 13, 10, 26, 10]);
+            var uploadedImg = await productServiceMaui.UploadProductImageAsync(
+                newProduct.Id,
+                "jaqueta.png",
+                fakeImageStream,
+                "image/png",
+                "Jaqueta Bomber",
+                true);
+            Assert.IsTrue(uploadedImg.PublicUrl.StartsWith("data:image/png;base64,", StringComparison.Ordinal));
+
+            var addedVariant = await productServiceMaui.AddVariantAsync(newProduct.Id, Guid.NewGuid(), new SaveProductVariantRequest
+            {
+                Color = "Verde Militar",
+                Size = "G",
+                InitialStockQuantity = 6,
+                LowStockThreshold = 2,
+                IsActive = true
+            });
+            Assert.AreEqual(6, addedVariant.StockQuantity);
+
+            // O site Web (repoWeb) deve enxergar imediatamente o novo produto, sua foto Data URI e sua variante!
+            var webProduct = await catalogServiceWeb.GetPublicProductDetailAsync("jaqueta-bomber-minimal");
+            Assert.IsNotNull(webProduct);
+            Assert.AreEqual("Jaqueta Bomber Minimal", webProduct!.Name);
+            Assert.AreEqual(6, webProduct.TotalStockQuantity);
+            Assert.AreEqual(1, webProduct.Images.Count);
+            Assert.IsTrue(webProduct.Images[0].PublicUrl.StartsWith("data:image/png;base64,", StringComparison.Ordinal));
+
+            // 3. Testar recuperação de senha e login com nova senha
+            var forgotResp = await authService.RequestPasswordResetAsync(new ForgotPasswordRequest("funcionario@loja.com"));
+            Assert.IsFalse(string.IsNullOrWhiteSpace(forgotResp.DemoResetCode));
+
+            await authService.ResetPasswordAsync(new ResetPasswordRequest(
+                "funcionario@loja.com",
+                forgotResp.DemoResetCode!,
+                "NovaSenha@2026"));
+
+            var relogin = await authService.LoginAsync(new LoginRequest("funcionario@loja.com", "NovaSenha@2026"));
+            Assert.IsNotNull(relogin.AccessToken);
+
+            // 4. Testar QR Code SVG Data URI
+            var qrSvg = WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri("http://localhost:5190/loja/aura-vestuario");
+            Assert.IsTrue(qrSvg.StartsWith("data:image/svg+xml;base64,", StringComparison.Ordinal));
         }
         finally
         {

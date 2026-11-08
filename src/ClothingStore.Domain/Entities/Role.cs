@@ -26,3 +26,4 @@ public sealed class Role
         Description = description?.Trim();
     }
 }
+

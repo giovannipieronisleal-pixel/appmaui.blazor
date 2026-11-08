@@ -67,3 +67,4 @@ public sealed class User
             && string.Equals(ResetTokenHash, tokenHash, StringComparison.Ordinal);
     }
 }
+

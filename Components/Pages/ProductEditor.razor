@@ -1,0 +1,544 @@
+@page "/produtos/{ProductId:guid}"
+@inject MauiAdminGateway Gateway
+@inject NavigationManager Navigation
+
+<div style="margin-bottom: 1rem;">
+    <a href="/produtos" style="color: var(--adm-muted); font-size: 0.9rem; text-decoration: none;">
+        &larr; Voltar para Lista de Produtos
+    </a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert-banner alert-error">@_error</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_success))
+{
+    <div class="alert-banner alert-success">@_success</div>
+}
+
+@if (_product is not null)
+{
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h1 style="font-size: 1.6rem; font-weight: 700; margin: 0;">@_product.Name</h1>
+            <span style="font-size: 0.85rem; color: var(--adm-muted);">
+                Categoria: <strong>@_product.CategoryName</strong> &bull; Estoque Total: <strong>@_product.TotalStockQuantity unidades</strong>
+            </span>
+        </div>
+
+        <span class="pill-badge @(_product.IsVisibleOnSite ? "pill-green" : "pill-slate")">
+            @(_product.IsVisibleOnSite ? "Visível no Catálogo Público" : "Oculto no Catálogo Público")
+        </span>
+    </div>
+
+    <!-- 1. DADOS CADASTRAIS DO PRODUTO -->
+    <section class="adm-card">
+        <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">1. Informações do Produto</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+            <div>
+                <label class="adm-label">Nome do Produto</label>
+                <input type="text" class="adm-input" @bind="_editProduct.Name" disabled="@(!Gateway.CanManageProducts)" />
+            </div>
+
+            <div>
+                <label class="adm-label">Categoria</label>
+                <select class="adm-select" @bind="_editProduct.CategoryId" disabled="@(!Gateway.CanManageProducts)">
+                    @foreach (var cat in _categories)
+                    {
+                        <option value="@cat.Id">@cat.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div>
+                <label class="adm-label">Preço (R$)</label>
+                <input type="number" step="0.01" class="adm-input" @bind="_editProduct.BasePrice" disabled="@(!Gateway.CanManageProducts)" />
+            </div>
+
+            <div style="grid-column: 1 / -1;">
+                <label class="adm-label">Descrição Detalhada</label>
+                <textarea class="adm-textarea" rows="3" @bind="_editProduct.Description" disabled="@(!Gateway.CanManageProducts)"></textarea>
+            </div>
+
+            @if (Gateway.CanManageProducts)
+            {
+                <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                        <input type="checkbox" @bind="_editProduct.IsVisibleOnSite" />
+                        <span>Exibir este produto no site público (Catálogo)</span>
+                    </label>
+
+                    <button type="button" class="adm-btn adm-btn-primary" @onclick="SaveProductDetailsAsync">
+                        Salvar Alterações do Produto
+                    </button>
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- 2. GERENCIAMENTO DE VARIANTES (Cor + Tamanho + Estoque Independente) -->
+    <section class="adm-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">2. Variantes (Cor, Tamanho e Estoque Independente)</h2>
+                <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0.2rem 0 0;">
+                    Cada combinação de Cor e Tamanho possui SKU próprio e saldo controlado individualmente.
+                </p>
+            </div>
+        </div>
+
+        @if (Gateway.CanManageProducts)
+        {
+            <div style="background: #F8FAFC; border: 1px solid var(--adm-border); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+                <div style="font-weight: 600; font-size: 0.88rem; margin-bottom: 0.75rem;">
+                    @(_editingVariantId.HasValue ? "Editar Variante Selecionada" : "+ Adicionar Nova Variante (Cor e Tamanho)")
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; align-items: end;">
+                    <div>
+                        <label class="adm-label">Cor *</label>
+                        <input type="text"
+                               class="adm-input"
+                               @bind="_variantForm.Color"
+                               @bind:event="oninput"
+                               @bind:after="OnVariantColorChanged"
+                               placeholder="Ex.: Preto, Branco, Areia" />
+                    </div>
+                    <div>
+                        <label class="adm-label">Cor Hex (Seletor)</label>
+                        <input type="color" class="adm-input" style="height: 38px; padding: 0.2rem;" @bind="_variantForm.ColorHex" />
+                    </div>
+                    <div>
+                        <label class="adm-label">Tamanho *</label>
+                        <input type="text" class="adm-input" @bind="_variantForm.Size" placeholder="PP, P, M, G, GG, 38..." />
+                    </div>
+                    <div>
+                        <label class="adm-label">SKU (Opcional)</label>
+                        <input type="text" class="adm-input" @bind="_variantForm.CustomSku" placeholder="Gerado automático" />
+                    </div>
+                    @if (!_editingVariantId.HasValue)
+                    {
+                        <div>
+                            <label class="adm-label">Estoque Inicial</label>
+                            <input type="number" class="adm-input" @bind="_variantForm.InitialStockQuantity" />
+                        </div>
+                    }
+                    <div>
+                        <label class="adm-label">Alerta Estoque Baixo</label>
+                        <input type="number" class="adm-input" @bind="_variantForm.LowStockThreshold" />
+                    </div>
+                    <div style="display: flex; gap: 0.45rem;">
+                        <button type="button" class="adm-btn adm-btn-success" @onclick="SaveVariantAsync">
+                            @(_editingVariantId.HasValue ? "Atualizar" : "Adicionar")
+                        </button>
+                        @if (_editingVariantId.HasValue)
+                        {
+                            <button type="button" class="adm-btn adm-btn-outline" @onclick="CancelEditVariant">Cancelar</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        <table class="adm-table">
+            <thead>
+                <tr>
+                    <th>Cor</th>
+                    <th>Tamanho</th>
+                    <th>Código SKU</th>
+                    <th>Quantidade Atual</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Ações Rápidas</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in _product.Variants)
+                {
+                    <tr>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="width: 16px; height: 16px; border-radius: 50%; background: @v.ColorHex; border: 1px solid rgba(0,0,0,0.2); display: inline-block;"></span>
+                                <span style="font-weight: 600;">@v.Color</span>
+                            </div>
+                        </td>
+                        <td style="font-weight: 700;">@v.Size</td>
+                        <td style="font-family: monospace; color: var(--adm-muted);">@v.Sku</td>
+                        <td style="font-size: 1rem; font-weight: 700;">@v.StockQuantity</td>
+                        <td>
+                            @if (v.IsOutOfStock)
+                            {
+                                <span class="pill-badge pill-red">Sem estoque (0)</span>
+                            }
+                            else if (v.IsLowStock)
+                            {
+                                <span class="pill-badge pill-amber">Estoque baixo (&le; @v.LowStockThreshold)</span>
+                            }
+                            else
+                            {
+                                <span class="pill-badge pill-green">Normal</span>
+                            }
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            @if (Gateway.CanManageStock)
+                            {
+                                <button type="button"
+                                        class="adm-btn adm-btn-outline"
+                                        style="padding: 0.3rem 0.6rem; font-size: 0.78rem;"
+                                        title="Entrada rápida de +1 unidade"
+                                        @onclick="() => QuickMovementAsync(v, true)">
+                                    +1 Entrada
+                                </button>
+                                <button type="button"
+                                        class="adm-btn adm-btn-outline"
+                                        style="padding: 0.3rem 0.6rem; font-size: 0.78rem; margin-left: 0.25rem;"
+                                        disabled="@(v.StockQuantity <= 0)"
+                                        title="Saída rápida de -1 unidade"
+                                        @onclick="() => QuickMovementAsync(v, false)">
+                                    -1 Saída
+                                </button>
+                            }
+                            @if (Gateway.CanManageProducts)
+                            {
+                                <button type="button"
+                                        class="adm-btn adm-btn-outline"
+                                        style="padding: 0.3rem 0.6rem; font-size: 0.78rem; margin-left: 0.25rem;"
+                                        @onclick="() => StartEditVariant(v)">
+                                    Editar
+                                </button>
+                                <button type="button"
+                                        class="adm-btn adm-btn-danger"
+                                        style="padding: 0.3rem 0.6rem; font-size: 0.78rem; margin-left: 0.25rem;"
+                                        @onclick="() => DeleteVariantAsync(v)">
+                                    Remover
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <!-- 3. GALERIA DE FOTOGRAFIAS DO PRODUTO (Supabase Storage) -->
+    <section class="adm-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">3. Fotografias do Produto (@_product.Images.Count)</h2>
+                <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0.2rem 0 0;">
+                    Adicione várias fotografias enviando do seu dispositivo para o Supabase Storage ou informando a URL.
+                </p>
+            </div>
+
+            @if (Gateway.CanManageProducts)
+            {
+                <button type="button" class="adm-btn adm-btn-primary" @onclick="PickAndUploadDevicePhotoAsync">
+                    Selecionar Foto do Dispositivo (Upload)
+                </button>
+            }
+        </div>
+
+        @if (Gateway.CanManageProducts)
+        {
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.75rem; margin-bottom: 1.25rem; align-items: end;">
+                <div>
+                    <label class="adm-label">Ou adicionar fotografia por URL pública</label>
+                    <input type="url" class="adm-input" @bind="_newImageUrl" placeholder="https://images.unsplash.com/..." />
+                </div>
+                <button type="button" class="adm-btn adm-btn-outline" @onclick="AddPhotoByUrlAsync">
+                    Adicionar URL
+                </button>
+            </div>
+        }
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem;">
+            @foreach (var img in _product.Images)
+            {
+                <div style="border: 1px solid var(--adm-border); border-radius: 8px; overflow: hidden; background: #FFFFFF;">
+                    <div style="aspect-ratio: 3 / 4; background: #F4F4F5; position: relative;">
+                        <img src="@img.PublicUrl" alt="@img.AltText" style="width: 100%; height: 100%; object-fit: cover;" />
+                        @if (img.IsPrimary)
+                        {
+                            <span class="pill-badge pill-green" style="position: absolute; top: 0.5rem; left: 0.5rem;">
+                                Foto Principal (Capa)
+                            </span>
+                        }
+                    </div>
+                    @if (Gateway.CanManageProducts)
+                    {
+                        <div style="padding: 0.65rem; display: flex; gap: 0.4rem; justify-content: space-between;">
+                            @if (!img.IsPrimary)
+                            {
+                                <button type="button"
+                                        class="adm-btn adm-btn-outline"
+                                        style="font-size: 0.75rem; padding: 0.3rem 0.5rem; flex: 1;"
+                                        @onclick="() => SetPrimaryImageAsync(img.Id)">
+                                    Definir Capa
+                                </button>
+                            }
+                            <button type="button"
+                                    class="adm-btn adm-btn-danger"
+                                    style="font-size: 0.75rem; padding: 0.3rem 0.5rem;"
+                                    @onclick="() => DeleteImageAsync(img.Id)">
+                                Excluir
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid ProductId { get; set; }
+
+    private ProductDetailDto? _product;
+    private IReadOnlyList<CategoryDto> _categories = [];
+    private SaveProductRequest _editProduct = new();
+
+    private Guid? _editingVariantId;
+    private SaveProductVariantRequest _variantForm = new()
+    {
+        ColorHex = "#18181B",
+        InitialStockQuantity = 5,
+        LowStockThreshold = 3,
+        IsActive = true
+    };
+
+    private string _newImageUrl = string.Empty;
+    private string? _error;
+    private string? _success;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadProductAsync();
+    }
+
+    private async Task LoadProductAsync()
+    {
+        _error = null;
+        try
+        {
+            _categories = await Gateway.GetCategoriesAsync();
+            _product = await Gateway.GetProductByIdAsync(ProductId);
+            _editProduct = new SaveProductRequest
+            {
+                CategoryId = _product.CategoryId,
+                Name = _product.Name,
+                Description = _product.Description,
+                BasePrice = _product.BasePrice,
+                IsVisibleOnSite = _product.IsVisibleOnSite
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SaveProductDetailsAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            _product = await Gateway.UpdateProductAsync(ProductId, _editProduct);
+            _success = "Dados do produto atualizados e sincronizados com o catálogo!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void StartEditVariant(ProductVariantDto variant)
+    {
+        _editingVariantId = variant.Id;
+        _variantForm = new SaveProductVariantRequest
+        {
+            Color = variant.Color,
+            ColorHex = variant.ColorHex,
+            Size = variant.Size,
+            CustomSku = variant.Sku,
+            LowStockThreshold = variant.LowStockThreshold,
+            IsActive = variant.IsActive
+        };
+    }
+
+    private void CancelEditVariant()
+    {
+        _editingVariantId = null;
+        _variantForm = new SaveProductVariantRequest
+        {
+            ColorHex = "#18181B",
+            InitialStockQuantity = 5,
+            LowStockThreshold = 3,
+            IsActive = true
+        };
+    }
+
+    private void OnVariantColorChanged()
+    {
+        if (!string.IsNullOrWhiteSpace(_variantForm.Color))
+        {
+            _variantForm.ColorHex = ClothingStore.Domain.Entities.ProductVariant.ResolveDefaultColorHex(_variantForm.Color);
+        }
+    }
+
+    private async Task SaveVariantAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            if (_editingVariantId.HasValue)
+            {
+                await Gateway.UpdateVariantAsync(_editingVariantId.Value, _variantForm);
+                _success = "Variante atualizada com sucesso!";
+            }
+            else
+            {
+                await Gateway.AddVariantAsync(ProductId, _variantForm);
+                _success = "Nova variante adicionada ao produto!";
+            }
+
+            CancelEditVariant();
+            await LoadProductAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task DeleteVariantAsync(ProductVariantDto variant)
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.DeleteVariantAsync(variant.Id);
+            await LoadProductAsync();
+            _success = $"Variante {variant.Color}/{variant.Size} removida.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task QuickMovementAsync(ProductVariantDto variant, bool isEntry)
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.RegisterStockMovementAsync(new CreateStockMovementRequest
+            {
+                ProductVariantId = variant.Id,
+                MovementType = isEntry ? "IN" : "OUT",
+                Quantity = 1,
+                Reason = isEntry ? "Entrada rápida na tela do produto" : "Saída rápida na tela do produto"
+            });
+            await LoadProductAsync();
+            _success = $"Estoque da variante {variant.Color}/{variant.Size} atualizado!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task PickAndUploadDevicePhotoAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Selecione uma fotografia do produto",
+                FileTypes = FilePickerFileType.Images
+            });
+
+            if (result is null)
+                return;
+
+            await using var stream = await result.OpenReadAsync();
+            await Gateway.UploadProductImageFileAsync(
+                ProductId,
+                result.FileName,
+                stream,
+                result.ContentType ?? "image/jpeg",
+                _product?.Name,
+                _product?.Images.Count == 0);
+
+            await LoadProductAsync();
+            _success = "Fotografia enviada e vinculada ao produto com sucesso!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AddPhotoByUrlAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newImageUrl))
+            return;
+
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.AddProductImageByUrlAsync(ProductId, new AddProductImageByUrlRequest
+            {
+                ImageUrl = _newImageUrl,
+                AltText = _product?.Name,
+                IsPrimary = _product?.Images.Count == 0
+            });
+            _newImageUrl = string.Empty;
+            await LoadProductAsync();
+            _success = "Fotografia adicionada à galeria do produto!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SetPrimaryImageAsync(Guid imageId)
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.SetPrimaryProductImageAsync(ProductId, imageId);
+            await LoadProductAsync();
+            _success = "Fotografia principal (capa) atualizada!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task DeleteImageAsync(Guid imageId)
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.DeleteProductImageAsync(ProductId, imageId);
+            await LoadProductAsync();
+            _success = "Fotografia removida do produto.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}
+

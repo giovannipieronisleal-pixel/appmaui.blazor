@@ -1,6 +1,5 @@
 using System.Text.Json;
 using ClothingStore.Application.Services;
-using ClothingStore.Domain.Enums;
 using ClothingStore.Domain.Exceptions;
 using ClothingStore.Shared.Clients;
 using ClothingStore.Shared.DTOs;
@@ -10,7 +9,7 @@ namespace appmaui.blazor.Services;
 /// <summary>
 /// Gateway administrativo para o aplicativo .NET MAUI.
 /// Gerencia a sessão autenticada no SecureStorage do dispositivo, comunica-se com a ASP.NET Core Web API
-/// e garante sincronização contínua com o banco de dados compartilhado.
+/// e faz fallback instantâneo (sem bloqueio por timeout) para o banco de dados compartilhado quando a API não está rodando separadamente.
 /// </summary>
 public sealed class MauiAdminGateway
 {
@@ -21,6 +20,8 @@ public sealed class MauiAdminGateway
     private readonly ProductManagementService _productService;
     private readonly StockManagementService _stockService;
     private readonly EmployeeAndSettingsService _employeeAndSettingsService;
+
+    private DateTimeOffset _skipRemoteApiUntil = DateTimeOffset.MinValue;
 
     public EmployeeProfileDto? CurrentEmployee { get; private set; }
     public string? AccessToken { get; private set; }
@@ -43,6 +44,51 @@ public sealed class MauiAdminGateway
         _productService = productService;
         _stockService = stockService;
         _employeeAndSettingsService = employeeAndSettingsService;
+    }
+
+    private bool ShouldTryRemoteApi => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
+
+    private static bool IsConnectionOrTimeoutError(Exception ex) =>
+        ex is HttpRequestException or TaskCanceledException or OperationCanceledException or TimeoutException;
+
+    private async Task<T> ExecuteWithFallbackAsync<T>(
+        Func<Task<T>> remoteCall,
+        Func<Task<T>> localFallback)
+    {
+        if (ShouldTryRemoteApi)
+        {
+            try
+            {
+                return await remoteCall();
+            }
+            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+            {
+                // Marca a API remota como offline por 60 segundos para evitar esperas de timeout a cada clique
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+        }
+
+        return await localFallback();
+    }
+
+    private async Task ExecuteWithFallbackAsync(
+        Func<Task> remoteCall,
+        Func<Task> localFallback)
+    {
+        if (ShouldTryRemoteApi)
+        {
+            try
+            {
+                await remoteCall();
+                return;
+            }
+            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+            {
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+        }
+
+        await localFallback();
     }
 
     public async Task TryRestoreSessionAsync()
@@ -71,22 +117,19 @@ public sealed class MauiAdminGateway
         }
         catch
         {
-            // Se o SecureStorage não estiver disponível ou a conta foi desativada, exige novo login.
         }
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request)
     {
-        LoginResponse response;
-        try
-        {
-            response = await _apiClient.LoginAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            response = await _authService.LoginAsync(request);
-            _apiClient.SetSession(response.AccessToken, response.Employee);
-        }
+        var response = await ExecuteWithFallbackAsync(
+            () => _apiClient.LoginAsync(request),
+            async () =>
+            {
+                var localResp = await _authService.LoginAsync(request);
+                _apiClient.SetSession(localResp.AccessToken, localResp.Employee);
+                return localResp;
+            });
 
         AccessToken = response.AccessToken;
         CurrentEmployee = response.Employee;
@@ -119,167 +162,103 @@ public sealed class MauiAdminGateway
         AuthStateChanged?.Invoke();
     }
 
-    public async Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request)
-    {
-        try
-        {
-            return await _apiClient.ForgotPasswordAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _authService.RequestPasswordResetAsync(request);
-        }
-    }
+    public Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.ForgotPasswordAsync(request),
+            () => _authService.RequestPasswordResetAsync(request));
 
-    public async Task ResetPasswordAsync(ResetPasswordRequest request)
-    {
-        try
-        {
-            await _apiClient.ResetPasswordAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            await _authService.ResetPasswordAsync(request);
-        }
-    }
+    public Task ResetPasswordAsync(ResetPasswordRequest request) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.ResetPasswordAsync(request),
+            () => _authService.ResetPasswordAsync(request));
 
     // Dashboard
-    public async Task<DashboardSummaryDto> GetDashboardSummaryAsync()
+    public Task<DashboardSummaryDto> GetDashboardSummaryAsync()
     {
         EnsureAuthenticated();
-        try
-        {
-            return await _apiClient.GetDashboardSummaryAsync();
-        }
-        catch (HttpRequestException)
-        {
-            return await _stockService.GetDashboardSummaryAsync();
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetDashboardSummaryAsync(),
+            () => _stockService.GetDashboardSummaryAsync());
     }
 
     // Categorias & Produtos
-    public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync()
+    public Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync()
     {
         EnsureAuthenticated();
-        try
-        {
-            return await _apiClient.GetCategoriesAsync();
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.GetAllCategoriesAsync();
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetCategoriesAsync(),
+            () => _productService.GetAllCategoriesAsync());
     }
 
-    public async Task<CategoryDto> CreateCategoryAsync(SaveCategoryRequest request)
+    public Task<CategoryDto> CreateCategoryAsync(SaveCategoryRequest request)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.CreateCategoryAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.CreateCategoryAsync(request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.CreateCategoryAsync(request),
+            () => _productService.CreateCategoryAsync(request));
     }
 
-    public async Task<IReadOnlyList<ProductDetailDto>> GetProductsAsync(
+    public Task<IReadOnlyList<ProductDetailDto>> GetProductsAsync(
         string? search = null,
         Guid? categoryId = null,
         bool includeArchived = false)
     {
         EnsureAuthenticated();
-        try
-        {
-            return await _apiClient.GetProductsAsync(search, categoryId, includeArchived);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.GetAdminProductsAsync(search, categoryId, includeArchived);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetProductsAsync(search, categoryId, includeArchived),
+            () => _productService.GetAdminProductsAsync(search, categoryId, includeArchived));
     }
 
-    public async Task<ProductDetailDto> GetProductByIdAsync(Guid productId)
+    public Task<ProductDetailDto> GetProductByIdAsync(Guid productId)
     {
         EnsureAuthenticated();
-        try
-        {
-            return await _apiClient.GetProductByIdAsync(productId);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.GetProductByIdAsync(productId);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetProductByIdAsync(productId),
+            () => _productService.GetProductByIdAsync(productId));
     }
 
-    public async Task<ProductDetailDto> CreateProductAsync(SaveProductRequest request)
+    public Task<ProductDetailDto> CreateProductAsync(SaveProductRequest request)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.CreateProductAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.CreateProductAsync(request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.CreateProductAsync(request),
+            () => _productService.CreateProductAsync(request));
     }
 
-    public async Task<ProductDetailDto> UpdateProductAsync(Guid productId, SaveProductRequest request)
+    public Task<ProductDetailDto> UpdateProductAsync(Guid productId, SaveProductRequest request)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.UpdateProductAsync(productId, request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.UpdateProductAsync(productId, request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.UpdateProductAsync(productId, request),
+            () => _productService.UpdateProductAsync(productId, request));
     }
 
-    public async Task<ProductDetailDto> ToggleProductVisibilityAsync(Guid productId, bool isVisibleOnSite)
+    public Task<ProductDetailDto> ToggleProductVisibilityAsync(Guid productId, bool isVisibleOnSite)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.ToggleProductVisibilityAsync(productId, isVisibleOnSite);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.ToggleVisibilityAsync(productId, isVisibleOnSite);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.ToggleProductVisibilityAsync(productId, isVisibleOnSite),
+            () => _productService.ToggleVisibilityAsync(productId, isVisibleOnSite));
     }
 
-    public async Task DeleteOrArchiveProductAsync(Guid productId)
+    public Task DeleteOrArchiveProductAsync(Guid productId)
     {
         EnsureProductPermission();
-        try
-        {
-            await _apiClient.DeleteOrArchiveProductAsync(productId);
-        }
-        catch (HttpRequestException)
-        {
-            await _productService.DeleteOrArchiveProductAsync(productId);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.DeleteOrArchiveProductAsync(productId),
+            () => _productService.DeleteOrArchiveProductAsync(productId));
     }
 
     // Imagens do Produto
-    public async Task<ProductImageDto> AddProductImageByUrlAsync(Guid productId, AddProductImageByUrlRequest request)
+    public Task<ProductImageDto> AddProductImageByUrlAsync(Guid productId, AddProductImageByUrlRequest request)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.AddProductImageByUrlAsync(productId, request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.AddProductImageByUrlAsync(productId, request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.AddProductImageByUrlAsync(productId, request),
+            () => _productService.AddProductImageByUrlAsync(productId, request));
     }
 
-    public async Task<ProductImageDto> UploadProductImageFileAsync(
+    public Task<ProductImageDto> UploadProductImageFileAsync(
         Guid productId,
         string fileName,
         Stream fileStream,
@@ -288,220 +267,146 @@ public sealed class MauiAdminGateway
         bool isPrimary)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.UploadProductImageFileAsync(productId, fileName, fileStream, contentType, altText, isPrimary);
-        }
-        catch (HttpRequestException)
-        {
-            if (fileStream.CanSeek)
-                fileStream.Position = 0;
-            return await _productService.UploadProductImageAsync(productId, fileName, fileStream, contentType, altText, isPrimary);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.UploadProductImageFileAsync(productId, fileName, fileStream, contentType, altText, isPrimary),
+            () =>
+            {
+                if (fileStream.CanSeek)
+                    fileStream.Position = 0;
+                return _productService.UploadProductImageAsync(productId, fileName, fileStream, contentType, altText, isPrimary);
+            });
     }
 
-    public async Task SetPrimaryProductImageAsync(Guid productId, Guid imageId)
+    public Task SetPrimaryProductImageAsync(Guid productId, Guid imageId)
     {
         EnsureProductPermission();
-        try
-        {
-            await _apiClient.SetPrimaryProductImageAsync(productId, imageId);
-        }
-        catch (HttpRequestException)
-        {
-            await _productService.SetPrimaryProductImageAsync(productId, imageId);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.SetPrimaryProductImageAsync(productId, imageId),
+            () => _productService.SetPrimaryProductImageAsync(productId, imageId));
     }
 
-    public async Task DeleteProductImageAsync(Guid productId, Guid imageId)
+    public Task DeleteProductImageAsync(Guid productId, Guid imageId)
     {
         EnsureProductPermission();
-        try
-        {
-            await _apiClient.DeleteProductImageAsync(productId, imageId);
-        }
-        catch (HttpRequestException)
-        {
-            await _productService.DeleteProductImageAsync(productId, imageId);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.DeleteProductImageAsync(productId, imageId),
+            () => _productService.DeleteProductImageAsync(productId, imageId));
     }
 
     // Variantes
-    public async Task<ProductVariantDto> AddVariantAsync(Guid productId, SaveProductVariantRequest request)
+    public Task<ProductVariantDto> AddVariantAsync(Guid productId, SaveProductVariantRequest request)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.AddVariantAsync(productId, request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.AddVariantAsync(productId, CurrentEmployee!.EmployeeId, request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.AddVariantAsync(productId, request),
+            () => _productService.AddVariantAsync(productId, CurrentEmployee!.EmployeeId, request));
     }
 
-    public async Task<ProductVariantDto> UpdateVariantAsync(Guid variantId, SaveProductVariantRequest request)
+    public Task<ProductVariantDto> UpdateVariantAsync(Guid variantId, SaveProductVariantRequest request)
     {
         EnsureProductPermission();
-        try
-        {
-            return await _apiClient.UpdateVariantAsync(variantId, request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _productService.UpdateVariantAsync(variantId, request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.UpdateVariantAsync(variantId, request),
+            () => _productService.UpdateVariantAsync(variantId, request));
     }
 
-    public async Task DeleteVariantAsync(Guid variantId)
+    public Task DeleteVariantAsync(Guid variantId)
     {
         EnsureProductPermission();
-        try
-        {
-            await _apiClient.DeleteVariantAsync(variantId);
-        }
-        catch (HttpRequestException)
-        {
-            await _productService.DeleteVariantAsync(variantId);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.DeleteVariantAsync(variantId),
+            () => _productService.DeleteVariantAsync(variantId));
     }
 
     // Controle de Estoque e Movimentações
-    public async Task<StockMovementDto> RegisterStockMovementAsync(CreateStockMovementRequest request)
+    public Task<StockMovementDto> RegisterStockMovementAsync(CreateStockMovementRequest request)
     {
         EnsureStockPermission();
-        try
-        {
-            return await _apiClient.RegisterStockMovementAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _stockService.RegisterMovementAsync(CurrentEmployee!.EmployeeId, request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.RegisterStockMovementAsync(request),
+            () => _stockService.RegisterMovementAsync(CurrentEmployee!.EmployeeId, request));
     }
 
-    public async Task<IReadOnlyList<StockMovementDto>> GetStockMovementsAsync(
+    public Task<IReadOnlyList<StockMovementDto>> GetStockMovementsAsync(
         Guid? productId = null,
         Guid? variantId = null,
         int limit = 100)
     {
         EnsureAuthenticated();
-        try
-        {
-            return await _apiClient.GetStockMovementsAsync(productId, variantId, limit);
-        }
-        catch (HttpRequestException)
-        {
-            return await _stockService.GetMovementsAsync(productId, variantId, null, limit);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetStockMovementsAsync(productId, variantId, limit),
+            () => _stockService.GetMovementsAsync(productId, variantId, null, limit));
     }
 
     // Funcionários (AdminOnly)
-    public async Task<IReadOnlyList<EmployeeProfileDto>> GetEmployeesAsync()
+    public Task<IReadOnlyList<EmployeeProfileDto>> GetEmployeesAsync()
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.GetEmployeesAsync();
-        }
-        catch (HttpRequestException)
-        {
-            return await _employeeAndSettingsService.GetEmployeesAsync();
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetEmployeesAsync(),
+            () => _employeeAndSettingsService.GetEmployeesAsync());
     }
 
-    public async Task<EmployeeProfileDto> CreateEmployeeAsync(CreateEmployeeRequest request)
+    public Task<EmployeeProfileDto> CreateEmployeeAsync(CreateEmployeeRequest request)
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.CreateEmployeeAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _employeeAndSettingsService.CreateEmployeeAsync(request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.CreateEmployeeAsync(request),
+            () => _employeeAndSettingsService.CreateEmployeeAsync(request));
     }
 
-    public async Task<EmployeeProfileDto> UpdateEmployeeAsync(Guid employeeId, UpdateEmployeeRequest request)
+    public Task<EmployeeProfileDto> UpdateEmployeeAsync(Guid employeeId, UpdateEmployeeRequest request)
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.UpdateEmployeeAsync(employeeId, request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _employeeAndSettingsService.UpdateEmployeeAsync(employeeId, request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.UpdateEmployeeAsync(employeeId, request),
+            () => _employeeAndSettingsService.UpdateEmployeeAsync(employeeId, request));
     }
 
-    public async Task<EmployeeProfileDto> SetEmployeeActiveStatusAsync(Guid employeeId, bool isActive)
+    public Task<EmployeeProfileDto> SetEmployeeActiveStatusAsync(Guid employeeId, bool isActive)
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.SetEmployeeActiveStatusAsync(employeeId, isActive);
-        }
-        catch (HttpRequestException)
-        {
-            return await _employeeAndSettingsService.SetEmployeeActiveStatusAsync(employeeId, isActive);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.SetEmployeeActiveStatusAsync(employeeId, isActive),
+            () => _employeeAndSettingsService.SetEmployeeActiveStatusAsync(employeeId, isActive));
     }
 
     // Configurações da Loja (AdminOnly)
-    public async Task<AdminStoreSettingsDto> GetStoreSettingsAsync()
+    public Task<AdminStoreSettingsDto> GetStoreSettingsAsync()
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.GetStoreSettingsAsync();
-        }
-        catch (HttpRequestException)
-        {
-            return await _employeeAndSettingsService.GetAdminStoreSettingsAsync();
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetStoreSettingsAsync(),
+            () => _employeeAndSettingsService.GetAdminStoreSettingsAsync());
     }
 
-    public async Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(UpdateStoreSettingsRequest request)
+    public Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(UpdateStoreSettingsRequest request)
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.UpdateStoreSettingsAsync(request);
-        }
-        catch (HttpRequestException)
-        {
-            return await _employeeAndSettingsService.UpdateStoreSettingsAsync(CurrentEmployee!.EmployeeId, request);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.UpdateStoreSettingsAsync(request),
+            () => _employeeAndSettingsService.UpdateStoreSettingsAsync(CurrentEmployee!.EmployeeId, request));
     }
 
-    public async Task<AdminStoreSettingsDto> UploadStoreLogoAsync(string fileName, Stream fileStream, string contentType)
+    public Task<AdminStoreSettingsDto> UploadStoreLogoAsync(string fileName, Stream fileStream, string contentType)
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.UploadStoreLogoAsync(fileName, fileStream, contentType);
-        }
-        catch (HttpRequestException)
-        {
-            if (fileStream.CanSeek)
-                fileStream.Position = 0;
-            return await _employeeAndSettingsService.UploadStoreLogoAsync(CurrentEmployee!.EmployeeId, fileName, fileStream, contentType);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.UploadStoreLogoAsync(fileName, fileStream, contentType),
+            () =>
+            {
+                if (fileStream.CanSeek)
+                    fileStream.Position = 0;
+                return _employeeAndSettingsService.UploadStoreLogoAsync(CurrentEmployee!.EmployeeId, fileName, fileStream, contentType);
+            });
     }
 
-    public async Task<AdminStoreSettingsDto> RemoveStoreLogoAsync()
+    public Task<AdminStoreSettingsDto> RemoveStoreLogoAsync()
     {
         EnsureAdminPermission();
-        try
-        {
-            return await _apiClient.RemoveStoreLogoAsync();
-        }
-        catch (HttpRequestException)
-        {
-            return await _employeeAndSettingsService.RemoveStoreLogoAsync(CurrentEmployee!.EmployeeId);
-        }
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.RemoveStoreLogoAsync(),
+            () => _employeeAndSettingsService.RemoveStoreLogoAsync(CurrentEmployee!.EmployeeId));
     }
 
     private void EnsureAuthenticated()

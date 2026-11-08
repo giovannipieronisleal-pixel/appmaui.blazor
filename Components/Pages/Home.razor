@@ -16,13 +16,13 @@
         </button>
         @if (Gateway.CanManageStock)
         {
-            <a href="estoque" class="adm-btn adm-btn-primary">
+            <a href="/estoque" class="adm-btn adm-btn-primary">
                 + Registrar Movimentação
             </a>
         }
         @if (Gateway.CanManageProducts)
         {
-            <a href="produtos" class="adm-btn adm-btn-success">
+            <a href="/produtos" class="adm-btn adm-btn-success">
                 + Gerenciar Produtos
             </a>
         }
@@ -76,7 +76,7 @@
         <section class="adm-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Alertas de Reposição (@_summary.StockAlerts.Count)</h2>
-                <a href="estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Ir para Estoque &rarr;</a>
+                <a href="/estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Ir para Estoque &rarr;</a>
             </div>
 
             @if (_summary.StockAlerts.Count == 0)
@@ -120,7 +120,7 @@
                                     }
                                 </td>
                                 <td style="text-align: right;">
-                                    <a href="produtos/@alert.ProductId" class="adm-btn adm-btn-outline" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;">
+                                    <a href="/produtos/@alert.ProductId" class="adm-btn adm-btn-outline" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;">
                                         Ver
                                     </a>
                                 </td>
@@ -135,7 +135,7 @@
         <section class="adm-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Últimas Movimentações</h2>
-                <a href="estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Histórico completo &rarr;</a>
+                <a href="/estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Histórico completo &rarr;</a>
             </div>
 
             @if (_summary.RecentMovements.Count == 0)

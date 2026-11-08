@@ -8,3 +8,4 @@ public interface IJwtTokenService
     (string Token, DateTimeOffset ExpiresAt) GenerateToken(User user, Employee employee, string roleName);
     ClaimsPrincipal? ValidateToken(string token);
 }
+

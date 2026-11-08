@@ -125,3 +125,4 @@ public sealed class Product
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 }
+

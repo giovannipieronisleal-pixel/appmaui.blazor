@@ -332,3 +332,4 @@ public sealed class AdminApiClient
         throw new InvalidOperationException($"Erro HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
     }
 }
+

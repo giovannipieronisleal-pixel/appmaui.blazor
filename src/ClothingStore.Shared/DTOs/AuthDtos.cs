@@ -49,3 +49,4 @@ public sealed record EmployeeProfileDto(
 {
     public bool IsAdmin => string.Equals(RoleName, "Admin", StringComparison.OrdinalIgnoreCase);
 }
+

@@ -48,3 +48,4 @@ public sealed class StockMovement
         _ => "Movimentação de estoque"
     };
 }
+

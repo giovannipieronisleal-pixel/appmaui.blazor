@@ -14,3 +14,4 @@ public interface IImageStorageService
 
     Task DeleteImageAsync(string storagePath, CancellationToken ct = default);
 }
+

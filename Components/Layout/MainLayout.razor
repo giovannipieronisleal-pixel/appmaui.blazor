@@ -1,9 +1,11 @@
 ﻿@inherits LayoutComponentBase
+@using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
+@inject CatalogService CatalogService
 @inject NavigationManager Navigation
 @implements IDisposable
 
-@if (!Gateway.IsAuthenticated)
+@if (!Gateway.IsAuthenticated && !IsPublicCatalogRoute())
 {
     <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: #18181B;">
         <div style="width: 100%; max-width: 460px;">
@@ -11,14 +13,20 @@
         </div>
     </div>
 }
+else if (IsPublicCatalogRoute())
+{
+    <main style="padding: 1.25rem; max-width: 1280px; margin: 0 auto;">
+        @Body
+    </main>
+}
 else
 {
     <div class="adm-shell">
         <aside class="adm-sidebar">
             <div class="adm-brand">
-                <div>GESTÃO DE ESTOQUE</div>
+                <div>@_storeName.ToUpperInvariant()</div>
                 <div style="font-size: 0.75rem; font-weight: 400; color: #A1A1AA; margin-top: 0.2rem;">
-                    Catálogo &amp; Roupas (.NET MAUI)
+                    Link: /loja/@_storeSlug
                 </div>
             </div>
 
@@ -27,17 +35,27 @@ else
 
         <div class="adm-main">
             <header class="adm-topbar">
-                <div>
+                <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
                     <span style="font-weight: 600;">@Gateway.CurrentEmployee?.FullName</span>
-                    <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")" style="margin-left: 0.5rem;">
+                    <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")">
                         @(Gateway.IsAdmin ? "Administrador" : "Funcionário")
                     </span>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <span style="font-size: 0.82rem; color: var(--adm-muted);">
-                        @Gateway.CurrentEmployee?.Email
-                    </span>
+                <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+                    <a href="/loja/@_storeSlug"
+                       class="adm-btn adm-btn-success"
+                       style="padding: 0.4rem 0.85rem; font-size: 0.82rem;">
+                        Ver Site da Loja (/loja/@_storeSlug)
+                    </a>
+
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="padding: 0.4rem 0.8rem; font-size: 0.82rem;"
+                            @onclick="CopyStoreLinkAsync">
+                        @(_copied ? "Link Copiado!" : "Copiar Link do Site")
+                    </button>
+
                     <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.4rem 0.8rem;" @onclick="HandleLogout">
                         Sair
                     </button>
@@ -52,15 +70,61 @@ else
 }
 
 @code {
+    private string _storeName = "Aura Vestuário";
+    private string _storeSlug = "aura-vestuario";
+    private bool _copied;
+
     protected override async Task OnInitializedAsync()
     {
         Gateway.AuthStateChanged += OnAuthStateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
         await Gateway.TryRestoreSessionAsync();
+        await RefreshStoreInfoAsync();
+    }
+
+    private bool IsPublicCatalogRoute()
+    {
+        var relative = Navigation.ToBaseRelativePath(Navigation.Uri);
+        return relative.StartsWith("site", StringComparison.OrdinalIgnoreCase) ||
+               relative.StartsWith("loja/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task RefreshStoreInfoAsync()
+    {
+        try
+        {
+            var store = await CatalogService.GetPublicStoreSettingsAsync();
+            _storeName = store.StoreName;
+            _storeSlug = store.StoreSlug;
+        }
+        catch
+        {
+        }
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _copied = false;
+        await RefreshStoreInfoAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void OnAuthStateChanged()
     {
         InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CopyStoreLinkAsync()
+    {
+        var url = WhatsAppLinkBuilder.BuildStoreCatalogUrl("http://localhost:5190", _storeSlug);
+        try
+        {
+            await Clipboard.Default.SetTextAsync(url);
+            _copied = true;
+        }
+        catch
+        {
+        }
     }
 
     private void HandleLogout()
@@ -72,5 +136,6 @@ else
     public void Dispose()
     {
         Gateway.AuthStateChanged -= OnAuthStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

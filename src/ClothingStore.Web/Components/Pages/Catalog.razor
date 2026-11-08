@@ -1,4 +1,5 @@
 @page "/catalogo"
+@page "/loja/{StoreSlug}/catalogo"
 @inject CatalogDataGateway CatalogGateway
 @inject NavigationManager Navigation
 
@@ -22,12 +23,12 @@
                        placeholder="Ex.: Camiseta, Linho, Vestido..."
                        @bind="_searchText"
                        @bind:event="oninput"
-                       @onkeyup="ApplyFiltersAsync" />
+                       @bind:after="ApplyFiltersAsync" />
             </div>
 
             <div>
                 <div class="filter-group-title">Categoria</div>
-                <select class="form-select" @bind="_selectedCategorySlug" @bind:after="ApplyFiltersAsync">
+                <select class="form-select" @bind="_selectedCategorySlug" @bind:after="OnCategorySelectChangedAsync">
                     <option value="">Todas as categorias</option>
                     @foreach (var cat in _filters.Categories)
                     {
@@ -105,7 +106,7 @@
                     @foreach (var product in _products)
                     {
                         <article class="product-card">
-                            <a href="/produto/@product.Slug" class="product-image-wrap">
+                            <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-image-wrap">
                                 @if (!string.IsNullOrWhiteSpace(product.PrimaryImageUrl))
                                 {
                                     <img src="@product.PrimaryImageUrl" alt="@product.Name" class="product-image" loading="lazy" />
@@ -129,7 +130,7 @@
 
                             <div class="product-card-body">
                                 <span class="product-category">@product.CategoryName</span>
-                                <a href="/produto/@product.Slug" class="product-title">@product.Name</a>
+                                <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-title">@product.Name</a>
                                 <div class="product-price">@product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
 
                                 <div class="product-meta-row">
@@ -148,7 +149,7 @@
                                 </div>
 
                                 <div style="margin-top: 0.75rem;">
-                                    <a href="/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
+                                    <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
                                         Selecionar Cor e Tamanho
                                     </a>
                                 </div>
@@ -162,31 +163,41 @@
 </div>
 
 @code {
+    [Parameter]
+    public string? StoreSlug { get; set; }
+
     [SupplyParameterFromQuery(Name = "categoria")]
     public string? QueryCategorySlug { get; set; }
 
-    private PublicStoreSettingsDto _store = new("Aura Vestuário", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private PublicStoreSettingsDto _store = new("Aura Vestuário", "aura-vestuario", "5511999999999", "", null, DateTimeOffset.UtcNow);
     private CatalogFiltersDto _filters = new([], [], []);
     private IReadOnlyList<CatalogProductCardDto> _products = [];
 
     private string? _searchText;
     private string? _selectedCategorySlug;
+    private string? _lastQueryCategorySlug = "__UNINITIALIZED__";
     private string? _selectedColor;
     private string? _selectedSize;
     private bool _onlyInStock;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
         _store = await CatalogGateway.GetStoreInfoAsync();
         _filters = await CatalogGateway.GetFiltersAsync();
+
+        var normalizedQueryCategory = string.IsNullOrWhiteSpace(QueryCategorySlug) ? null : QueryCategorySlug.Trim();
+        if (!string.Equals(_lastQueryCategorySlug, normalizedQueryCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastQueryCategorySlug = normalizedQueryCategory;
+            _selectedCategorySlug = normalizedQueryCategory;
+        }
+
+        await ApplyFiltersAsync();
     }
 
-    protected override async Task OnParametersSetAsync()
+    private async Task OnCategorySelectChangedAsync()
     {
-        if (!string.IsNullOrWhiteSpace(QueryCategorySlug))
-        {
-            _selectedCategorySlug = QueryCategorySlug;
-        }
+        _lastQueryCategorySlug = string.IsNullOrWhiteSpace(_selectedCategorySlug) ? null : _selectedCategorySlug;
         await ApplyFiltersAsync();
     }
 
@@ -224,3 +235,4 @@
         await ApplyFiltersAsync();
     }
 }
+

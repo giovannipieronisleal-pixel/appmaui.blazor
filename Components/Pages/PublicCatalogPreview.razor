@@ -1,0 +1,467 @@
+@page "/site"
+@page "/loja/{StoreSlug}"
+@page "/loja/{StoreSlug}/catalogo"
+@page "/site/produto/{Slug}"
+@page "/loja/{StoreSlug}/produto/{Slug}"
+@using ClothingStore.Application.Services
+@inject CatalogService CatalogService
+@inject NavigationManager Navigation
+
+@{
+    var fullStoreUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl("http://localhost:5190", _store.StoreSlug);
+}
+
+<!-- Barra Superior de Controle (Link Personalizado da Loja para QR Code Fixo) -->
+<div style="background: #18181B; color: #FFFFFF; padding: 0.7rem 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+        <span style="background: #16A34A; color: #FFFFFF; font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 999px; text-transform: uppercase;">
+            Catálogo Público da Loja
+        </span>
+        <span style="font-size: 0.85rem; color: #D4D4D8;">
+            Link do QR Code: <strong style="color: #FFFFFF; font-family: monospace;">@fullStoreUrl</strong>
+        </span>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button type="button"
+                class="adm-btn adm-btn-outline"
+                style="background: #27272A; color: #FFFFFF; border-color: #3F3F46; padding: 0.35rem 0.75rem; font-size: 0.8rem;"
+                @onclick="() => CopyLinkAsync(fullStoreUrl)">
+            @(_copied ? "Link Copiado!" : "Copiar Link da Loja")
+        </button>
+
+        <button type="button"
+                class="adm-btn adm-btn-outline"
+                style="background: #27272A; color: #FFFFFF; border-color: #3F3F46; padding: 0.35rem 0.75rem; font-size: 0.8rem;"
+                @onclick="() => OpenExternalWebsiteAsync(fullStoreUrl)">
+            Abrir no Navegador &nearr;
+        </button>
+
+        <a href="/" class="adm-btn adm-btn-primary" style="background: #FFFFFF; color: #18181B; padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+            Voltar ao Painel Admin
+        </a>
+    </div>
+</div>
+
+<!-- Cabeçalho da Loja (Carregado Dinamicamente das Configurações da Loja) -->
+<div style="background: #FAF9F6; border: 1px solid #E7E5E4; border-radius: 12px; overflow: hidden; color: #18181B;">
+    <header style="background: #FFFFFF; border-bottom: 1px solid #E7E5E4; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer;" @onclick="GoToCatalogHome">
+            @if (!string.IsNullOrWhiteSpace(_store.LogoPublicUrl))
+            {
+                <img src="@_store.LogoPublicUrl" alt="@_store.StoreName" style="height: 42px; max-width: 150px; object-fit: contain;" />
+            }
+            <span style="font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; text-transform: uppercase;">
+                @_store.StoreName
+            </span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <button type="button"
+                    style="background:none;border:none;font-weight:600;font-size:0.92rem;cursor:pointer;color:#18181B;"
+                    @onclick="GoToCatalogHome">
+                Início &amp; Catálogo
+            </button>
+            <button type="button"
+                    class="adm-btn adm-btn-success"
+                    style="background: #16A34A; color: #FFFFFF;"
+                    @onclick="() => OpenWhatsAppLinkAsync(WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName))">
+                Atendimento WhatsApp
+            </button>
+        </div>
+    </header>
+
+    @if (string.IsNullOrWhiteSpace(Slug))
+    {
+        <!-- Hero de Apresentação da Loja -->
+        <section style="padding: 2.5rem 1.75rem; background: linear-gradient(180deg, #FFFFFF 0%, #FAF9F6 100%); border-bottom: 1px solid #E7E5E4;">
+            <div style="max-width: 720px;">
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #78716C;">
+                    Catálogo Digital Oficial &bull; /loja/@_store.StoreSlug
+                </span>
+                <h1 style="font-size: 2.2rem; font-weight: 800; margin: 0.4rem 0 0.75rem; letter-spacing: -0.03em;">
+                    @_store.StoreName
+                </h1>
+                <p style="font-size: 1rem; color: #57534E; margin: 0 0 1.25rem; line-height: 1.6;">
+                    @_store.StoreDescription
+                </p>
+            </div>
+
+            <!-- Filtros do Catálogo (Busca, Categoria, Tamanho, Cor) -->
+            <div style="background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 10px; padding: 1.15rem; margin-top: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.85rem; align-items: end;">
+                <div>
+                    <label class="adm-label">Pesquisar produto</label>
+                    <input type="text"
+                           class="adm-input"
+                           placeholder="Ex.: Camiseta, Linho, Vestido..."
+                           @bind="_search"
+                           @bind:event="oninput"
+                           @bind:after="ApplyFiltersAsync" />
+                </div>
+
+                <div>
+                    <label class="adm-label">Categoria</label>
+                    <select class="adm-select" @bind="_selectedCategorySlug" @bind:after="ApplyFiltersAsync">
+                        <option value="">Todas as categorias</option>
+                        @foreach (var cat in _filters.Categories)
+                        {
+                            <option value="@cat.Slug">@cat.Name (@cat.ProductCount)</option>
+                        }
+                    </select>
+                </div>
+
+                <div>
+                    <label class="adm-label">Tamanho</label>
+                    <select class="adm-select" @bind="_selectedSize" @bind:after="ApplyFiltersAsync">
+                        <option value="">Todos os tamanhos</option>
+                        @foreach (var size in _filters.Sizes)
+                        {
+                            <option value="@size">@size</option>
+                        }
+                    </select>
+                </div>
+
+                <div>
+                    <label class="adm-label">Cor</label>
+                    <select class="adm-select" @bind="_selectedColor" @bind:after="ApplyFiltersAsync">
+                        <option value="">Todas as cores</option>
+                        @foreach (var color in _filters.Colors)
+                        {
+                            <option value="@color.Color">@color.Color</option>
+                        }
+                    </select>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                        <input type="checkbox" @bind="_onlyInStock" @bind:after="ApplyFiltersAsync" />
+                        <span>Em estoque</span>
+                    </label>
+                    <button type="button" class="adm-btn adm-btn-outline" @onclick="ClearFiltersAsync">Limpar</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Grade de Produtos do Catálogo -->
+        <section style="padding: 1.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2 style="font-size: 1.3rem; font-weight: 700; margin: 0;">Peças do Catálogo (@_products.Count)</h2>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(245px, 1fr)); gap: 1.5rem;">
+                @foreach (var prod in _products)
+                {
+                    <article style="background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column;">
+                        <div style="aspect-ratio: 3 / 4; background: #F3F1EC; position: relative; cursor: pointer;"
+                             @onclick="() => OpenProductDetail(prod.Slug)">
+                            @if (!string.IsNullOrWhiteSpace(prod.PrimaryImageUrl))
+                            {
+                                <img src="@prod.PrimaryImageUrl" alt="@prod.Name" style="width: 100%; height: 100%; object-fit: cover;" />
+                            }
+                            else
+                            {
+                                <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#78716C;">Sem foto</div>
+                            }
+
+                            @if (prod.HasAvailableStock)
+                            {
+                                <span class="pill-badge pill-green" style="position: absolute; top: 0.65rem; left: 0.65rem;">
+                                    Disponível (@prod.TotalStockQuantity un.)
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="pill-badge pill-red" style="position: absolute; top: 0.65rem; left: 0.65rem;">
+                                    Esgotado
+                                </span>
+                            }
+                        </div>
+
+                        <div style="padding: 1rem; display: flex; flex-direction: column; flex: 1; gap: 0.35rem;">
+                            <span style="font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: #78716C;">
+                                @prod.CategoryName
+                            </span>
+                            <div style="font-size: 1.05rem; font-weight: 700; cursor: pointer;" @onclick="() => OpenProductDetail(prod.Slug)">
+                                @prod.Name
+                            </div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: #18181B;">
+                                @prod.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))
+                            </div>
+
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 0.6rem; border-top: 1px solid #F3F1EC;">
+                                <div style="display: flex; gap: 0.3rem;">
+                                    @foreach (var c in prod.AvailableColors)
+                                    {
+                                        <span style="width: 13px; height: 13px; border-radius: 50%; background: @c.ColorHex; border: 1px solid rgba(0,0,0,0.2);" title="@c.Color"></span>
+                                    }
+                                </div>
+                                <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                                    @foreach (var s in prod.AvailableSizes)
+                                    {
+                                        <span style="font-size: 0.72rem; font-weight: 600; background: #F3F1EC; padding: 0.1rem 0.38rem; border-radius: 4px;">@s</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <button type="button"
+                                    class="adm-btn adm-btn-primary"
+                                    style="width: 100%; margin-top: 0.65rem;"
+                                    @onclick="() => OpenProductDetail(prod.Slug)">
+                                Selecionar Cor e Tamanho
+                            </button>
+                        </div>
+                    </article>
+                }
+            </div>
+        </section>
+    }
+    else if (_selectedProduct is not null)
+    {
+        <!-- Página Individual do Produto -->
+        <section style="padding: 1.75rem;">
+            <button type="button"
+                    class="adm-btn adm-btn-outline"
+                    style="margin-bottom: 1.25rem;"
+                    @onclick="GoToCatalogHome">
+                &larr; Voltar para o Catálogo (@_store.StoreName)
+            </button>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem; align-items: start;">
+                <!-- Galeria de Fotografias -->
+                <div>
+                    <div style="aspect-ratio: 3 / 4; background: #F3F1EC; border-radius: 10px; overflow: hidden; border: 1px solid #E7E5E4; margin-bottom: 0.75rem;">
+                        @if (!string.IsNullOrWhiteSpace(_activeImageUrl))
+                        {
+                            <img src="@_activeImageUrl" alt="@_selectedProduct.Name" style="width: 100%; height: 100%; object-fit: cover;" />
+                        }
+                    </div>
+
+                    @if (_selectedProduct.Images.Count > 1)
+                    {
+                        <div style="display: flex; gap: 0.6rem; overflow-x: auto;">
+                            @foreach (var img in _selectedProduct.Images)
+                            {
+                                <img src="@img.PublicUrl"
+                                     alt="@_selectedProduct.Name"
+                                     style="width: 72px; height: 90px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 2px solid @(_activeImageUrl == img.PublicUrl ? "#18181B" : "transparent");"
+                                     @onclick="() => _activeImageUrl = img.PublicUrl" />
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Seleção de Cor, Tamanho e Botão Consultar pelo WhatsApp -->
+                <div style="background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px; padding: 1.75rem;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #78716C;">
+                        @_selectedProduct.CategoryName
+                    </span>
+                    <h1 style="font-size: 1.75rem; font-weight: 800; margin: 0.25rem 0 0.5rem;">@_selectedProduct.Name</h1>
+                    <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem;">
+                        @_selectedProduct.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))
+                    </div>
+
+                    <p style="color: #57534E; font-size: 0.95rem; margin-bottom: 1.35rem; line-height: 1.6;">
+                        @_selectedProduct.Description
+                    </p>
+
+                    @if (_selectedProduct.Variants.Count > 0)
+                    {
+                        <!-- 1. Cor -->
+                        <div style="margin-bottom: 1.25rem;">
+                            <label class="adm-label">1. Selecione a Cor: <strong>@_detailColor</strong></label>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                @foreach (var c in _selectedProduct.Variants.GroupBy(v => v.Color, StringComparer.OrdinalIgnoreCase))
+                                {
+                                    var isCurrent = string.Equals(_detailColor, c.Key, StringComparison.OrdinalIgnoreCase);
+                                    <button type="button"
+                                            class="adm-btn @(isCurrent ? "adm-btn-primary" : "adm-btn-outline")"
+                                            @onclick="() => SelectDetailColor(c.Key)">
+                                        <span style="width: 12px; height: 12px; border-radius: 50%; background: @c.First().ColorHex; border: 1px solid rgba(0,0,0,0.2);"></span>
+                                        <span>@c.Key</span>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- 2. Tamanho -->
+                        <div style="margin-bottom: 1.35rem;">
+                            <label class="adm-label">2. Selecione o Tamanho: <strong>@_detailSize</strong></label>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                @foreach (var v in _selectedProduct.Variants.Where(v => string.Equals(v.Color, _detailColor, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    var isCurrent = string.Equals(_detailSize, v.Size, StringComparison.OrdinalIgnoreCase);
+                                    <button type="button"
+                                            class="adm-btn @(isCurrent ? "adm-btn-primary" : "adm-btn-outline")"
+                                            @onclick="() => _detailSize = v.Size">
+                                        <span>@v.Size</span>
+                                        <span style="font-size: 0.75rem; opacity: 0.8;">
+                                            (@(v.StockQuantity > 0 ? $"{v.StockQuantity} un." : "Esgotado"))
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="padding: 0.85rem; background: #F4F4F5; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.88rem; color: #57534E;">
+                            Consulte cores e tamanhos diretamente pelo nosso WhatsApp abaixo.
+                        </div>
+                    }
+
+                    <!-- Botão Oficial Consultar pelo WhatsApp -->
+                    <button type="button"
+                            class="adm-btn adm-btn-success"
+                            style="width: 100%; padding: 0.95rem; font-size: 1.02rem; background: #16A34A; color: #FFFFFF;"
+                            @onclick="ConsultProductOnWhatsAppAsync">
+                        Consultar pelo WhatsApp
+                    </button>
+
+                    <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 0.9rem; margin-top: 1rem; font-size: 0.85rem; color: #166534;">
+                        <div style="font-weight: 700; margin-bottom: 0.25rem;">
+                            Mensagem automática para +@_store.WhatsappNumber:
+                        </div>
+                        <div>
+                            "@WhatsAppLinkBuilder.BuildProductConsultationMessage(_selectedProduct.Name, _detailColor, _detailSize)"
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? StoreSlug { get; set; }
+
+    [Parameter]
+    public string? Slug { get; set; }
+
+    private PublicStoreSettingsDto _store = new("Aura Vestuário", "aura-vestuario", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private CatalogFiltersDto _filters = new([], [], []);
+    private IReadOnlyList<CatalogProductCardDto> _products = [];
+    private ProductDetailDto? _selectedProduct;
+
+    private string? _search;
+    private string? _selectedCategorySlug;
+    private string? _selectedColor;
+    private string? _selectedSize;
+    private bool _onlyInStock;
+
+    private string? _activeImageUrl;
+    private string? _detailColor;
+    private string? _detailSize;
+    private bool _copied;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _store = await CatalogService.GetPublicStoreSettingsAsync();
+        _filters = await CatalogService.GetCatalogFiltersAsync();
+
+        if (!string.IsNullOrWhiteSpace(Slug))
+        {
+            _selectedProduct = await CatalogService.GetPublicProductDetailAsync(Slug);
+            if (_selectedProduct is not null)
+            {
+                _activeImageUrl = _selectedProduct.Images.FirstOrDefault()?.PublicUrl;
+                var firstVar = _selectedProduct.Variants.FirstOrDefault(v => v.StockQuantity > 0)
+                    ?? _selectedProduct.Variants.FirstOrDefault();
+                _detailColor = firstVar?.Color;
+                _detailSize = firstVar?.Size;
+            }
+        }
+        else
+        {
+            _selectedProduct = null;
+            await ApplyFiltersAsync();
+        }
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        _products = await CatalogService.GetCatalogProductsAsync(new CatalogQueryFilter(
+            Search: _search,
+            CategorySlug: _selectedCategorySlug,
+            Color: _selectedColor,
+            Size: _selectedSize,
+            OnlyInStock: _onlyInStock));
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _search = null;
+        _selectedCategorySlug = null;
+        _selectedColor = null;
+        _selectedSize = null;
+        _onlyInStock = false;
+        await ApplyFiltersAsync();
+    }
+
+    private void OpenProductDetail(string productSlug) =>
+        Navigation.NavigateTo($"/loja/{_store.StoreSlug}/produto/{productSlug}");
+
+    private void GoToCatalogHome() =>
+        Navigation.NavigateTo($"/loja/{_store.StoreSlug}");
+
+    private void SelectDetailColor(string color)
+    {
+        _detailColor = color;
+        if (_selectedProduct is not null)
+        {
+            var match = _selectedProduct.Variants
+                .Where(v => string.Equals(v.Color, color, StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault();
+            _detailSize = match?.Size;
+        }
+    }
+
+    private async Task ConsultProductOnWhatsAppAsync()
+    {
+        if (_selectedProduct is null)
+            return;
+
+        var url = WhatsAppLinkBuilder.BuildProductConsultationLink(
+            _store.WhatsappNumber,
+            _selectedProduct.Name,
+            _detailColor,
+            _detailSize);
+
+        await OpenWhatsAppLinkAsync(url);
+    }
+
+    private async Task CopyLinkAsync(string url)
+    {
+        try
+        {
+            await Clipboard.Default.SetTextAsync(url);
+            _copied = true;
+        }
+        catch
+        {
+        }
+    }
+
+    private static async Task OpenWhatsAppLinkAsync(string url)
+    {
+        try
+        {
+            await Launcher.Default.OpenAsync(new Uri(url));
+        }
+        catch
+        {
+        }
+    }
+
+    private static async Task OpenExternalWebsiteAsync(string url)
+    {
+        try
+        {
+            await LocalWebServerLauncher.EnsureWebCatalogRunningAsync();
+            await Launcher.Default.OpenAsync(new Uri(url));
+        }
+        catch
+        {
+        }
+    }
+}

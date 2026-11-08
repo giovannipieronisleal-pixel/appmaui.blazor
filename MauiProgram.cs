@@ -31,14 +31,21 @@ public static class MauiProgram
 
         var apiBaseUrl = Environment.GetEnvironmentVariable("API_BASE_URL") ?? "http://localhost:5180";
 
-        builder.Services.AddSingleton(_ => new HttpClient
+        builder.Services.AddSingleton(_ =>
         {
-            BaseAddress = new Uri(apiBaseUrl),
-            Timeout = TimeSpan.FromSeconds(4)
+            var handler = new SocketsHttpHandler
+            {
+                ConnectTimeout = TimeSpan.FromMilliseconds(600)
+            };
+            return new HttpClient(handler)
+            {
+                BaseAddress = new Uri(apiBaseUrl),
+                Timeout = TimeSpan.FromMilliseconds(1200)
+            };
         });
         builder.Services.AddSingleton<AdminApiClient>();
 
-        // Repositório compartilhado para sincronização com a API e o Site Blazor
+        // Repositório compartilhado para sincronização imediata com a API e o Site Blazor
         var sharedWorkspaceDb = @"C:\Dev\appmaui.blazor\App_Data\clothingstore_db.json";
         var dbFilePath = Directory.Exists(@"C:\Dev\appmaui.blazor")
             ? sharedWorkspaceDb
@@ -61,10 +68,14 @@ public static class MauiProgram
         });
 
         builder.Services.AddSingleton<AuthService>();
+        builder.Services.AddSingleton<CatalogService>();
         builder.Services.AddSingleton<ProductManagementService>();
         builder.Services.AddSingleton<StockManagementService>();
         builder.Services.AddSingleton<EmployeeAndSettingsService>();
         builder.Services.AddSingleton<MauiAdminGateway>();
+
+        // Inicia automaticamente o servidor do site público Blazor (http://localhost:5190) em segundo plano
+        _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
 
         return builder.Build();
     }

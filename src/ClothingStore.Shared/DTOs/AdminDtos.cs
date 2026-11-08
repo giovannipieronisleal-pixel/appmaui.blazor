@@ -149,6 +149,8 @@ public sealed class UpdateStoreSettingsRequest
     [Required(ErrorMessage = "O nome da loja é obrigatório.")]
     public string StoreName { get; set; } = string.Empty;
 
+    public string? StoreSlug { get; set; }
+
     [Required(ErrorMessage = "O número de WhatsApp é obrigatório.")]
     public string WhatsappNumber { get; set; } = string.Empty;
 
@@ -164,9 +166,11 @@ public sealed class UpdateStoreSettingsRequest
 public sealed record AdminStoreSettingsDto(
     Guid Id,
     string StoreName,
+    string StoreSlug,
     string WhatsappNumber,
     string StoreDescription,
     string? LogoStoragePath,
     string? LogoPublicUrl,
     int DefaultLowStockThreshold,
     DateTimeOffset UpdatedAt);
+

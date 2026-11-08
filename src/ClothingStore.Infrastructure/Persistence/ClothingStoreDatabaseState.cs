@@ -235,3 +235,4 @@ public sealed class ClothingStoreDatabaseState
         return state;
     }
 }
+

@@ -62,3 +62,4 @@ public sealed class Employee
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 }
+

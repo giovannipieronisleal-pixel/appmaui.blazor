@@ -3,4 +3,16 @@
         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(Layout.MainLayout)">
+            <div class="container" style="padding: 4rem 1.25rem; text-align: center;">
+                <h1 style="font-size: 1.8rem; margin-bottom: 0.75rem;">Página não encontrada</h1>
+                <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                    O endereço solicitado não existe ou foi movido.
+                </p>
+                <a href="/catalogo" class="btn btn-dark">Ir para o Catálogo da Loja</a>
+            </div>
+        </LayoutView>
+    </NotFound>
 </Router>
+

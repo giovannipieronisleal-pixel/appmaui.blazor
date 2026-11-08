@@ -10,7 +10,8 @@ namespace ClothingStore.Domain.Entities;
 public sealed class StoreSettings
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string StoreName { get; set; } = "Atelier Minimal";
+    public string StoreName { get; set; } = "Aura Vestuário";
+    public string StoreSlug { get; set; } = "aura-vestuario";
     public string WhatsappNumber { get; set; } = "5511999999999";
     public string StoreDescription { get; set; } = "Moda contemporânea com peças essenciais, cortes precisos e tecidos selecionados.";
     public string? LogoStoragePath { get; set; }
@@ -29,9 +30,10 @@ public sealed class StoreSettings
         string storeDescription,
         string? logoStoragePath = null,
         string? logoPublicUrl = null,
-        int defaultLowStockThreshold = 3)
+        int defaultLowStockThreshold = 3,
+        string? customSlug = null)
     {
-        UpdateSettings(storeName, whatsappNumber, storeDescription, defaultLowStockThreshold, null);
+        UpdateSettings(storeName, whatsappNumber, storeDescription, defaultLowStockThreshold, null, customSlug);
         SetLogo(logoStoragePath, logoPublicUrl, null);
     }
 
@@ -40,7 +42,8 @@ public sealed class StoreSettings
         string whatsappNumber,
         string storeDescription,
         int defaultLowStockThreshold,
-        Guid? employeeId)
+        Guid? employeeId,
+        string? customSlug = null)
     {
         if (string.IsNullOrWhiteSpace(storeName))
             throw new DomainException("O nome da loja é obrigatório.");
@@ -54,6 +57,7 @@ public sealed class StoreSettings
         var sanitizedNumber = SanitizeWhatsappNumber(whatsappNumber);
 
         StoreName = storeName.Trim();
+        StoreSlug = Category.GenerateSlug(string.IsNullOrWhiteSpace(customSlug) ? StoreName : customSlug);
         WhatsappNumber = sanitizedNumber;
         StoreDescription = storeDescription.Trim();
         DefaultLowStockThreshold = defaultLowStockThreshold;
@@ -79,6 +83,16 @@ public sealed class StoreSettings
             throw new DomainException("Informe o número de WhatsApp completo com código do país (DDI) e DDD (ex.: 5511999999999).");
 
         return digitsOnly;
+    }
+
+    /// <summary>
+    /// Gera o link público da loja com o nome/slug da loja para uso em QR Code fixo.
+    /// </summary>
+    public string BuildStoreCatalogUrl(string baseSiteUrl)
+    {
+        var cleanBase = string.IsNullOrWhiteSpace(baseSiteUrl) ? "http://localhost:5190" : baseSiteUrl.TrimEnd('/');
+        var slug = string.IsNullOrWhiteSpace(StoreSlug) ? Category.GenerateSlug(StoreName) : StoreSlug;
+        return $"{cleanBase}/loja/{slug}";
     }
 
     /// <summary>

@@ -1,0 +1,242 @@
+@page "/funcionarios"
+@inject MauiAdminGateway Gateway
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Funcionários e Permissões</h1>
+        <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
+            Cadastre funcionários, defina níveis de acesso (Administrador ou Funcionário) e ative ou desative contas.
+        </p>
+    </div>
+
+    <button type="button" class="adm-btn adm-btn-primary" @onclick="() => _showNewEmployeeForm = !_showNewEmployeeForm">
+        + Cadastrar Funcionário
+    </button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert-banner alert-error">@_error</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_success))
+{
+    <div class="alert-banner alert-success">@_success</div>
+}
+
+@if (_showNewEmployeeForm)
+{
+    <section class="adm-card" style="border-left: 4px solid var(--adm-primary);">
+        <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">Novo Funcionário</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
+            <div>
+                <label class="adm-label">Nome Completo *</label>
+                <input type="text" class="adm-input" @bind="_newEmployee.FullName" placeholder="Ex.: Mariana Costa" />
+            </div>
+            <div>
+                <label class="adm-label">E-mail de Login *</label>
+                <input type="email" class="adm-input" @bind="_newEmployee.Email" placeholder="mariana@loja.com" />
+            </div>
+            <div>
+                <label class="adm-label">Senha Inicial *</label>
+                <input type="password" class="adm-input" @bind="_newEmployee.InitialPassword" placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div>
+                <label class="adm-label">Nível de Acesso</label>
+                <select class="adm-select" @bind="_newEmployee.RoleName">
+                    <option value="Employee">Funcionário</option>
+                    <option value="Admin">Administrador (Acesso Completo)</option>
+                </select>
+            </div>
+            <div>
+                <label class="adm-label">Cargo / Função</label>
+                <input type="text" class="adm-input" @bind="_newEmployee.JobTitle" placeholder="Ex.: Vendedora, Estoquista" />
+            </div>
+            <div>
+                <label class="adm-label">Telefone</label>
+                <input type="text" class="adm-input" @bind="_newEmployee.Phone" placeholder="55119..." />
+            </div>
+
+            <div style="grid-column: 1 / -1; display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem;">
+                    <input type="checkbox" @bind="_newEmployee.CanManageProducts" />
+                    <span>Permitir cadastrar e editar produtos/variantes</span>
+                </label>
+
+                <label style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem;">
+                    <input type="checkbox" @bind="_newEmployee.CanManageStock" />
+                    <span>Permitir atualizar estoque (entradas/saídas)</span>
+                </label>
+            </div>
+
+            <div style="grid-column: 1 / -1; display: flex; gap: 0.5rem;">
+                <button type="button" class="adm-btn adm-btn-success" @onclick="CreateEmployeeAsync">Criar Conta de Funcionário</button>
+                <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _showNewEmployeeForm = false">Cancelar</button>
+            </div>
+        </div>
+    </section>
+}
+
+<section class="adm-card" style="overflow-x: auto;">
+    <table class="adm-table">
+        <thead>
+            <tr>
+                <th>Funcionário</th>
+                <th>Cargo</th>
+                <th>Nível de Acesso</th>
+                <th>Permissões no Backend</th>
+                <th>Status da Conta</th>
+                <th style="text-align: right;">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var emp in _employees)
+            {
+                <tr>
+                    <td>
+                        <div style="font-weight: 700;">@emp.FullName</div>
+                        <div style="font-size: 0.8rem; color: var(--adm-muted);">@emp.Email</div>
+                    </td>
+                    <td>@(emp.JobTitle ?? "-")</td>
+                    <td>
+                        <span class="pill-badge @(emp.IsAdmin ? "pill-green" : "pill-slate")">
+                            @(emp.IsAdmin ? "Administrador" : "Funcionário")
+                        </span>
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                            @if (emp.CanManageProducts)
+                            {
+                                <span class="pill-badge pill-green">Gerenciar Produtos</span>
+                            }
+                            @if (emp.CanManageStock)
+                            {
+                                <span class="pill-badge pill-green">Atualizar Estoque</span>
+                            }
+                            @if (!emp.CanManageProducts && !emp.CanManageStock)
+                            {
+                                <span class="pill-badge pill-slate">Somente Consulta</span>
+                            }
+                        </div>
+                    </td>
+                    <td>
+                        @if (emp.IsActive)
+                        {
+                            <span class="pill-badge pill-green">Ativo</span>
+                        }
+                        else
+                        {
+                            <span class="pill-badge pill-red">Desativado</span>
+                        }
+                    </td>
+                    <td style="text-align: right; white-space: nowrap;">
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="padding: 0.35rem 0.65rem; font-size: 0.78rem;"
+                                @onclick="() => ToggleProductPermissionAsync(emp)">
+                            @(emp.CanManageProducts ? "Revogar Edição Produtos" : "Conceder Edição Produtos")
+                        </button>
+                        <button type="button"
+                                class="adm-btn @(emp.IsActive ? "adm-btn-danger" : "adm-btn-success")"
+                                style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-left: 0.35rem;"
+                                @onclick="() => ToggleEmployeeStatusAsync(emp)">
+                            @(emp.IsActive ? "Desativar Acesso" : "Reativar Acesso")
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private IReadOnlyList<EmployeeProfileDto> _employees = [];
+    private bool _showNewEmployeeForm;
+    private CreateEmployeeRequest _newEmployee = new()
+    {
+        RoleName = "Employee",
+        CanManageProducts = false,
+        CanManageStock = true
+    };
+
+    private string? _error;
+    private string? _success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEmployeesAsync();
+    }
+
+    private async Task LoadEmployeesAsync()
+    {
+        _error = null;
+        try
+        {
+            _employees = await Gateway.GetEmployeesAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task CreateEmployeeAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var created = await Gateway.CreateEmployeeAsync(_newEmployee);
+            _showNewEmployeeForm = false;
+            _newEmployee = new CreateEmployeeRequest { RoleName = "Employee", CanManageStock = true };
+            await LoadEmployeesAsync();
+            _success = $"Funcionário '{created.FullName}' cadastrado com sucesso!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ToggleProductPermissionAsync(EmployeeProfileDto emp)
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.UpdateEmployeeAsync(emp.EmployeeId, new UpdateEmployeeRequest
+            {
+                FullName = emp.FullName,
+                RoleName = emp.RoleName,
+                JobTitle = emp.JobTitle,
+                Phone = emp.Phone,
+                CanManageProducts = !emp.CanManageProducts,
+                CanManageStock = emp.CanManageStock,
+                IsActive = emp.IsActive
+            });
+            await LoadEmployeesAsync();
+            _success = $"Permissões de '{emp.FullName}' atualizadas!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ToggleEmployeeStatusAsync(EmployeeProfileDto emp)
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.SetEmployeeActiveStatusAsync(emp.EmployeeId, !emp.IsActive);
+            await LoadEmployeesAsync();
+            _success = $"Status de acesso de '{emp.FullName}' alterado para {(!emp.IsActive ? "Ativo" : "Desativado")}.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}
+

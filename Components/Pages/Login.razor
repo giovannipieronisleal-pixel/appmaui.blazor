@@ -1,11 +1,13 @@
 @page "/login"
+@using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
+@inject CatalogService CatalogService
 @inject NavigationManager Navigation
 
 <div class="adm-card" style="padding: 2rem; box-shadow: 0 20px 40px rgba(0,0,0,0.35);">
     <div style="text-align: center; margin-bottom: 1.5rem;">
         <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--adm-muted);">
-            Sistema de Gestão &amp; Estoque
+            @_storeName &bull; Gestão &amp; Estoque
         </div>
         <h1 style="font-size: 1.55rem; font-weight: 700; margin: 0.35rem 0;">
             @(_isRecoveryMode ? "Recuperação de Acesso" : "Acesso de Funcionários")
@@ -43,6 +45,12 @@
             <button type="button" class="adm-btn adm-btn-primary" style="width: 100%; padding: 0.8rem;" @onclick="HandleLoginAsync">
                 Entrar no Sistema
             </button>
+
+            <a href="/loja/@_storeSlug"
+               class="adm-btn adm-btn-success"
+               style="width: 100%; padding: 0.7rem; text-align: center;">
+                Abrir Catálogo Público da Loja (/loja/@_storeSlug)
+            </a>
 
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem; font-size: 0.84rem;">
                 <button type="button"
@@ -106,12 +114,27 @@
 @code {
     private string _email = "admin@loja.com";
     private string _password = "Admin@123";
+    private string _storeName = "Aura Vestuário";
+    private string _storeSlug = "aura-vestuario";
     private bool _isRecoveryMode;
     private bool _resetCodeRequested;
     private string _resetCode = string.Empty;
     private string _newPassword = string.Empty;
     private string? _errorMessage;
     private string? _successMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var store = await CatalogService.GetPublicStoreSettingsAsync();
+            _storeName = store.StoreName;
+            _storeSlug = store.StoreSlug;
+        }
+        catch
+        {
+        }
+    }
 
     private void FillAdminCredentials()
     {

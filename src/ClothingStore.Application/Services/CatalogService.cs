@@ -19,8 +19,13 @@ public sealed class CatalogService
     public async Task<PublicStoreSettingsDto> GetPublicStoreSettingsAsync(CancellationToken ct = default)
     {
         var settings = await _repository.GetStoreSettingsAsync(ct);
+        var slug = string.IsNullOrWhiteSpace(settings.StoreSlug)
+            ? Category.GenerateSlug(settings.StoreName)
+            : settings.StoreSlug;
+
         return new PublicStoreSettingsDto(
             settings.StoreName,
+            slug,
             settings.WhatsappNumber,
             settings.StoreDescription,
             settings.LogoPublicUrl,
@@ -230,3 +235,4 @@ public sealed class CatalogService
             product.UpdatedAt);
     }
 }
+

@@ -124,10 +124,11 @@ CREATE INDEX IF NOT EXISTS ix_stock_movements_created_at
 CREATE INDEX IF NOT EXISTS ix_stock_movements_variant
     ON public.stock_movements (product_variant_id, created_at DESC);
 
--- 9. STORE_SETTINGS (Configurações Personalizadas da Loja)
+-- 9. STORE_SETTINGS (Configurações Personalizadas da Loja - Preparado para expansão Multi-Loja via store_slug)
 CREATE TABLE IF NOT EXISTS public.store_settings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     store_name varchar(120) NOT NULL,
+    store_slug varchar(140) NOT NULL UNIQUE DEFAULT 'aura-vestuario',
     whatsapp_number varchar(20) NOT NULL,
     store_description text NOT NULL,
     logo_storage_path text NULL,
@@ -145,3 +146,4 @@ VALUES
     ('11111111-1111-1111-1111-111111111111', 'Admin', 'Acesso total ao sistema, funcionários e configurações da loja', '{"all": true}'::jsonb),
     ('22222222-2222-2222-2222-222222222222', 'Employee', 'Funcionário com permissões operacionais de produtos e estoque', '{"stock": true}'::jsonb)
 ON CONFLICT (name) DO NOTHING;
+

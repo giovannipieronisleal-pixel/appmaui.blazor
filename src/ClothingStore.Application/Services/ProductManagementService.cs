@@ -381,3 +381,4 @@ public sealed class ProductManagementService
         await _imageStorage.DeleteImageAsync(target.StoragePath, ct);
     }
 }
+

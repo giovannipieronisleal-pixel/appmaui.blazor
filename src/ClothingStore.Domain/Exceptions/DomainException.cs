@@ -9,3 +9,4 @@ public sealed class DomainException : Exception
     {
     }
 }
+

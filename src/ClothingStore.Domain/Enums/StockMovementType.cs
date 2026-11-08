@@ -20,3 +20,4 @@ public enum StockMovementType
     /// </summary>
     Adjustment = 3
 }
+

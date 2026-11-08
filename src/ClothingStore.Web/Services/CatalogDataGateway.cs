@@ -6,12 +6,13 @@ namespace ClothingStore.Web.Services;
 
 /// <summary>
 /// Gateway do catálogo web que prioriza a comunicação via ASP.NET Core Web API
-/// e possui fallback transparente para o repositório compartilhado.
+/// e possui fallback instantâneo para o repositório compartilhado quando a API não está rodando em processo separado.
 /// </summary>
 public sealed class CatalogDataGateway
 {
     private readonly CatalogApiClient _apiClient;
     private readonly CatalogService _localCatalogService;
+    private static DateTimeOffset _skipRemoteApiUntil = DateTimeOffset.MinValue;
 
     public CatalogDataGateway(CatalogApiClient apiClient, CatalogService localCatalogService)
     {
@@ -19,65 +20,48 @@ public sealed class CatalogDataGateway
         _localCatalogService = localCatalogService;
     }
 
-    public async Task<PublicStoreSettingsDto> GetStoreInfoAsync(CancellationToken ct = default)
+    private async Task<T> ExecuteWithFallbackAsync<T>(Func<Task<T>> remoteCall, Func<Task<T>> localFallback)
     {
-        try
+        if (DateTimeOffset.UtcNow >= _skipRemoteApiUntil)
         {
-            return await _apiClient.GetStoreInfoAsync(ct);
+            try
+            {
+                return await remoteCall();
+            }
+            catch
+            {
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(30);
+            }
         }
-        catch
-        {
-            return await _localCatalogService.GetPublicStoreSettingsAsync(ct);
-        }
+
+        return await localFallback();
     }
 
-    public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken ct = default)
-    {
-        try
-        {
-            return await _apiClient.GetCategoriesAsync(ct);
-        }
-        catch
-        {
-            return await _localCatalogService.GetPublicCategoriesAsync(ct);
-        }
-    }
+    public Task<PublicStoreSettingsDto> GetStoreInfoAsync(CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.GetStoreInfoAsync(ct),
+            () => _localCatalogService.GetPublicStoreSettingsAsync(ct));
 
-    public async Task<CatalogFiltersDto> GetFiltersAsync(CancellationToken ct = default)
-    {
-        try
-        {
-            return await _apiClient.GetFiltersAsync(ct);
-        }
-        catch
-        {
-            return await _localCatalogService.GetCatalogFiltersAsync(ct);
-        }
-    }
+    public Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.GetCategoriesAsync(ct),
+            () => _localCatalogService.GetPublicCategoriesAsync(ct));
 
-    public async Task<IReadOnlyList<CatalogProductCardDto>> GetProductsAsync(
+    public Task<CatalogFiltersDto> GetFiltersAsync(CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.GetFiltersAsync(ct),
+            () => _localCatalogService.GetCatalogFiltersAsync(ct));
+
+    public Task<IReadOnlyList<CatalogProductCardDto>> GetProductsAsync(
         CatalogQueryFilter filter,
-        CancellationToken ct = default)
-    {
-        try
-        {
-            return await _apiClient.GetProductsAsync(filter, ct);
-        }
-        catch
-        {
-            return await _localCatalogService.GetCatalogProductsAsync(filter, ct);
-        }
-    }
+        CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.GetProductsAsync(filter, ct),
+            () => _localCatalogService.GetCatalogProductsAsync(filter, ct));
 
-    public async Task<ProductDetailDto?> GetProductDetailAsync(string slugOrId, CancellationToken ct = default)
-    {
-        try
-        {
-            return await _apiClient.GetProductDetailAsync(slugOrId, ct);
-        }
-        catch
-        {
-            return await _localCatalogService.GetPublicProductDetailAsync(slugOrId, ct);
-        }
-    }
+    public Task<ProductDetailDto?> GetProductDetailAsync(string slugOrId, CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.GetProductDetailAsync(slugOrId, ct),
+            () => _localCatalogService.GetPublicProductDetailAsync(slugOrId, ct));
 }
+    

@@ -144,7 +144,8 @@ public sealed class EmployeeAndSettingsService
             request.WhatsappNumber,
             request.StoreDescription,
             request.DefaultLowStockThreshold,
-            employeeId);
+            employeeId,
+            request.StoreSlug);
 
         if (request.LogoPublicUrl is not null)
         {
@@ -211,6 +212,7 @@ public sealed class EmployeeAndSettingsService
         new(
             s.Id,
             s.StoreName,
+            string.IsNullOrWhiteSpace(s.StoreSlug) ? Category.GenerateSlug(s.StoreName) : s.StoreSlug,
             s.WhatsappNumber,
             s.StoreDescription,
             s.LogoStoragePath,
@@ -218,3 +220,4 @@ public sealed class EmployeeAndSettingsService
             s.DefaultLowStockThreshold,
             s.UpdatedAt);
 }
+

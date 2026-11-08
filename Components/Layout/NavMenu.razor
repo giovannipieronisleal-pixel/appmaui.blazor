@@ -1,15 +1,19 @@
-﻿@inject MauiAdminGateway Gateway
+﻿@using ClothingStore.Application.Services
+@inject MauiAdminGateway Gateway
+@inject CatalogService CatalogService
+@inject NavigationManager Navigation
+@implements IDisposable
 
 <nav class="adm-nav">
-    <NavLink class="adm-nav-item" href="" Match="NavLinkMatch.All">
+    <NavLink class="adm-nav-item" href="/" Match="NavLinkMatch.All">
         <span>Dashboard</span>
     </NavLink>
 
-    <NavLink class="adm-nav-item" href="produtos">
+    <NavLink class="adm-nav-item" href="/produtos">
         <span>Produtos &amp; Variantes</span>
     </NavLink>
 
-    <NavLink class="adm-nav-item" href="estoque">
+    <NavLink class="adm-nav-item" href="/estoque">
         <span>Controle de Estoque</span>
     </NavLink>
 
@@ -19,12 +23,53 @@
             Administração
         </div>
 
-        <NavLink class="adm-nav-item" href="funcionarios">
+        <NavLink class="adm-nav-item" href="/funcionarios">
             <span>Funcionários &amp; Acesso</span>
         </NavLink>
 
-        <NavLink class="adm-nav-item" href="configuracoes-loja">
+        <NavLink class="adm-nav-item" href="/configuracoes-loja">
             <span>Configurações da loja</span>
         </NavLink>
     }
+
+    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
+        Catálogo Público (QR Code)
+    </div>
+
+    <NavLink class="adm-nav-item" href="@($"/loja/{_storeSlug}")">
+        <span>Ver Site (/loja/@_storeSlug)</span>
+    </NavLink>
 </nav>
+
+@code {
+    private string _storeSlug = "aura-vestuario";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await RefreshSlugAsync();
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await RefreshSlugAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshSlugAsync()
+    {
+        try
+        {
+            var info = await CatalogService.GetPublicStoreSettingsAsync();
+            _storeSlug = info.StoreSlug;
+        }
+        catch
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

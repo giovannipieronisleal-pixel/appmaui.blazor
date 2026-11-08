@@ -12,3 +12,4 @@ public static class RoleNames
     public const string PolicyCanManageProducts = "CanManageProducts";
     public const string PolicyCanManageStock = "CanManageStock";
 }
+

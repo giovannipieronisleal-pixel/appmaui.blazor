@@ -1,0 +1,242 @@
+@page "/estoque"
+@inject MauiAdminGateway Gateway
+
+<div style="margin-bottom: 1.5rem;">
+    <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Controle de Estoque e Movimentações</h1>
+    <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
+        Registre entradas, saídas e ajustes de inventário por variante. Todas as operações registram data, horário e funcionário responsável.
+    </p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert-banner alert-error">@_error</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_success))
+{
+    <div class="alert-banner alert-success">@_success</div>
+}
+
+@if (Gateway.CanManageStock)
+{
+    <!-- Formulário de Registro de Movimentação -->
+    <section class="adm-card" style="border-left: 4px solid var(--adm-primary);">
+        <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">
+            Registrar Nova Movimentação de Estoque
+        </h2>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; align-items: end;">
+            <div>
+                <label class="adm-label">1. Produto</label>
+                <select class="adm-select" @bind="_selectedProductId" @bind:after="OnProductSelectionChanged">
+                    @foreach (var prod in _products)
+                    {
+                        <option value="@prod.Id">@prod.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div>
+                <label class="adm-label">2. Variante (Cor / Tamanho)</label>
+                <select class="adm-select" @bind="_movementRequest.ProductVariantId">
+                    @foreach (var v in GetVariantsOfSelectedProduct())
+                    {
+                        <option value="@v.Id">@v.Color - Tam @v.Size (SKU: @v.Sku | Saldo: @v.StockQuantity un.)</option>
+                    }
+                </select>
+            </div>
+
+            <div>
+                <label class="adm-label">3. Tipo de Movimentação</label>
+                <select class="adm-select" @bind="_movementRequest.MovementType">
+                    <option value="IN">Entrada de Mercadorias (+)</option>
+                    <option value="OUT">Saída / Baixa de Mercadorias (-)</option>
+                    <option value="ADJUSTMENT">Ajuste de Quantidade (Novo Saldo)</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="adm-label">
+                    @(_movementRequest.MovementType == "ADJUSTMENT" ? "4. Novo Saldo em Estoque" : "4. Quantidade")
+                </label>
+                <input type="number" min="0" class="adm-input" @bind="_movementRequest.Quantity" />
+            </div>
+
+            <div style="grid-column: 1 / -1;">
+                <label class="adm-label">Motivo / Observação da Movimentação</label>
+                <input type="text"
+                       class="adm-input"
+                       @bind="_movementRequest.Reason"
+                       placeholder="Ex.: Reposição fornecedor, Venda pelo WhatsApp, Ajuste de inventário físico..." />
+            </div>
+
+            <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <span style="font-size: 0.85rem; color: var(--adm-muted);">
+                    Responsável registrado automaticamente: <strong>@Gateway.CurrentEmployee?.FullName</strong>
+                </span>
+
+                <button type="button" class="adm-btn adm-btn-success" @onclick="SubmitMovementAsync">
+                    Confirmar Movimentação de Estoque
+                </button>
+            </div>
+        </div>
+    </section>
+}
+
+<!-- Histórico Auditável de Movimentações -->
+<section class="adm-card" style="overflow-x: auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+        <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Histórico de Movimentações (@_movements.Count)</h2>
+
+        <div style="display: flex; gap: 0.6rem; align-items: center;">
+            <select class="adm-select" style="width: auto;" @bind="_filterProductId" @bind:after="LoadMovementsAsync">
+                <option value="">Todos os produtos</option>
+                @foreach (var p in _products)
+                {
+                    <option value="@p.Id">@p.Name</option>
+                }
+            </select>
+            <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadMovementsAsync">Atualizar</button>
+        </div>
+    </div>
+
+    <table class="adm-table">
+        <thead>
+            <tr>
+                <th>Data e Horário</th>
+                <th>Produto</th>
+                <th>Variante (Cor/Tam)</th>
+                <th>Tipo</th>
+                <th>Saldo Anterior</th>
+                <th>Alteração</th>
+                <th>Novo Saldo</th>
+                <th>Motivo</th>
+                <th>Funcionário Responsável</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var m in _movements)
+            {
+                <tr>
+                    <td style="font-size: 0.82rem; white-space: nowrap;">
+                        @m.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                    </td>
+                    <td style="font-weight: 600;">@m.ProductName</td>
+                    <td>
+                        <span>@m.Color / <strong>@m.Size</strong></span>
+                        <div style="font-size: 0.75rem; color: var(--adm-muted);">@m.VariantSku</div>
+                    </td>
+                    <td>
+                        @if (m.MovementType == "IN")
+                        {
+                            <span class="pill-badge pill-green">Entrada</span>
+                        }
+                        else if (m.MovementType == "OUT")
+                        {
+                            <span class="pill-badge pill-red">Saída</span>
+                        }
+                        else
+                        {
+                            <span class="pill-badge pill-amber">Ajuste</span>
+                        }
+                    </td>
+                    <td>@m.PreviousQuantity un.</td>
+                    <td style="font-weight: 700;">
+                        @(m.MovementType == "OUT" ? $"-{m.QuantityChanged}" : m.QuantityChanged > 0 ? $"+{m.QuantityChanged}" : m.QuantityChanged.ToString())
+                    </td>
+                    <td style="font-weight: 700;">@m.NewQuantity un.</td>
+                    <td style="font-size: 0.85rem; color: var(--adm-muted);">@m.Reason</td>
+                    <td style="font-size: 0.85rem; font-weight: 500;">@m.EmployeeName</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private IReadOnlyList<ProductDetailDto> _products = [];
+    private IReadOnlyList<StockMovementDto> _movements = [];
+
+    private Guid _selectedProductId;
+    private string? _filterProductId;
+    private CreateStockMovementRequest _movementRequest = new()
+    {
+        MovementType = "IN",
+        Quantity = 1,
+        Reason = "Reposição de estoque"
+    };
+
+    private string? _error;
+    private string? _success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllDataAsync();
+    }
+
+    private async Task LoadAllDataAsync()
+    {
+        _error = null;
+        try
+        {
+            _products = await Gateway.GetProductsAsync();
+            if (_selectedProductId == Guid.Empty && _products.Count > 0)
+            {
+                _selectedProductId = _products[0].Id;
+                OnProductSelectionChanged();
+            }
+            await LoadMovementsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void OnProductSelectionChanged()
+    {
+        var firstVariant = GetVariantsOfSelectedProduct().FirstOrDefault();
+        if (firstVariant is not null)
+        {
+            _movementRequest.ProductVariantId = firstVariant.Id;
+        }
+    }
+
+    private IEnumerable<ProductVariantDto> GetVariantsOfSelectedProduct()
+    {
+        var prod = _products.FirstOrDefault(p => p.Id == _selectedProductId);
+        return prod?.Variants ?? [];
+    }
+
+    private async Task LoadMovementsAsync()
+    {
+        try
+        {
+            Guid? prodFilter = Guid.TryParse(_filterProductId, out var g) ? g : null;
+            _movements = await Gateway.GetStockMovementsAsync(productId: prodFilter, limit: 150);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SubmitMovementAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var mov = await Gateway.RegisterStockMovementAsync(_movementRequest);
+            _products = await Gateway.GetProductsAsync();
+            await LoadMovementsAsync();
+            _success = $"Movimentação registrada! Variante {mov.Color}/{mov.Size} atualizada de {mov.PreviousQuantity} para {mov.NewQuantity} unidades.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}
+

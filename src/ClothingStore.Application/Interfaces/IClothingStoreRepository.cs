@@ -48,3 +48,4 @@ public interface IClothingStoreRepository
     Task<StoreSettings> GetStoreSettingsAsync(CancellationToken ct = default);
     Task UpdateStoreSettingsAsync(StoreSettings settings, CancellationToken ct = default);
 }
+

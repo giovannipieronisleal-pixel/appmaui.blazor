@@ -20,6 +20,7 @@
         <!-- Disable MAUI CSS handling so Blazor can handle it -->
         <EnableDefaultCssItems>false</EnableDefaultCssItems>
         <Nullable>enable</Nullable>
+        <DefaultItemExcludes>$(DefaultItemExcludes);src\**;tests\**;database\**;App_Data\**</DefaultItemExcludes>
 
         <!-- Enable XAML source generation for faster build times and improved performance.
              This generates C# code from XAML at compile time instead of runtime inflation.

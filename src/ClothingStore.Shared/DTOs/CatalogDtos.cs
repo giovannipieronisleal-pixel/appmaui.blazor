@@ -5,6 +5,7 @@ namespace ClothingStore.Shared.DTOs;
 /// </summary>
 public sealed record PublicStoreSettingsDto(
     string StoreName,
+    string StoreSlug,
     string WhatsappNumber,
     string StoreDescription,
     string? LogoPublicUrl,
@@ -89,3 +90,4 @@ public sealed record CatalogQueryFilter(
     string? Color = null,
     string? Size = null,
     bool OnlyInStock = false);
+

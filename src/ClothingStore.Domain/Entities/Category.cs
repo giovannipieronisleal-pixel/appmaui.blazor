@@ -61,3 +61,4 @@ public sealed class Category
         return string.IsNullOrWhiteSpace(clean) ? Guid.NewGuid().ToString("N")[..8] : clean;
     }
 }
+

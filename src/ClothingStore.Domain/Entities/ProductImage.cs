@@ -43,3 +43,4 @@ public sealed class ProductImage
         CreatedAt = DateTimeOffset.UtcNow;
     }
 }
+

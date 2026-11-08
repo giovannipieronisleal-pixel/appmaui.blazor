@@ -1,0 +1,322 @@
+@page "/configuracoes-loja"
+@inject MauiAdminGateway Gateway
+@inject NavigationManager Navigation
+
+@{
+    var effectiveSlug = string.IsNullOrWhiteSpace(_form.StoreSlug)
+        ? WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName)
+        : WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreSlug);
+    var storeCatalogUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl("http://localhost:5190", effectiveSlug);
+    var qrCodeSvgUri = WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(storeCatalogUrl);
+}
+
+<div style="margin-bottom: 1.5rem;">
+    <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Configurações da loja</h1>
+    <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
+        Personalize o Nome da loja, Link fixo para QR Code, Número de WhatsApp (DDI + DDD), Descrição e Logotipo.
+        Qualquer alteração salva aqui é refletida automaticamente no site público, sem necessidade de republicar.
+    </p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert-banner alert-error">@_error</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_success))
+{
+    <div class="alert-banner alert-success">@_success</div>
+}
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.5rem; align-items: start;">
+    <!-- Formulário Principal de Configurações da Loja -->
+    <section class="adm-card">
+        <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">
+            Identidade, Link Fixo e Contato Comercial
+        </h2>
+
+        <div style="display: flex; flex-direction: column; gap: 1.1rem;">
+            <div>
+                <label class="adm-label">Nome da loja *</label>
+                <input type="text"
+                       class="adm-input"
+                       @bind="_form.StoreName"
+                       @bind:event="oninput"
+                       @bind:after="SyncSlugFromStoreNameIfUnlocked"
+                       placeholder="Ex.: Aura Vestuário" />
+            </div>
+
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label class="adm-label" style="margin: 0;">Identificador do Link da Loja (Slug para QR Code Fixo) *</label>
+                    <label style="font-size: 0.76rem; color: var(--adm-muted); display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                        <input type="checkbox" @bind="_autoSyncSlugWithName" />
+                        <span>Sincronizar com o nome da loja</span>
+                    </label>
+                </div>
+                <input type="text" class="adm-input" @bind="_form.StoreSlug" placeholder="aura-vestuario" />
+                <span style="font-size: 0.78rem; color: var(--adm-muted);">
+                    Link gerado com o nome da loja: <strong>/loja/@effectiveSlug</strong> (preparado para QR Code fixo e futura expansão multi-clientes).
+                </span>
+            </div>
+
+            <div>
+                <label class="adm-label">Número de WhatsApp com código do país (DDI) e DDD *</label>
+                <input type="text" class="adm-input" @bind="_form.WhatsappNumber" placeholder="Ex.: 5511999999999" />
+                <span style="font-size: 0.78rem; color: var(--adm-muted);">
+                    Informe DDI + DDD + Número (ex.: <strong>5511999999999</strong>). Usado no botão "Consultar pelo WhatsApp" do site.
+                </span>
+            </div>
+
+            <div>
+                <label class="adm-label">Descrição da loja *</label>
+                <textarea class="adm-textarea" rows="4" @bind="_form.StoreDescription" placeholder="Apresentação da loja exibida no catálogo público..."></textarea>
+            </div>
+
+            <div>
+                <label class="adm-label">Logotipo da loja (opcional — URL ou Upload abaixo)</label>
+                <input type="url" class="adm-input" @bind="_form.LogoPublicUrl" placeholder="https://... (deixe em branco se não quiser logotipo)" />
+            </div>
+
+            <div>
+                <label class="adm-label">Limite padrão para Alerta de Estoque Baixo (unidades)</label>
+                <input type="number" min="0" class="adm-input" @bind="_form.DefaultLowStockThreshold" />
+            </div>
+
+            <button type="button" class="adm-btn adm-btn-success" style="padding: 0.8rem;" @onclick="SaveSettingsAsync">
+                Salvar Configurações da Loja
+            </button>
+        </div>
+    </section>
+
+    <!-- Coluna Direita: Link da Loja + QR Code Fixo + Logotipo + Simulação WhatsApp -->
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- Card do Link do Site e QR Code Fixo -->
+        <section class="adm-card" style="border-left: 4px solid var(--adm-success);">
+            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.5rem;">
+                Link Oficial do Catálogo &amp; QR Code Fixo
+            </h2>
+            <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0;">
+                Este link contém o nome da loja e permanece fixo para impressão em etiquetas, sacolas e balcão:
+            </p>
+
+            <div style="background: #F4F4F5; border: 1px solid var(--adm-border); border-radius: 8px; padding: 0.75rem 1rem; font-family: monospace; font-size: 0.9rem; font-weight: 700; word-break: break-all; margin-bottom: 0.85rem;">
+                @storeCatalogUrl
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.15rem;">
+                <a href="/loja/@effectiveSlug" class="adm-btn adm-btn-primary">
+                    Visualizar Catálogo da Loja Agora
+                </a>
+                <button type="button" class="adm-btn adm-btn-outline" @onclick="() => CopyStoreUrlAsync(storeCatalogUrl)">
+                    @(_copiedUrl ? "Link Copiado!" : "Copiar Link")
+                </button>
+                <button type="button" class="adm-btn adm-btn-outline" @onclick="() => OpenBrowserAsync(storeCatalogUrl)">
+                    Abrir no Navegador &nearr;
+                </button>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 1.25rem; background: #FAF9F6; border: 1px solid var(--adm-border); border-radius: 10px; padding: 1rem; flex-wrap: wrap;">
+                <img src="@qrCodeSvgUri" alt="QR Code da Loja" style="width: 120px; height: 120px; border-radius: 8px;" />
+                <div style="flex: 1; min-width: 180px;">
+                    <div style="font-weight: 700; font-size: 0.95rem;">QR Code Fixo — @_form.StoreName</div>
+                    <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                        Aponta diretamente para <strong>/loja/@effectiveSlug</strong>. Quando você altera produtos, preços, fotos ou WhatsApp no aplicativo, o cliente que escanear este QR Code verá tudo atualizado automaticamente.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Card de Upload de Logotipo -->
+        <section class="adm-card">
+            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.75rem;">
+                Logotipo da Loja (Opcional)
+            </h2>
+
+            @if (!string.IsNullOrWhiteSpace(_form.LogoPublicUrl))
+            {
+                <div style="padding: 1rem; background: #FAF9F6; border: 1px solid var(--adm-border); border-radius: 8px; display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                    <img src="@_form.LogoPublicUrl" alt="Logotipo" style="height: 52px; max-width: 160px; object-fit: contain;" />
+                    <span style="font-weight: 700; font-size: 1.1rem;">@_form.StoreName</span>
+                </div>
+            }
+            else
+            {
+                <div style="padding: 1rem; background: #FAF9F6; border: 1px dashed var(--adm-border); border-radius: 8px; color: var(--adm-muted); font-size: 0.88rem; margin-bottom: 1rem;">
+                    Nenhum logotipo configurado (o site exibirá o nome <strong>@_form.StoreName</strong> em destaque).
+                </div>
+            }
+
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                <button type="button" class="adm-btn adm-btn-primary" @onclick="PickAndUploadLogoAsync">
+                    Enviar Logotipo do Dispositivo
+                </button>
+                @if (!string.IsNullOrWhiteSpace(_form.LogoPublicUrl))
+                {
+                    <button type="button" class="adm-btn adm-btn-danger" @onclick="RemoveLogoAsync">
+                        Remover Logotipo
+                    </button>
+                }
+            </div>
+        </section>
+
+        <!-- Card de Simulação do Botão Consultar pelo WhatsApp -->
+        <section class="adm-card">
+            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.75rem;">
+                Simulação do Botão "Consultar pelo WhatsApp" no Site
+            </h2>
+            <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0;">
+                Veja como o cliente será redirecionado ao clicar em um produto no catálogo:
+            </p>
+
+            <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 1rem; font-size: 0.86rem; color: #166534;">
+                <div style="font-weight: 700; margin-bottom: 0.35rem;">Link Oficial Gerado:</div>
+                <div style="word-break: break-all; font-family: monospace; font-size: 0.78rem; margin-bottom: 0.65rem;">
+                    @WhatsAppLinkBuilder.BuildProductConsultationLink(_form.WhatsappNumber, "Camiseta Básica", "Preta", "M")
+                </div>
+                <div style="font-weight: 700; margin-bottom: 0.2rem;">Mensagem preenchida automaticamente:</div>
+                <div>"@WhatsAppLinkBuilder.BuildProductConsultationMessage("Camiseta Básica", "Preta", "M")"</div>
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private UpdateStoreSettingsRequest _form = new()
+    {
+        StoreName = "Aura Vestuário",
+        StoreSlug = "aura-vestuario",
+        WhatsappNumber = "5511999999999",
+        StoreDescription = "Curadoria de roupas essenciais.",
+        DefaultLowStockThreshold = 3
+    };
+
+    private bool _autoSyncSlugWithName = true;
+    private bool _copiedUrl;
+    private string? _error;
+    private string? _success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettingsAsync();
+    }
+
+    private async Task LoadSettingsAsync()
+    {
+        _error = null;
+        try
+        {
+            var current = await Gateway.GetStoreSettingsAsync();
+            _form = new UpdateStoreSettingsRequest
+            {
+                StoreName = current.StoreName,
+                StoreSlug = current.StoreSlug,
+                WhatsappNumber = current.WhatsappNumber,
+                StoreDescription = current.StoreDescription,
+                LogoPublicUrl = current.LogoPublicUrl,
+                DefaultLowStockThreshold = current.DefaultLowStockThreshold
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SyncSlugFromStoreNameIfUnlocked()
+    {
+        if (_autoSyncSlugWithName)
+        {
+            _form.StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName);
+        }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            if (_autoSyncSlugWithName || string.IsNullOrWhiteSpace(_form.StoreSlug))
+            {
+                _form.StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName);
+            }
+
+            var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            _form.StoreSlug = updated.StoreSlug;
+            _form.WhatsappNumber = updated.WhatsappNumber;
+            _form.LogoPublicUrl = updated.LogoPublicUrl;
+            _success = $"Configurações salvas! O link do catálogo (/loja/{updated.StoreSlug}) e os dados da loja já estão ativos.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task CopyStoreUrlAsync(string url)
+    {
+        try
+        {
+            await Clipboard.Default.SetTextAsync(url);
+            _copiedUrl = true;
+        }
+        catch
+        {
+        }
+    }
+
+    private static async Task OpenBrowserAsync(string url)
+    {
+        try
+        {
+            await LocalWebServerLauncher.EnsureWebCatalogRunningAsync();
+            await Launcher.Default.OpenAsync(new Uri(url));
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task PickAndUploadLogoAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var file = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Selecione a imagem do logotipo da loja",
+                FileTypes = FilePickerFileType.Images
+            });
+
+            if (file is null)
+                return;
+
+            await using var stream = await file.OpenReadAsync();
+            var updated = await Gateway.UploadStoreLogoAsync(file.FileName, stream, file.ContentType ?? "image/png");
+            _form.LogoPublicUrl = updated.LogoPublicUrl;
+            _success = "Logotipo da loja enviado e atualizado com sucesso!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task RemoveLogoAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            await Gateway.RemoveStoreLogoAsync();
+            _form.LogoPublicUrl = null;
+            _success = "Logotipo removido com sucesso.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

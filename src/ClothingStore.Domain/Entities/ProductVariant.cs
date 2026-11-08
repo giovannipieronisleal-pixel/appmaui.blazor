@@ -34,6 +34,7 @@ public sealed class ProductVariant
         if (productId == Guid.Empty)
             throw new DomainException("A variante deve pertencer a um produto válido.");
 
+        ProductId = productId;
         UpdateDetails(sku, color, size, colorHex, lowStockThreshold, true);
     }
 
@@ -167,3 +168,4 @@ public sealed class ProductVariant
         };
     }
 }
+

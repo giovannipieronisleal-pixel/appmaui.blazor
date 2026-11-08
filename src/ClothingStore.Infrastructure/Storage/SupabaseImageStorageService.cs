@@ -6,7 +6,7 @@ namespace ClothingStore.Infrastructure.Storage;
 
 /// <summary>
 /// Serviço de armazenamento de imagens integrado ao Supabase Storage (via API REST oficial com Service Role Key no backend)
-/// e fallback automático para armazenamento local em /wwwroot/uploads durante desenvolvimento.
+/// e fallback automático com Data URI + arquivo local durante o desenvolvimento para funcionar imediatamente no App e no Site.
 /// </summary>
 public sealed class SupabaseImageStorageService : IImageStorageService
 {
@@ -15,7 +15,6 @@ public sealed class SupabaseImageStorageService : IImageStorageService
     private readonly string? _supabaseServiceKey;
     private readonly string _bucketName;
     private readonly string _localUploadsRoot;
-    private readonly string _publicBaseUrl;
 
     public SupabaseImageStorageService(
         HttpClient httpClient,
@@ -26,7 +25,6 @@ public sealed class SupabaseImageStorageService : IImageStorageService
         _supabaseUrl = (configuration["SUPABASE_URL"] ?? configuration["Supabase:Url"])?.TrimEnd('/');
         _supabaseServiceKey = configuration["SUPABASE_SERVICE_ROLE_KEY"] ?? configuration["Supabase:ServiceRoleKey"];
         _bucketName = configuration["SUPABASE_STORAGE_BUCKET"] ?? configuration["Supabase:Bucket"] ?? "clothing-images";
-        _publicBaseUrl = (configuration["PUBLIC_API_BASE_URL"] ?? configuration["PublicApiBaseUrl"] ?? "http://localhost:5180").TrimEnd('/');
         _localUploadsRoot = Path.Combine(localWebRootPath, "uploads");
     }
 
@@ -51,6 +49,7 @@ public sealed class SupabaseImageStorageService : IImageStorageService
         var safeFolder = string.IsNullOrWhiteSpace(folder) ? "products" : folder.Trim('/');
         var uniqueFileName = $"{DateTimeOffset.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
         var storagePath = $"{safeFolder}/{uniqueFileName}";
+        var resolvedMime = ResolveMimeType(contentType, extension);
 
         if (IsSupabaseConfigured)
         {
@@ -61,8 +60,7 @@ public sealed class SupabaseImageStorageService : IImageStorageService
             request.Headers.Add("x-upsert", "true");
 
             var streamContent = new StreamContent(contentStream);
-            streamContent.Headers.ContentType = new MediaTypeHeaderValue(
-                string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType);
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue(resolvedMime);
             request.Content = streamContent;
 
             var response = await _httpClient.SendAsync(request, ct);
@@ -72,21 +70,29 @@ public sealed class SupabaseImageStorageService : IImageStorageService
             return (storagePath, publicUrl);
         }
 
-        // Fallback de desenvolvimento: salva localmente na pasta wwwroot/uploads da API
-        var targetDirectory = Path.Combine(_localUploadsRoot, safeFolder);
-        if (!Directory.Exists(targetDirectory))
+        // Fallback local: lê os bytes, salva cópia em disco e retorna Data URI para funcionar tanto no MAUI quanto no Site Web
+        using var ms = new MemoryStream();
+        await contentStream.CopyToAsync(ms, ct);
+        var bytes = ms.ToArray();
+
+        try
         {
-            Directory.CreateDirectory(targetDirectory);
+            var targetDirectory = Path.Combine(_localUploadsRoot, safeFolder);
+            if (!Directory.Exists(targetDirectory))
+            {
+                Directory.CreateDirectory(targetDirectory);
+            }
+
+            var physicalPath = Path.Combine(targetDirectory, uniqueFileName);
+            await File.WriteAllBytesAsync(physicalPath, bytes, ct);
+        }
+        catch
+        {
         }
 
-        var physicalPath = Path.Combine(targetDirectory, uniqueFileName);
-        await using (var fileStream = File.Create(physicalPath))
-        {
-            await contentStream.CopyToAsync(fileStream, ct);
-        }
-
-        var localPublicUrl = $"{_publicBaseUrl}/uploads/{storagePath}";
-        return (storagePath, localPublicUrl);
+        var base64 = Convert.ToBase64String(bytes);
+        var dataUri = $"data:{resolvedMime};base64,{base64}";
+        return (storagePath, dataUri);
     }
 
     public async Task DeleteImageAsync(string storagePath, CancellationToken ct = default)
@@ -94,7 +100,7 @@ public sealed class SupabaseImageStorageService : IImageStorageService
         if (string.IsNullOrWhiteSpace(storagePath))
             return;
 
-        if (IsSupabaseConfigured && !storagePath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        if (IsSupabaseConfigured && !storagePath.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !storagePath.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
             try
             {
@@ -106,15 +112,35 @@ public sealed class SupabaseImageStorageService : IImageStorageService
             }
             catch
             {
-                // Ignora falha de deleção remota caso o objeto já tenha sido removido
             }
             return;
         }
 
-        var physicalPath = Path.Combine(_localUploadsRoot, storagePath.Replace('/', Path.DirectorySeparatorChar));
-        if (File.Exists(physicalPath))
+        try
         {
-            File.Delete(physicalPath);
+            var physicalPath = Path.Combine(_localUploadsRoot, storagePath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(physicalPath))
+            {
+                File.Delete(physicalPath);
+            }
         }
+        catch
+        {
+        }
+    }
+
+    private static string ResolveMimeType(string? contentType, string extension)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType) && contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return contentType;
+
+        return extension.ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".gif" => "image/gif",
+            ".svg" => "image/svg+xml",
+            _ => "image/jpeg"
+        };
     }
 }

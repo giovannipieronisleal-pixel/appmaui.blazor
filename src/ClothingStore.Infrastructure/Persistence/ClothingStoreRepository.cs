@@ -7,7 +7,7 @@ namespace ClothingStore.Infrastructure.Persistence;
 
 /// <summary>
 /// Implementação thread-safe e transacional de <see cref="IClothingStoreRepository"/>.
-/// Sincroniza os dados em arquivo persistente JSON e suporta integração com Supabase PostgreSQL REST API.
+/// Sincroniza os dados em arquivo persistente JSON em tempo real entre a API, o Site Blazor e o App .NET MAUI.
 /// </summary>
 public sealed class ClothingStoreRepository : IClothingStoreRepository
 {
@@ -15,6 +15,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
     private readonly string _storageFilePath;
     private readonly IPasswordHasher _passwordHasher;
     private ClothingStoreDatabaseState _state;
+    private DateTime _lastLoadedUtc = DateTime.MinValue;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -49,13 +50,13 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
                 if (loaded is not null && loaded.Roles.Count > 0)
                 {
                     HydrateNavigationProperties(loaded);
+                    _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
                     return loaded;
                 }
             }
         }
         catch
         {
-            // Se o arquivo estiver corrompido ou inacessível, inicializa com o seed padrão.
         }
 
         var seeded = ClothingStoreDatabaseState.CreateInitialSeed(_passwordHasher);
@@ -91,6 +92,21 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
             {
                 product.Category = cat;
             }
+
+            foreach (var v in product.Variants)
+            {
+                v.ProductId = product.Id;
+            }
+
+            foreach (var img in product.Images)
+            {
+                img.ProductId = product.Id;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(state.StoreSettings.StoreSlug))
+        {
+            state.StoreSettings.StoreSlug = Category.GenerateSlug(state.StoreSettings.StoreName);
         }
     }
 
@@ -106,10 +122,35 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
 
             var json = JsonSerializer.Serialize(state, JsonOptions);
             File.WriteAllText(_storageFilePath, json);
+            _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
         }
         catch
         {
-            // Em ambientes somente leitura ou testes em memória, mantém o estado em RAM.
+        }
+    }
+
+    private void RefreshFromDiskIfModified()
+    {
+        try
+        {
+            if (File.Exists(_storageFilePath))
+            {
+                var lastWrite = File.GetLastWriteTimeUtc(_storageFilePath);
+                if (lastWrite > _lastLoadedUtc)
+                {
+                    var json = File.ReadAllText(_storageFilePath);
+                    var loaded = JsonSerializer.Deserialize<ClothingStoreDatabaseState>(json, JsonOptions);
+                    if (loaded is not null && loaded.Roles.Count > 0)
+                    {
+                        HydrateNavigationProperties(loaded);
+                        _state = loaded;
+                        _lastLoadedUtc = lastWrite;
+                    }
+                }
+            }
+        }
+        catch
+        {
         }
     }
 
@@ -118,6 +159,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Roles.ToList();
         }
         finally
@@ -131,6 +173,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Roles.FirstOrDefault(r =>
                 string.Equals(r.Name, roleName, StringComparison.OrdinalIgnoreCase));
         }
@@ -145,6 +188,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             var normalized = email.Trim().ToLowerInvariant();
             return _state.Users.FirstOrDefault(u =>
                 string.Equals(u.Email, normalized, StringComparison.OrdinalIgnoreCase));
@@ -160,6 +204,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Users.FirstOrDefault(u => u.Id == userId);
         }
         finally
@@ -173,6 +218,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Employees.FirstOrDefault(e => e.UserId == userId);
         }
         finally
@@ -186,6 +232,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Employees.FirstOrDefault(e => e.Id == employeeId);
         }
         finally
@@ -199,6 +246,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Employees
                 .OrderByDescending(e => e.IsActive)
                 .ThenBy(e => e.FullName)
@@ -215,6 +263,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             if (_state.Users.Any(u => string.Equals(u.Email, user.Email, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new DomainException($"Já existe um usuário cadastrado com o e-mail '{user.Email}'.");
@@ -250,6 +299,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             var query = _state.Categories.AsEnumerable();
             if (onlyActive)
             {
@@ -268,6 +318,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Categories.FirstOrDefault(c => c.Id == id);
         }
         finally
@@ -281,6 +332,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.Categories.FirstOrDefault(c =>
                 string.Equals(c.Slug, slug, StringComparison.OrdinalIgnoreCase));
         }
@@ -295,6 +347,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             if (_state.Categories.Any(c => string.Equals(c.Slug, category.Slug, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new DomainException($"Já existe uma categoria com o identificador '{category.Slug}'.");
@@ -329,6 +382,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             HydrateNavigationProperties(_state);
             var query = _state.Products.AsEnumerable();
             if (!includeArchived)
@@ -348,6 +402,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             HydrateNavigationProperties(_state);
             return _state.Products.FirstOrDefault(p => p.Id == id);
         }
@@ -362,6 +417,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             HydrateNavigationProperties(_state);
             if (Guid.TryParse(slugOrId, out var id))
             {
@@ -382,6 +438,8 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
+            HydrateNavigationProperties(_state);
             return _state.Products
                 .SelectMany(p => p.Variants)
                 .FirstOrDefault(v => v.Id == variantId);
@@ -397,6 +455,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             if (_state.Products.Any(p => !p.IsArchived && string.Equals(p.Slug, product.Slug, StringComparison.OrdinalIgnoreCase)))
             {
                 product.Slug = $"{product.Slug}-{Guid.NewGuid().ToString("N")[..4]}";
@@ -432,6 +491,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             var product = _state.Products.FirstOrDefault(p => p.Id == productId)
                 ?? throw new DomainException("Produto não encontrado.");
 
@@ -465,6 +525,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             var query = _state.StockMovements.AsEnumerable();
 
             if (variantId.HasValue)
@@ -514,6 +575,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         await _lock.WaitAsync(ct);
         try
         {
+            RefreshFromDiskIfModified();
             return _state.StoreSettings;
         }
         finally
