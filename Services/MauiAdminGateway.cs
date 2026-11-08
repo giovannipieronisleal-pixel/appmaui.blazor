@@ -120,6 +120,26 @@ public sealed class MauiAdminGateway
         }
     }
 
+    public Task<AuthSetupStatusDto> GetSetupStatusAsync() =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.GetSetupStatusAsync(),
+            () => _authService.GetSetupStatusAsync());
+
+    public async Task<LoginResponse> RegisterInitialAdminByEmailAsync(RegisterInitialAdminRequest request)
+    {
+        var response = await ExecuteWithFallbackAsync(
+            () => _apiClient.RegisterInitialAdminByEmailAsync(request),
+            async () =>
+            {
+                var localResp = await _authService.RegisterInitialAdminByEmailAsync(request);
+                _apiClient.SetSession(localResp.AccessToken, localResp.Employee);
+                return localResp;
+            });
+
+        await PersistSessionAsync(response);
+        return response;
+    }
+
     public async Task<LoginResponse> LoginAsync(LoginRequest request)
     {
         var response = await ExecuteWithFallbackAsync(
@@ -131,6 +151,32 @@ public sealed class MauiAdminGateway
                 return localResp;
             });
 
+        await PersistSessionAsync(response);
+        return response;
+    }
+
+    public Task<RequestEmailLoginCodeResponse> RequestEmailLoginCodeAsync(RequestEmailLoginCodeRequest request) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.RequestEmailLoginCodeAsync(request),
+            () => _authService.RequestEmailLoginCodeAsync(request));
+
+    public async Task<LoginResponse> LoginWithEmailCodeAsync(VerifyEmailLoginCodeRequest request)
+    {
+        var response = await ExecuteWithFallbackAsync(
+            () => _apiClient.LoginWithEmailCodeAsync(request),
+            async () =>
+            {
+                var localResp = await _authService.LoginWithEmailCodeAsync(request);
+                _apiClient.SetSession(localResp.AccessToken, localResp.Employee);
+                return localResp;
+            });
+
+        await PersistSessionAsync(response);
+        return response;
+    }
+
+    private async Task PersistSessionAsync(LoginResponse response)
+    {
         AccessToken = response.AccessToken;
         CurrentEmployee = response.Employee;
 
@@ -144,7 +190,6 @@ public sealed class MauiAdminGateway
         }
 
         AuthStateChanged?.Invoke();
-        return response;
     }
 
     public void Logout()

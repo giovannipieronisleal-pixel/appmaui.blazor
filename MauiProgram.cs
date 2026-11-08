@@ -29,7 +29,12 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
-        var apiBaseUrl = Environment.GetEnvironmentVariable("API_BASE_URL") ?? "http://localhost:5180";
+        // No Android Emulator, 10.0.2.2 aponta automaticamente para o localhost do computador host
+        var defaultApiUrl = OperatingSystem.IsAndroid()
+            ? "http://10.0.2.2:5180"
+            : "http://localhost:5180";
+
+        var apiBaseUrl = Environment.GetEnvironmentVariable("API_BASE_URL") ?? defaultApiUrl;
 
         builder.Services.AddSingleton(_ =>
         {
@@ -40,20 +45,24 @@ public static class MauiProgram
             return new HttpClient(handler)
             {
                 BaseAddress = new Uri(apiBaseUrl),
-                Timeout = TimeSpan.FromMilliseconds(1200)
+                Timeout = TimeSpan.FromMilliseconds(1500)
             };
         });
         builder.Services.AddSingleton<AdminApiClient>();
 
-        // Repositório compartilhado para sincronização imediata com a API e o Site Blazor
+        // Repositório compartilhado no Windows ou armazenamento seguro do app no Android
         var sharedWorkspaceDb = @"C:\Dev\appmaui.blazor\App_Data\clothingstore_db.json";
-        var dbFilePath = Directory.Exists(@"C:\Dev\appmaui.blazor")
+        var dbFilePath = OperatingSystem.IsWindows() && Directory.Exists(@"C:\Dev\appmaui.blazor")
             ? sharedWorkspaceDb
             : Path.Combine(FileSystem.AppDataDirectory, "clothingstore_db.json");
+
+        var outboxFilePath = Path.Combine(Path.GetDirectoryName(dbFilePath) ?? FileSystem.AppDataDirectory, "email_outbox.txt");
 
         builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         builder.Services.AddSingleton<IJwtTokenService>(sp =>
             new JwtTokenService(sp.GetRequiredService<IConfiguration>()));
+        builder.Services.AddSingleton<IEmailService>(sp =>
+            new SmtpEmailService(sp.GetRequiredService<IConfiguration>(), outboxFilePath));
         builder.Services.AddSingleton<IClothingStoreRepository>(sp =>
             new ClothingStoreRepository(sp.GetRequiredService<IPasswordHasher>(), dbFilePath));
 
@@ -61,7 +70,7 @@ public static class MauiProgram
         {
             var http = sp.GetRequiredService<HttpClient>();
             var cfg = sp.GetRequiredService<IConfiguration>();
-            var uploadsDir = Directory.Exists(@"C:\Dev\appmaui.blazor\src\ClothingStore.Api")
+            var uploadsDir = OperatingSystem.IsWindows() && Directory.Exists(@"C:\Dev\appmaui.blazor\src\ClothingStore.Api")
                 ? @"C:\Dev\appmaui.blazor\src\ClothingStore.Api\wwwroot"
                 : FileSystem.AppDataDirectory;
             return new SupabaseImageStorageService(http, cfg, uploadsDir);
@@ -74,8 +83,10 @@ public static class MauiProgram
         builder.Services.AddSingleton<EmployeeAndSettingsService>();
         builder.Services.AddSingleton<MauiAdminGateway>();
 
-        // Inicia automaticamente o servidor do site público Blazor (http://localhost:5190) em segundo plano
-        _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
+        if (OperatingSystem.IsWindows())
+        {
+            _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
+        }
 
         return builder.Build();
     }

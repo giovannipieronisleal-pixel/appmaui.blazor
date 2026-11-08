@@ -40,10 +40,42 @@ public sealed class AdminApiClient
         AuthStateChanged?.Invoke();
     }
 
-    // Autenticação
+    // Autenticação e Entrada por E-mail
+    public async Task<AuthSetupStatusDto> GetSetupStatusAsync(CancellationToken ct = default)
+    {
+        var response = await _httpClient.GetAsync("/api/auth/setup-status", ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<AuthSetupStatusDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<LoginResponse> RegisterInitialAdminByEmailAsync(RegisterInitialAdminRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/auth/register-initial-admin", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        var loginResult = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
+        SetSession(loginResult.AccessToken, loginResult.Employee);
+        return loginResult;
+    }
+
     public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
         var response = await _httpClient.PostAsJsonAsync("/api/auth/login", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        var loginResult = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
+        SetSession(loginResult.AccessToken, loginResult.Employee);
+        return loginResult;
+    }
+
+    public async Task<RequestEmailLoginCodeResponse> RequestEmailLoginCodeAsync(RequestEmailLoginCodeRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/auth/email-code/request", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<RequestEmailLoginCodeResponse>(cancellationToken: ct))!;
+    }
+
+    public async Task<LoginResponse> LoginWithEmailCodeAsync(VerifyEmailLoginCodeRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/auth/email-code/verify", request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var loginResult = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
         SetSession(loginResult.AccessToken, loginResult.Employee);

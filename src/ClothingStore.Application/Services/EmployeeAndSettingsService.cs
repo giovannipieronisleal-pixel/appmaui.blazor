@@ -46,6 +46,8 @@ public sealed class EmployeeAndSettingsService
 
     public async Task<EmployeeProfileDto> CreateEmployeeAsync(CreateEmployeeRequest request, CancellationToken ct = default)
     {
+        AuthService.ValidatePasswordStrength(request.InitialPassword);
+
         var roleName = string.Equals(request.RoleName, RoleNames.Admin, StringComparison.OrdinalIgnoreCase)
             ? RoleNames.Admin
             : RoleNames.Employee;
@@ -53,8 +55,32 @@ public sealed class EmployeeAndSettingsService
         var role = await _repository.GetRoleByNameAsync(roleName, ct)
             ?? throw new DomainException($"Perfil '{roleName}' não encontrado.");
 
+        // O e-mail não é obrigatório: usa o Login (Username), ou o E-mail (se informado), ou gera automaticamente a partir do Nome
+        var loginIdentifier = !string.IsNullOrWhiteSpace(request.Username)
+            ? request.Username.Trim().ToLowerInvariant()
+            : !string.IsNullOrWhiteSpace(request.Email)
+                ? request.Email.Trim().ToLowerInvariant()
+                : Category.GenerateSlug(request.FullName).Replace('-', '.');
+
+        if (string.IsNullOrWhiteSpace(loginIdentifier))
+        {
+            loginIdentifier = $"func.{Guid.NewGuid().ToString("N")[..6]}";
+        }
+
+        // Caso o login gerado automaticamente já exista e o usuário não digitou um login específico, adiciona sufixo numérico
+        if (string.IsNullOrWhiteSpace(request.Username) && string.IsNullOrWhiteSpace(request.Email))
+        {
+            var baseLogin = loginIdentifier;
+            int suffix = 2;
+            while (await _repository.GetUserByEmailAsync(loginIdentifier, ct) is not null)
+            {
+                loginIdentifier = $"{baseLogin}{suffix}";
+                suffix++;
+            }
+        }
+
         var passwordHash = _passwordHasher.HashPassword(request.InitialPassword);
-        var user = new User(request.Email, passwordHash, role.Id)
+        var user = new User(loginIdentifier, passwordHash, role.Id)
         {
             Role = role
         };

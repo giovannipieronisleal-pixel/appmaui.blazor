@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.roles (
     default_permissions jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
--- 2. USERS (Contas de Autenticação)
+-- 2. USERS (Contas de Autenticação com proteção contra força bruta e entrada por código no e-mail)
 CREATE TABLE IF NOT EXISTS public.users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     email varchar(150) NOT NULL UNIQUE,
@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS public.users (
     is_active boolean NOT NULL DEFAULT true,
     reset_token_hash text NULL,
     reset_token_expires_at timestamptz NULL,
+    email_login_code_hash text NULL,
+    email_login_code_expires_at timestamptz NULL,
+    failed_login_attempts int NOT NULL DEFAULT 0,
+    lockout_end_at timestamptz NULL,
     last_login_at timestamptz NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -128,7 +132,7 @@ CREATE INDEX IF NOT EXISTS ix_stock_movements_variant
 CREATE TABLE IF NOT EXISTS public.store_settings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     store_name varchar(120) NOT NULL,
-    store_slug varchar(140) NOT NULL UNIQUE DEFAULT 'aura-vestuario',
+    store_slug varchar(140) NOT NULL UNIQUE DEFAULT 'minha-loja',
     whatsapp_number varchar(20) NOT NULL,
     store_description text NOT NULL,
     logo_storage_path text NULL,

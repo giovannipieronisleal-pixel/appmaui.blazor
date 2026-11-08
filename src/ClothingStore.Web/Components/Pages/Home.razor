@@ -56,68 +56,86 @@
         <a href="/loja/@_store.StoreSlug/catalogo" class="btn btn-outline">Ver todos os produtos &rarr;</a>
     </div>
 
-    <div class="product-grid">
-        @foreach (var product in _products)
-        {
-            <article class="product-card">
-                <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-image-wrap">
-                    @if (!string.IsNullOrWhiteSpace(product.PrimaryImageUrl))
-                    {
-                        <img src="@product.PrimaryImageUrl" alt="@product.Name" class="product-image" loading="lazy" />
-                    }
-                    else
-                    {
-                        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.9rem;">
-                            Sem fotografia
+    @if (_products.Count == 0)
+    {
+        <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3rem; text-align: center; margin-bottom: 2rem;">
+            <h3 style="margin-bottom: 0.5rem;">Novas peças em breve</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1.25rem;">
+                Nosso catálogo está sendo atualizado. Entre em contato pelo WhatsApp para atendimento personalizado.
+            </p>
+            <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="btn btn-whatsapp">
+                Falar pelo WhatsApp
+            </a>
+        </div>
+    }
+    else
+    {
+        <div class="product-grid">
+            @foreach (var product in _products)
+            {
+                <article class="product-card">
+                    <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-image-wrap">
+                        @if (!string.IsNullOrWhiteSpace(product.PrimaryImageUrl))
+                        {
+                            <img src="@product.PrimaryImageUrl" alt="@product.Name" class="product-image" loading="lazy" />
+                        }
+                        else
+                        {
+                            <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.9rem;">
+                                Sem fotografia
+                            </div>
+                        }
+
+                        @if (product.HasAvailableStock)
+                        {
+                            <span class="stock-badge badge-in-stock">Disponível</span>
+                        }
+                        else
+                        {
+                            <span class="stock-badge badge-out-of-stock">Indisponível</span>
+                        }
+                    </a>
+
+                    <div class="product-card-body">
+                        <span class="product-category">@product.CategoryName</span>
+                        <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-title">@product.Name</a>
+                        <div class="product-price">@product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
+
+                        <div class="product-meta-row">
+                            <div class="color-dots" title="Cores disponíveis">
+                                @foreach (var color in product.AvailableColors.Take(5))
+                                {
+                                    <span class="color-dot" style="background-color: @color.ColorHex;" title="@color.Color"></span>
+                                }
+                            </div>
+                            <div class="size-chips">
+                                @foreach (var size in product.AvailableSizes)
+                                {
+                                    <span class="size-chip-mini">@size</span>
+                                }
+                            </div>
                         </div>
-                    }
 
-                    @if (product.HasAvailableStock)
-                    {
-                        <span class="stock-badge badge-in-stock">Disponível (@product.TotalStockQuantity un.)</span>
-                    }
-                    else
-                    {
-                        <span class="stock-badge badge-out-of-stock">Esgotado</span>
-                    }
-                </a>
-
-                <div class="product-card-body">
-                    <span class="product-category">@product.CategoryName</span>
-                    <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-title">@product.Name</a>
-                    <div class="product-price">@product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
-
-                    <div class="product-meta-row">
-                        <div class="color-dots" title="Cores disponíveis">
-                            @foreach (var color in product.AvailableColors.Take(5))
-                            {
-                                <span class="color-dot" style="background-color: @color.ColorHex;" title="@color.Color"></span>
-                            }
-                        </div>
-                        <div class="size-chips">
-                            @foreach (var size in product.AvailableSizes)
-                            {
-                                <span class="size-chip-mini">@size</span>
-                            }
+                        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+                            <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
+                                Ver cores e tamanhos
+                            </a>
                         </div>
                     </div>
-
-                    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
-                        <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
-                            Ver cores e tamanhos
-                        </a>
-                    </div>
-                </div>
-            </article>
-        }
-    </div>
+                </article>
+            }
+        </div>
+    }
 </div>
 
 @code {
     [Parameter]
     public string? StoreSlug { get; set; }
 
-    private PublicStoreSettingsDto _store = new("Aura Vestuário", "aura-vestuario", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private PublicStoreSettingsDto _store = new("Minha Loja", "minha-loja", "5511900000000", "", null, DateTimeOffset.UtcNow);
     private IReadOnlyList<CategoryDto> _categories = [];
     private IReadOnlyList<CatalogProductCardDto> _products = [];
 

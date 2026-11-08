@@ -19,7 +19,7 @@
 
     @if (Gateway.IsAdmin)
     {
-        <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
+        <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
             Administração
         </div>
 
@@ -32,7 +32,7 @@
         </NavLink>
     }
 
-    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
+    <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
         Catálogo Público (QR Code)
     </div>
 
@@ -42,7 +42,7 @@
 </nav>
 
 @code {
-    private string _storeSlug = "aura-vestuario";
+    private string _storeSlug = "minha-loja";
 
     protected override async Task OnInitializedAsync()
     {

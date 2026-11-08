@@ -4,6 +4,7 @@
 @page "/site/produto/{Slug}"
 @page "/loja/{StoreSlug}/produto/{Slug}"
 @using ClothingStore.Application.Services
+@inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
 
@@ -11,37 +12,40 @@
     var fullStoreUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl("http://localhost:5190", _store.StoreSlug);
 }
 
-<!-- Barra Superior de Controle (Link Personalizado da Loja para QR Code Fixo) -->
-<div style="background: #18181B; color: #FFFFFF; padding: 0.7rem 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-        <span style="background: #16A34A; color: #FFFFFF; font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 999px; text-transform: uppercase;">
-            Catálogo Público da Loja
-        </span>
-        <span style="font-size: 0.85rem; color: #D4D4D8;">
-            Link do QR Code: <strong style="color: #FFFFFF; font-family: monospace;">@fullStoreUrl</strong>
-        </span>
+@if (Gateway.IsAuthenticated)
+{
+    <!-- Barra Superior de Controle (Exibida apenas para usuários autenticados no App) -->
+    <div style="background: #18181B; color: #FFFFFF; padding: 0.7rem 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <span style="background: #16A34A; color: #FFFFFF; font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 999px; text-transform: uppercase;">
+                Catálogo Público da Loja
+            </span>
+            <span style="font-size: 0.85rem; color: #D4D4D8;">
+                Link do QR Code: <strong style="color: #FFFFFF; font-family: monospace;">@fullStoreUrl</strong>
+            </span>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button"
+                    class="adm-btn adm-btn-outline"
+                    style="background: #27272A; color: #FFFFFF; border-color: #3F3F46; padding: 0.35rem 0.75rem; font-size: 0.8rem;"
+                    @onclick="() => CopyLinkAsync(fullStoreUrl)">
+                @(_copied ? "Link Copiado!" : "Copiar Link da Loja")
+            </button>
+
+            <button type="button"
+                    class="adm-btn adm-btn-outline"
+                    style="background: #27272A; color: #FFFFFF; border-color: #3F3F46; padding: 0.35rem 0.75rem; font-size: 0.8rem;"
+                    @onclick="() => OpenExternalWebsiteAsync(fullStoreUrl)">
+                Abrir no Navegador &nearr;
+            </button>
+
+            <a href="/" class="adm-btn adm-btn-primary" style="background: #FFFFFF; color: #18181B; padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                Voltar ao Painel Admin
+            </a>
+        </div>
     </div>
-
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <button type="button"
-                class="adm-btn adm-btn-outline"
-                style="background: #27272A; color: #FFFFFF; border-color: #3F3F46; padding: 0.35rem 0.75rem; font-size: 0.8rem;"
-                @onclick="() => CopyLinkAsync(fullStoreUrl)">
-            @(_copied ? "Link Copiado!" : "Copiar Link da Loja")
-        </button>
-
-        <button type="button"
-                class="adm-btn adm-btn-outline"
-                style="background: #27272A; color: #FFFFFF; border-color: #3F3F46; padding: 0.35rem 0.75rem; font-size: 0.8rem;"
-                @onclick="() => OpenExternalWebsiteAsync(fullStoreUrl)">
-            Abrir no Navegador &nearr;
-        </button>
-
-        <a href="/" class="adm-btn adm-btn-primary" style="background: #FFFFFF; color: #18181B; padding: 0.35rem 0.75rem; font-size: 0.8rem;">
-            Voltar ao Painel Admin
-        </a>
-    </div>
-</div>
+}
 
 <!-- Cabeçalho da Loja (Carregado Dinamicamente das Configurações da Loja) -->
 <div style="background: #FAF9F6; border: 1px solid #E7E5E4; border-radius: 12px; overflow: hidden; color: #18181B;">
@@ -338,7 +342,7 @@
     [Parameter]
     public string? Slug { get; set; }
 
-    private PublicStoreSettingsDto _store = new("Aura Vestuário", "aura-vestuario", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private PublicStoreSettingsDto _store = new("Minha Loja", "minha-loja", "5511900000000", "", null, DateTimeOffset.UtcNow);
     private CatalogFiltersDto _filters = new([], [], []);
     private IReadOnlyList<CatalogProductCardDto> _products = [];
     private ProductDetailDto? _selectedProduct;

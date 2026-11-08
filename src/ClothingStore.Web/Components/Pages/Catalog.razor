@@ -20,7 +20,7 @@
                 <div class="filter-group-title">Pesquisar Peça</div>
                 <input type="text"
                        class="form-input"
-                       placeholder="Ex.: Camiseta, Linho, Vestido..."
+                       placeholder="Pesquisar pelo nome da peça..."
                        @bind="_searchText"
                        @bind:event="oninput"
                        @bind:after="ApplyFiltersAsync" />
@@ -120,11 +120,11 @@
 
                                 @if (product.HasAvailableStock)
                                 {
-                                    <span class="stock-badge badge-in-stock">Em estoque (@product.TotalStockQuantity un.)</span>
+                                    <span class="stock-badge badge-in-stock">Em estoque</span>
                                 }
                                 else
                                 {
-                                    <span class="stock-badge badge-out-of-stock">Sem estoque</span>
+                                    <span class="stock-badge badge-out-of-stock">Indisponível</span>
                                 }
                             </a>
 
@@ -169,7 +169,7 @@
     [SupplyParameterFromQuery(Name = "categoria")]
     public string? QueryCategorySlug { get; set; }
 
-    private PublicStoreSettingsDto _store = new("Aura Vestuário", "aura-vestuario", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private PublicStoreSettingsDto _store = new("Minha Loja", "minha-loja", "5511900000000", "", null, DateTimeOffset.UtcNow);
     private CatalogFiltersDto _filters = new([], [], []);
     private IReadOnlyList<CatalogProductCardDto> _products = [];
 

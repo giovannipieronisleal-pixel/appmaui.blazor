@@ -43,7 +43,7 @@
                        @bind="_form.StoreName"
                        @bind:event="oninput"
                        @bind:after="SyncSlugFromStoreNameIfUnlocked"
-                       placeholder="Ex.: Aura Vestuário" />
+                       placeholder="Digite o nome oficial da loja" />
             </div>
 
             <div>
@@ -54,7 +54,7 @@
                         <span>Sincronizar com o nome da loja</span>
                     </label>
                 </div>
-                <input type="text" class="adm-input" @bind="_form.StoreSlug" placeholder="aura-vestuario" />
+                <input type="text" class="adm-input" @bind="_form.StoreSlug" placeholder="minha-loja" />
                 <span style="font-size: 0.78rem; color: var(--adm-muted);">
                     Link gerado com o nome da loja: <strong>/loja/@effectiveSlug</strong> (preparado para QR Code fixo e futura expansão multi-clientes).
                 </span>
@@ -184,10 +184,10 @@
 @code {
     private UpdateStoreSettingsRequest _form = new()
     {
-        StoreName = "Aura Vestuário",
-        StoreSlug = "aura-vestuario",
-        WhatsappNumber = "5511999999999",
-        StoreDescription = "Curadoria de roupas essenciais.",
+        StoreName = "Minha Loja",
+        StoreSlug = "minha-loja",
+        WhatsappNumber = "5511900000000",
+        StoreDescription = "Catálogo digital oficial da loja.",
         DefaultLowStockThreshold = 3
     };
 

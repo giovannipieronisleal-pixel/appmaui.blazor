@@ -16,8 +16,8 @@
   "Users": [
     {
       "Id": "aaaaaaaa-1111-1111-1111-111111111111",
-      "Email": "admin@loja.com",
-      "PasswordHash": "PBKDF2$100000$D43JwHq62argW\u002BOkbzBs2Q==$HZlxZsvfNtQf9rZZqqViUUfwGv60DFQGF52P/GMbBbQ=",
+      "Email": "admin",
+      "PasswordHash": "PBKDF2$100000$AeUhnm\u002BQekm3YaeiWLsAxQ==$w1xAKPgsePIaOIrZNjTb9I3LMEKN2c3oSdqEemVeri8=",
       "RoleId": "11111111-1111-1111-1111-111111111111",
       "Role": {
         "Id": "11111111-1111-1111-1111-111111111111",
@@ -28,25 +28,12 @@
       "IsActive": true,
       "ResetTokenHash": null,
       "ResetTokenExpiresAt": null,
-      "LastLoginAt": "2026-11-08T13:14:52.576712+00:00",
-      "CreatedAt": "2026-11-08T13:12:37.5458606+00:00"
-    },
-    {
-      "Id": "aaaaaaaa-2222-2222-2222-222222222222",
-      "Email": "funcionario@loja.com",
-      "PasswordHash": "PBKDF2$100000$BHHXUaAe7MtgyoYiwlBmMQ==$Q9fawJduSmz1zV3fISYGtUgrza6M68luk6D1vL0CMpM=",
-      "RoleId": "22222222-2222-2222-2222-222222222222",
-      "Role": {
-        "Id": "22222222-2222-2222-2222-222222222222",
-        "Name": "Employee",
-        "Description": "Funcion\u00E1rio com acesso operacional a produtos e estoque",
-        "DefaultPermissionsJson": "{}"
-      },
-      "IsActive": true,
-      "ResetTokenHash": null,
-      "ResetTokenExpiresAt": null,
+      "EmailLoginCodeHash": null,
+      "EmailLoginCodeExpiresAt": null,
+      "FailedLoginAttempts": 0,
+      "LockoutEndAt": null,
       "LastLoginAt": null,
-      "CreatedAt": "2026-11-08T13:12:37.5582855+00:00"
+      "CreatedAt": "2026-11-08T14:12:48.839854+00:00"
     }
   ],
   "Employees": [
@@ -55,8 +42,8 @@
       "UserId": "aaaaaaaa-1111-1111-1111-111111111111",
       "User": {
         "Id": "aaaaaaaa-1111-1111-1111-111111111111",
-        "Email": "admin@loja.com",
-        "PasswordHash": "PBKDF2$100000$D43JwHq62argW\u002BOkbzBs2Q==$HZlxZsvfNtQf9rZZqqViUUfwGv60DFQGF52P/GMbBbQ=",
+        "Email": "admin",
+        "PasswordHash": "PBKDF2$100000$AeUhnm\u002BQekm3YaeiWLsAxQ==$w1xAKPgsePIaOIrZNjTb9I3LMEKN2c3oSdqEemVeri8=",
         "RoleId": "11111111-1111-1111-1111-111111111111",
         "Role": {
           "Id": "11111111-1111-1111-1111-111111111111",
@@ -67,561 +54,36 @@
         "IsActive": true,
         "ResetTokenHash": null,
         "ResetTokenExpiresAt": null,
-        "LastLoginAt": "2026-11-08T13:14:52.576712+00:00",
-        "CreatedAt": "2026-11-08T13:12:37.5458606+00:00"
-      },
-      "FullName": "Helena Prado (Propriet\u00E1ria)",
-      "Phone": "5511999999999",
-      "JobTitle": "Propriet\u00E1ria \u0026 Diretora Criativa",
-      "CanManageProducts": true,
-      "CanManageStock": true,
-      "IsActive": true,
-      "CreatedAt": "2026-11-08T13:12:37.5465162+00:00",
-      "UpdatedAt": "2026-11-08T13:15:20.0709439+00:00"
-    },
-    {
-      "Id": "bbbbbbbb-2222-2222-2222-222222222222",
-      "UserId": "aaaaaaaa-2222-2222-2222-222222222222",
-      "User": {
-        "Id": "aaaaaaaa-2222-2222-2222-222222222222",
-        "Email": "funcionario@loja.com",
-        "PasswordHash": "PBKDF2$100000$BHHXUaAe7MtgyoYiwlBmMQ==$Q9fawJduSmz1zV3fISYGtUgrza6M68luk6D1vL0CMpM=",
-        "RoleId": "22222222-2222-2222-2222-222222222222",
-        "Role": {
-          "Id": "22222222-2222-2222-2222-222222222222",
-          "Name": "Employee",
-          "Description": "Funcion\u00E1rio com acesso operacional a produtos e estoque",
-          "DefaultPermissionsJson": "{}"
-        },
-        "IsActive": true,
-        "ResetTokenHash": null,
-        "ResetTokenExpiresAt": null,
+        "EmailLoginCodeHash": null,
+        "EmailLoginCodeExpiresAt": null,
+        "FailedLoginAttempts": 0,
+        "LockoutEndAt": null,
         "LastLoginAt": null,
-        "CreatedAt": "2026-11-08T13:12:37.5582855+00:00"
+        "CreatedAt": "2026-11-08T14:12:48.839854+00:00"
       },
-      "FullName": "Lucas Mendes",
-      "Phone": "5511988887777",
-      "JobTitle": "Consultor de Vendas \u0026 Estoque",
+      "FullName": "Administrador",
+      "Phone": "5511900000000",
+      "JobTitle": "Propriet\u00E1rio(a) / Administrador(a)",
       "CanManageProducts": true,
       "CanManageStock": true,
       "IsActive": true,
-      "CreatedAt": "2026-11-08T13:12:37.5582876+00:00",
-      "UpdatedAt": "2026-11-08T13:15:21.8951474+00:00"
+      "CreatedAt": "2026-11-08T14:12:48.8398976+00:00",
+      "UpdatedAt": "2026-11-08T14:12:48.8398976+00:00"
     }
   ],
-  "Categories": [
-    {
-      "Id": "cccccccc-0001-0001-0001-000000000001",
-      "Name": "Camisetas",
-      "Slug": "camisetas",
-      "Description": "Camisetas essenciais em algod\u00E3o Pima e Eg\u00EDpcio",
-      "DisplayOrder": 1,
-      "IsActive": true
-    },
-    {
-      "Id": "cccccccc-0002-0002-0002-000000000002",
-      "Name": "Camisas \u0026 Linho",
-      "Slug": "camisas-linho",
-      "Description": "Camisas de alfaiataria leve e puro linho",
-      "DisplayOrder": 2,
-      "IsActive": true
-    },
-    {
-      "Id": "cccccccc-0003-0003-0003-000000000003",
-      "Name": "Cal\u00E7as",
-      "Slug": "calcas",
-      "Description": "Cal\u00E7as de corte reto, chino e alfaiataria contempor\u00E2nea",
-      "DisplayOrder": 3,
-      "IsActive": true
-    },
-    {
-      "Id": "cccccccc-0004-0004-0004-000000000004",
-      "Name": "Vestidos",
-      "Slug": "vestidos",
-      "Description": "Vestidos fluidos e minimalistas para todas as ocasi\u00F5es",
-      "DisplayOrder": 4,
-      "IsActive": true
-    },
-    {
-      "Id": "cccccccc-0005-0005-0005-000000000005",
-      "Name": "Casacos \u0026 Tric\u00F4s",
-      "Slug": "casacos-tricos",
-      "Description": "Blazers, jaquetas e tric\u00F4s estruturados",
-      "DisplayOrder": 5,
-      "IsActive": true
-    }
-  ],
-  "Products": [
-    {
-      "Id": "dddddddd-0001-0001-0001-000000000001",
-      "CategoryId": "cccccccc-0001-0001-0001-000000000001",
-      "Category": {
-        "Id": "cccccccc-0001-0001-0001-000000000001",
-        "Name": "Camisetas",
-        "Slug": "camisetas",
-        "Description": "Camisetas essenciais em algod\u00E3o Pima e Eg\u00EDpcio",
-        "DisplayOrder": 1,
-        "IsActive": true
-      },
-      "Name": "Camiseta B\u00E1sica",
-      "Slug": "camiseta-basica",
-      "Description": "Camiseta essencial confeccionada em malha 100% algod\u00E3o penteado de gramatura encorpada (200g/m\u00B2). Gola canelada estruturada, toque macio e caimento impec\u00E1vel.",
-      "BasePrice": 129.90,
-      "IsVisibleOnSite": true,
-      "IsArchived": false,
-      "CreatedAt": "2026-11-08T13:12:37.5766317+00:00",
-      "UpdatedAt": "2026-11-08T13:12:37.5796522+00:00",
-      "Variants": [
-        {
-          "Id": "7f562db6-5428-4e13-9edb-48abf424ec77",
-          "ProductId": "dddddddd-0001-0001-0001-000000000001",
-          "Sku": "CAM-BAS-PRE-P",
-          "Color": "Preto",
-          "ColorHex": "#18181B",
-          "Size": "P",
-          "StockQuantity": 3,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5803349+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": true
-        },
-        {
-          "Id": "78dd51f9-a737-4fc5-95e0-6c34c74d83a2",
-          "ProductId": "dddddddd-0001-0001-0001-000000000001",
-          "Sku": "CAM-BAS-PRE-M",
-          "Color": "Preto",
-          "ColorHex": "#18181B",
-          "Size": "M",
-          "StockQuantity": 5,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5814034+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        },
-        {
-          "Id": "7b9e0740-3aeb-4cef-8be9-d71a54ad8908",
-          "ProductId": "dddddddd-0001-0001-0001-000000000001",
-          "Sku": "CAM-BAS-PRE-G",
-          "Color": "Preto",
-          "ColorHex": "#18181B",
-          "Size": "G",
-          "StockQuantity": 2,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.581409+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": true
-        },
-        {
-          "Id": "b1c6c5bd-b6d4-453d-ad32-4f096e31871f",
-          "ProductId": "dddddddd-0001-0001-0001-000000000001",
-          "Sku": "CAM-BAS-BRA-M",
-          "Color": "Branco",
-          "ColorHex": "#F8FAFC",
-          "Size": "M",
-          "StockQuantity": 8,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5814105+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        }
-      ],
-      "Images": [
-        {
-          "Id": "a29530de-78a1-46fa-a5e1-cbdacc7aadee",
-          "ProductId": "dddddddd-0001-0001-0001-000000000001",
-          "StoragePath": "products/camiseta-basica-1.jpg",
-          "PublicUrl": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format\u0026fit=crop\u0026w=900\u0026q=80",
-          "AltText": "Camiseta B\u00E1sica Frente",
-          "DisplayOrder": 1,
-          "IsPrimary": true,
-          "CreatedAt": "2026-11-08T13:12:37.5774285+00:00"
-        },
-        {
-          "Id": "8eb45250-cac3-436b-96d4-de00f7a0420f",
-          "ProductId": "dddddddd-0001-0001-0001-000000000001",
-          "StoragePath": "products/camiseta-basica-2.jpg",
-          "PublicUrl": "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format\u0026fit=crop\u0026w=900\u0026q=80",
-          "AltText": "Camiseta B\u00E1sica Detalhe Tecido Preta",
-          "DisplayOrder": 2,
-          "IsPrimary": false,
-          "CreatedAt": "2026-11-08T13:12:37.5774994+00:00"
-        }
-      ],
-      "TotalStockQuantity": 18,
-      "HasAvailableStock": true,
-      "PrimaryImageUrl": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format\u0026fit=crop\u0026w=900\u0026q=80"
-    },
-    {
-      "Id": "dddddddd-0002-0002-0002-000000000002",
-      "CategoryId": "cccccccc-0002-0002-0002-000000000002",
-      "Category": {
-        "Id": "cccccccc-0002-0002-0002-000000000002",
-        "Name": "Camisas \u0026 Linho",
-        "Slug": "camisas-linho",
-        "Description": "Camisas de alfaiataria leve e puro linho",
-        "DisplayOrder": 2,
-        "IsActive": true
-      },
-      "Name": "Camisa Puro Linho Relaxed",
-      "Slug": "camisa-puro-linho-relaxed",
-      "Description": "Camisa de manga longa em linho europeu certificado, modelagem levemente ampla, bot\u00F5es madrep\u00E9rola e frescor natural para dias quentes.",
-      "BasePrice": 349.00,
-      "IsVisibleOnSite": true,
-      "IsArchived": false,
-      "CreatedAt": "2026-11-08T13:12:37.5815263+00:00",
-      "UpdatedAt": "2026-11-08T13:12:37.5815583+00:00",
-      "Variants": [
-        {
-          "Id": "de4e28cb-c68a-4bcd-9142-87b378b1aba3",
-          "ProductId": "dddddddd-0002-0002-0002-000000000002",
-          "Sku": "CAM-LIN-ARE-M",
-          "Color": "Areia",
-          "ColorHex": "#D6C7B2",
-          "Size": "M",
-          "StockQuantity": 6,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5815586+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        },
-        {
-          "Id": "a3030fc6-1dd4-49d1-bd1a-1b03a32c5f42",
-          "ProductId": "dddddddd-0002-0002-0002-000000000002",
-          "Sku": "CAM-LIN-ARE-G",
-          "Color": "Areia",
-          "ColorHex": "#D6C7B2",
-          "Size": "G",
-          "StockQuantity": 4,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5815598+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        },
-        {
-          "Id": "a47cae5d-babd-4534-bc71-2458fe546fe5",
-          "ProductId": "dddddddd-0002-0002-0002-000000000002",
-          "Sku": "CAM-LIN-BRA-P",
-          "Color": "Branco",
-          "ColorHex": "#F8FAFC",
-          "Size": "P",
-          "StockQuantity": 1,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5815606+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": true
-        }
-      ],
-      "Images": [
-        {
-          "Id": "2c815c86-d32e-4c20-acca-78f42dbf03bf",
-          "ProductId": "dddddddd-0002-0002-0002-000000000002",
-          "StoragePath": "products/camisa-linho-1.jpg",
-          "PublicUrl": "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format\u0026fit=crop\u0026w=900\u0026q=80",
-          "AltText": "Camisa Puro Linho Relaxed",
-          "DisplayOrder": 1,
-          "IsPrimary": true,
-          "CreatedAt": "2026-11-08T13:12:37.581532+00:00"
-        },
-        {
-          "Id": "1e117a2b-b467-4fff-b289-968b41027be4",
-          "ProductId": "dddddddd-0002-0002-0002-000000000002",
-          "StoragePath": "products/camisa-linho-2.jpg",
-          "PublicUrl": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format\u0026fit=crop\u0026w=900\u0026q=80",
-          "AltText": "Camisa Linho Textura",
-          "DisplayOrder": 2,
-          "IsPrimary": false,
-          "CreatedAt": "2026-11-08T13:12:37.5815338+00:00"
-        }
-      ],
-      "TotalStockQuantity": 11,
-      "HasAvailableStock": true,
-      "PrimaryImageUrl": "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format\u0026fit=crop\u0026w=900\u0026q=80"
-    },
-    {
-      "Id": "dddddddd-0003-0003-0003-000000000003",
-      "CategoryId": "cccccccc-0004-0004-0004-000000000004",
-      "Category": {
-        "Id": "cccccccc-0004-0004-0004-000000000004",
-        "Name": "Vestidos",
-        "Slug": "vestidos",
-        "Description": "Vestidos fluidos e minimalistas para todas as ocasi\u00F5es",
-        "DisplayOrder": 4,
-        "IsActive": true
-      },
-      "Name": "Vestido Midi Fluido Atelier",
-      "Slug": "vestido-midi-fluido-atelier",
-      "Description": "Vestido midi em viscose sarjada com al\u00E7as regul\u00E1veis, decote reto minimalista e fenda lateral discreta.",
-      "BasePrice": 429.00,
-      "IsVisibleOnSite": true,
-      "IsArchived": false,
-      "CreatedAt": "2026-11-08T13:12:37.5815704+00:00",
-      "UpdatedAt": "2026-11-08T13:12:37.5815768+00:00",
-      "Variants": [
-        {
-          "Id": "445fc9ec-d8eb-44b9-8be7-6d0905d46131",
-          "ProductId": "dddddddd-0003-0003-0003-000000000003",
-          "Sku": "VES-MID-OLI-P",
-          "Color": "Verde Oliva",
-          "ColorHex": "#3F6212",
-          "Size": "P",
-          "StockQuantity": 5,
-          "LowStockThreshold": 2,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.581577+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        },
-        {
-          "Id": "8d36e372-8e6a-4327-9a76-02c06820879c",
-          "ProductId": "dddddddd-0003-0003-0003-000000000003",
-          "Sku": "VES-MID-OLI-M",
-          "Color": "Verde Oliva",
-          "ColorHex": "#3F6212",
-          "Size": "M",
-          "StockQuantity": 4,
-          "LowStockThreshold": 2,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5816053+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        },
-        {
-          "Id": "075d6375-06e8-4002-84e9-5dc1b3df6f78",
-          "ProductId": "dddddddd-0003-0003-0003-000000000003",
-          "Sku": "VES-MID-PRE-G",
-          "Color": "Preto",
-          "ColorHex": "#18181B",
-          "Size": "G",
-          "StockQuantity": 0,
-          "LowStockThreshold": 2,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5815767+00:00",
-          "IsOutOfStock": true,
-          "IsLowStock": false
-        }
-      ],
-      "Images": [
-        {
-          "Id": "ddcca4fc-0696-4ed2-9bae-f3729f3d78b7",
-          "ProductId": "dddddddd-0003-0003-0003-000000000003",
-          "StoragePath": "products/vestido-midi-1.jpg",
-          "PublicUrl": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format\u0026fit=crop\u0026w=900\u0026q=80",
-          "AltText": "Vestido Midi Fluido Atelier",
-          "DisplayOrder": 1,
-          "IsPrimary": true,
-          "CreatedAt": "2026-11-08T13:12:37.581572+00:00"
-        }
-      ],
-      "TotalStockQuantity": 9,
-      "HasAvailableStock": true,
-      "PrimaryImageUrl": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format\u0026fit=crop\u0026w=900\u0026q=80"
-    },
-    {
-      "Id": "dddddddd-0004-0004-0004-000000000004",
-      "CategoryId": "cccccccc-0003-0003-0003-000000000003",
-      "Category": {
-        "Id": "cccccccc-0003-0003-0003-000000000003",
-        "Name": "Cal\u00E7as",
-        "Slug": "calcas",
-        "Description": "Cal\u00E7as de corte reto, chino e alfaiataria contempor\u00E2nea",
-        "DisplayOrder": 3,
-        "IsActive": true
-      },
-      "Name": "Cal\u00E7a Alfaiataria Reta",
-      "Slug": "calca-alfaiataria-reta",
-      "Description": "Cal\u00E7a de cintura m\u00E9dia com pregas frontais, corte reto alongado e acabamento de alfaiataria cl\u00E1ssica.",
-      "BasePrice": 389.90,
-      "IsVisibleOnSite": true,
-      "IsArchived": false,
-      "CreatedAt": "2026-11-08T13:12:37.5816298+00:00",
-      "UpdatedAt": "2026-11-08T13:12:37.5816332+00:00",
-      "Variants": [
-        {
-          "Id": "b806e067-89a5-4578-a034-30712a00b3ca",
-          "ProductId": "dddddddd-0004-0004-0004-000000000004",
-          "Sku": "CAL-ALF-BEG-P",
-          "Color": "Bege",
-          "ColorHex": "#D6C7B2",
-          "Size": "P",
-          "StockQuantity": 7,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5816334+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        },
-        {
-          "Id": "983c7cd6-2084-460b-a36a-c8374fb1849d",
-          "ProductId": "dddddddd-0004-0004-0004-000000000004",
-          "Sku": "CAL-ALF-PRE-M",
-          "Color": "Preto",
-          "ColorHex": "#18181B",
-          "Size": "M",
-          "StockQuantity": 6,
-          "LowStockThreshold": 3,
-          "IsActive": true,
-          "UpdatedAt": "2026-11-08T13:12:37.5816345+00:00",
-          "IsOutOfStock": false,
-          "IsLowStock": false
-        }
-      ],
-      "Images": [
-        {
-          "Id": "5e63274e-4330-4118-ad24-1e8d59247d60",
-          "ProductId": "dddddddd-0004-0004-0004-000000000004",
-          "StoragePath": "products/calca-alfaiataria-1.jpg",
-          "PublicUrl": "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format\u0026fit=crop\u0026w=900\u0026q=80",
-          "AltText": "Cal\u00E7a Alfaiataria Reta",
-          "DisplayOrder": 1,
-          "IsPrimary": true,
-          "CreatedAt": "2026-11-08T13:12:37.581631+00:00"
-        }
-      ],
-      "TotalStockQuantity": 13,
-      "HasAvailableStock": true,
-      "PrimaryImageUrl": "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format\u0026fit=crop\u0026w=900\u0026q=80"
-    }
-  ],
-  "StockMovements": [
-    {
-      "Id": "61166458-b9d4-469b-8a80-4ef0c8bbfab3",
-      "ProductVariantId": "7f562db6-5428-4e13-9edb-48abf424ec77",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 3,
-      "PreviousQuantity": 0,
-      "NewQuantity": 3,
-      "Reason": "Estoque inicial da cole\u00E7\u00E3o",
-      "CreatedAt": "2026-11-08T13:12:37.5813047+00:00"
-    },
-    {
-      "Id": "0c26881a-18e0-4b66-a5d3-8947cf4e7822",
-      "ProductVariantId": "78dd51f9-a737-4fc5-95e0-6c34c74d83a2",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 5,
-      "PreviousQuantity": 0,
-      "NewQuantity": 5,
-      "Reason": "Estoque inicial da cole\u00E7\u00E3o",
-      "CreatedAt": "2026-11-08T13:12:37.5814067+00:00"
-    },
-    {
-      "Id": "7a283ca6-a8c0-4141-b975-87bc4c9db07d",
-      "ProductVariantId": "7b9e0740-3aeb-4cef-8be9-d71a54ad8908",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 2,
-      "PreviousQuantity": 0,
-      "NewQuantity": 2,
-      "Reason": "Estoque inicial da cole\u00E7\u00E3o (alerta estoque baixo)",
-      "CreatedAt": "2026-11-08T13:12:37.58141+00:00"
-    },
-    {
-      "Id": "c1b767ae-5c60-452e-9c20-6a223b18acec",
-      "ProductVariantId": "b1c6c5bd-b6d4-453d-ad32-4f096e31871f",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 8,
-      "PreviousQuantity": 0,
-      "NewQuantity": 8,
-      "Reason": "Estoque inicial da cole\u00E7\u00E3o",
-      "CreatedAt": "2026-11-08T13:12:37.5814111+00:00"
-    },
-    {
-      "Id": "cc546958-4daa-49e9-8b36-9ba21f8abb32",
-      "ProductVariantId": "de4e28cb-c68a-4bcd-9142-87b378b1aba3",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 6,
-      "PreviousQuantity": 0,
-      "NewQuantity": 6,
-      "Reason": "Recebimento fornecedor",
-      "CreatedAt": "2026-11-08T13:12:37.5815594+00:00"
-    },
-    {
-      "Id": "ffa6f33e-c786-4ba9-b59d-4c5935626b52",
-      "ProductVariantId": "a3030fc6-1dd4-49d1-bd1a-1b03a32c5f42",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 4,
-      "PreviousQuantity": 0,
-      "NewQuantity": 4,
-      "Reason": "Recebimento fornecedor",
-      "CreatedAt": "2026-11-08T13:12:37.58156+00:00"
-    },
-    {
-      "Id": "2898fdc8-905c-4c80-8357-7d78cd335192",
-      "ProductVariantId": "a47cae5d-babd-4534-bc71-2458fe546fe5",
-      "EmployeeId": "bbbbbbbb-2222-2222-2222-222222222222",
-      "MovementType": 1,
-      "QuantityChanged": 1,
-      "PreviousQuantity": 0,
-      "NewQuantity": 1,
-      "Reason": "\u00DAltima pe\u00E7a em estoque",
-      "CreatedAt": "2026-11-08T13:12:37.5815611+00:00"
-    },
-    {
-      "Id": "306b0687-1d64-492c-9949-f7cb4fabc70b",
-      "ProductVariantId": "445fc9ec-d8eb-44b9-8be7-6d0905d46131",
-      "EmployeeId": "bbbbbbbb-2222-2222-2222-222222222222",
-      "MovementType": 1,
-      "QuantityChanged": 5,
-      "PreviousQuantity": 0,
-      "NewQuantity": 5,
-      "Reason": "Reposi\u00E7\u00E3o atelier",
-      "CreatedAt": "2026-11-08T13:12:37.5816049+00:00"
-    },
-    {
-      "Id": "8e612bb4-4b1f-4f68-a43c-a416b6ce3222",
-      "ProductVariantId": "8d36e372-8e6a-4327-9a76-02c06820879c",
-      "EmployeeId": "bbbbbbbb-2222-2222-2222-222222222222",
-      "MovementType": 1,
-      "QuantityChanged": 4,
-      "PreviousQuantity": 0,
-      "NewQuantity": 4,
-      "Reason": "Reposi\u00E7\u00E3o atelier",
-      "CreatedAt": "2026-11-08T13:12:37.5816056+00:00"
-    },
-    {
-      "Id": "5b060eb2-ddfb-402c-8718-fcc4b2809437",
-      "ProductVariantId": "b806e067-89a5-4578-a034-30712a00b3ca",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 7,
-      "PreviousQuantity": 0,
-      "NewQuantity": 7,
-      "Reason": "Entrada cole\u00E7\u00E3o outono",
-      "CreatedAt": "2026-11-08T13:12:37.5816342+00:00"
-    },
-    {
-      "Id": "cc2b7fa4-f436-43a9-acab-af57922356b2",
-      "ProductVariantId": "983c7cd6-2084-460b-a36a-c8374fb1849d",
-      "EmployeeId": "bbbbbbbb-1111-1111-1111-111111111111",
-      "MovementType": 1,
-      "QuantityChanged": 6,
-      "PreviousQuantity": 0,
-      "NewQuantity": 6,
-      "Reason": "Entrada cole\u00E7\u00E3o outono",
-      "CreatedAt": "2026-11-08T13:12:37.5816347+00:00"
-    }
-  ],
+  "Categories": [],
+  "Products": [],
+  "StockMovements": [],
   "StoreSettings": {
-    "Id": "b8c1f4d8-fee2-45bc-b6ba-071b42bb7268",
-    "StoreName": "Aura Vestu\u00E1rio",
-    "StoreSlug": "aura-vestuario",
-    "WhatsappNumber": "5511999999999",
-    "StoreDescription": "Curadoria de roupas essenciais com design atemporal, tecidos nobres de algod\u00E3o e linho, pensadas para o conforto di\u00E1rio.",
+    "Id": "abb36aee-0ad6-4d3d-84ad-e2834f6889cb",
+    "StoreName": "Minha Loja",
+    "StoreSlug": "minha-loja",
+    "WhatsappNumber": "5511900000000",
+    "StoreDescription": "Cat\u00E1logo digital oficial da loja.",
     "LogoStoragePath": null,
     "LogoPublicUrl": null,
     "DefaultLowStockThreshold": 3,
     "UpdatedByEmployeeId": null,
-    "UpdatedAt": "2026-11-08T13:12:37.5738132+00:00"
+    "UpdatedAt": "2026-11-08T14:12:48.8400456+00:00"
   }
 }

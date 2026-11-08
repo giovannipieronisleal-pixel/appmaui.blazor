@@ -10,10 +10,10 @@ namespace ClothingStore.Domain.Entities;
 public sealed class StoreSettings
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string StoreName { get; set; } = "Aura Vestuário";
-    public string StoreSlug { get; set; } = "aura-vestuario";
-    public string WhatsappNumber { get; set; } = "5511999999999";
-    public string StoreDescription { get; set; } = "Moda contemporânea com peças essenciais, cortes precisos e tecidos selecionados.";
+    public string StoreName { get; set; } = "Minha Loja";
+    public string StoreSlug { get; set; } = "minha-loja";
+    public string WhatsappNumber { get; set; } = "5511900000000";
+    public string StoreDescription { get; set; } = "Catálogo digital oficial da loja.";
     public string? LogoStoragePath { get; set; }
     public string? LogoPublicUrl { get; set; }
     public int DefaultLowStockThreshold { get; set; } = 3;

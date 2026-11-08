@@ -31,15 +31,19 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
             <div>
                 <label class="adm-label">Nome Completo *</label>
-                <input type="text" class="adm-input" @bind="_newEmployee.FullName" placeholder="Ex.: Mariana Costa" />
+                <input type="text" class="adm-input" @bind="_newEmployee.FullName" placeholder="Digite o nome completo" />
             </div>
             <div>
-                <label class="adm-label">E-mail de Login *</label>
-                <input type="email" class="adm-input" @bind="_newEmployee.Email" placeholder="mariana@loja.com" />
+                <label class="adm-label">Login de Acesso (sem precisar de @@)</label>
+                <input type="text" class="adm-input" @bind="_newEmployee.Username" placeholder="Se vazio, gera pelo nome" />
+            </div>
+            <div>
+                <label class="adm-label">E-mail (Opcional)</label>
+                <input type="text" class="adm-input" @bind="_newEmployee.Email" placeholder="Opcional" />
             </div>
             <div>
                 <label class="adm-label">Senha Inicial *</label>
-                <input type="password" class="adm-input" @bind="_newEmployee.InitialPassword" placeholder="Mínimo 6 caracteres" />
+                <input type="password" class="adm-input" @bind="_newEmployee.InitialPassword" placeholder="Digite a senha" />
             </div>
             <div>
                 <label class="adm-label">Nível de Acesso</label>
@@ -50,7 +54,7 @@
             </div>
             <div>
                 <label class="adm-label">Cargo / Função</label>
-                <input type="text" class="adm-input" @bind="_newEmployee.JobTitle" placeholder="Ex.: Vendedora, Estoquista" />
+                <input type="text" class="adm-input" @bind="_newEmployee.JobTitle" placeholder="Cargo na loja" />
             </div>
             <div>
                 <label class="adm-label">Telefone</label>
@@ -95,7 +99,7 @@
                 <tr>
                     <td>
                         <div style="font-weight: 700;">@emp.FullName</div>
-                        <div style="font-size: 0.8rem; color: var(--adm-muted);">@emp.Email</div>
+                        <div style="font-size: 0.8rem; color: var(--adm-muted);">Login: <strong>@emp.Email</strong></div>
                     </td>
                     <td>@(emp.JobTitle ?? "-")</td>
                     <td>

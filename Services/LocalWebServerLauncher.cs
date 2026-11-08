@@ -6,6 +6,7 @@ namespace appmaui.blazor.Services;
 /// <summary>
 /// Garante que o servidor do site público Blazor (ClothingStore.Web na porta 5190)
 /// seja iniciado automaticamente em segundo plano quando o aplicativo .NET MAUI estiver rodando no Windows.
+/// No Android/iOS, retorna imediatamente sem iniciar processos locais de desktop.
 /// </summary>
 public static class LocalWebServerLauncher
 {
@@ -14,6 +15,9 @@ public static class LocalWebServerLauncher
 
     public static async Task EnsureWebCatalogRunningAsync()
     {
+        if (!OperatingSystem.IsWindows())
+            return;
+
         if (await IsPortOpenAsync("127.0.0.1", 5190))
             return;
 
@@ -51,7 +55,6 @@ public static class LocalWebServerLauncher
                 _webServerProcess = Process.Start(psi);
             }
 
-            // Aguarda até 3 segundos para a porta 5190 ficar pronta antes de abrir o navegador
             for (int i = 0; i < 15; i++)
             {
                 if (await IsPortOpenAsync("127.0.0.1", 5190))
@@ -83,4 +86,3 @@ public static class LocalWebServerLauncher
         }
     }
 }
-

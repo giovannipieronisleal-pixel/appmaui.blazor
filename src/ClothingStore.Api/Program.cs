@@ -35,8 +35,12 @@ builder.Services.AddCors(options =>
 var sharedDbPath = builder.Configuration["Database:FilePath"]
     ?? Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "App_Data", "clothingstore_db.json"));
 
+var outboxPath = Path.Combine(Path.GetDirectoryName(sharedDbPath) ?? builder.Environment.ContentRootPath, "email_outbox.txt");
+
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddSingleton<IEmailService>(sp =>
+    new SmtpEmailService(sp.GetRequiredService<IConfiguration>(), outboxPath));
 builder.Services.AddSingleton<IClothingStoreRepository>(sp =>
     new ClothingStoreRepository(sp.GetRequiredService<IPasswordHasher>(), sharedDbPath));
 
@@ -75,7 +79,7 @@ builder.Services.AddAuthorizationBuilder()
 
 var app = builder.Build();
 
-// Tratamento Global de Erros e Validações de Domínio
+// Tratamento Global de Erros e Validações de Domínio (sem vazamento de stacktrace ou detalhes internos)
 app.UseExceptionHandler(errApp =>
 {
     errApp.Run(async context =>
@@ -94,10 +98,29 @@ app.UseExceptionHandler(errApp =>
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         await context.Response.WriteAsJsonAsync(new
         {
-            error = "Ocorreu um erro interno ao processar a solicitação.",
-            detail = app.Environment.IsDevelopment() ? exception?.Message : null
+            error = "Ocorreu um erro interno ao processar a solicitação."
         });
     });
+});
+
+// Cabeçalhos de Segurança HTTP para prevenção contra vazamento de dados, clickjacking e sniffing
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers["X-Permitted-Cross-Domain-Policies"] = "none";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
+
+    if (context.Request.Path.StartsWithSegments("/api/auth") ||
+        context.Request.Path.StartsWithSegments("/api/employees") ||
+        context.Request.Path.StartsWithSegments("/api/settings"))
+    {
+        context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+        context.Response.Headers["Pragma"] = "no-cache";
+    }
+
+    await next();
 });
 
 var webRootPath = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
@@ -164,12 +187,24 @@ publicGroup.MapGet("/products/{slugOrId}", async (
 });
 
 // =============================================================================
-// 2. ENDPOINTS DE AUTENTICAÇÃO (/api/auth/...)
+// 2. ENDPOINTS DE AUTENTICAÇÃO E ENTRADA POR E-MAIL (/api/auth/...)
 // =============================================================================
 var authGroup = app.MapGroup("/api/auth");
 
+authGroup.MapGet("/setup-status", async (AuthService authService, CancellationToken ct) =>
+    Results.Ok(await authService.GetSetupStatusAsync(ct))).AllowAnonymous();
+
+authGroup.MapPost("/register-initial-admin", async (RegisterInitialAdminRequest request, AuthService authService, CancellationToken ct) =>
+    Results.Ok(await authService.RegisterInitialAdminByEmailAsync(request, ct))).AllowAnonymous();
+
 authGroup.MapPost("/login", async (LoginRequest request, AuthService authService, CancellationToken ct) =>
     Results.Ok(await authService.LoginAsync(request, ct))).AllowAnonymous();
+
+authGroup.MapPost("/email-code/request", async (RequestEmailLoginCodeRequest request, AuthService authService, CancellationToken ct) =>
+    Results.Ok(await authService.RequestEmailLoginCodeAsync(request, ct))).AllowAnonymous();
+
+authGroup.MapPost("/email-code/verify", async (VerifyEmailLoginCodeRequest request, AuthService authService, CancellationToken ct) =>
+    Results.Ok(await authService.LoginWithEmailCodeAsync(request, ct))).AllowAnonymous();
 
 authGroup.MapPost("/forgot-password", async (ForgotPasswordRequest request, AuthService authService, CancellationToken ct) =>
     Results.Ok(await authService.RequestPasswordResetAsync(request, ct))).AllowAnonymous();

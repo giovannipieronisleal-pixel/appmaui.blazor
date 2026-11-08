@@ -116,12 +116,19 @@ public sealed class CreateEmployeeRequest
     [Required(ErrorMessage = "O nome completo é obrigatório.")]
     public string FullName { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "O e-mail é obrigatório.")]
-    [EmailAddress(ErrorMessage = "E-mail inválido.")]
-    public string Email { get; set; } = string.Empty;
+    /// <summary>
+    /// Login de acesso do funcionário (ex.: "joao", "vendedor1") ou e-mail opcional.
+    /// Se não informado, é gerado automaticamente a partir do nome.
+    /// </summary>
+    public string? Username { get; set; }
+
+    /// <summary>
+    /// E-mail (Opcional).
+    /// </summary>
+    public string? Email { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "A senha inicial é obrigatória.")]
-    [MinLength(6, ErrorMessage = "A senha deve ter no mínimo 6 caracteres.")]
+    [MinLength(4, ErrorMessage = "A senha deve ter no mínimo 4 caracteres.")]
     public string InitialPassword { get; set; } = string.Empty;
 
     public string RoleName { get; set; } = "Employee";

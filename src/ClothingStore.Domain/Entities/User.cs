@@ -1,12 +1,18 @@
+using System.Security.Cryptography;
+using System.Text;
 using ClothingStore.Domain.Exceptions;
 
 namespace ClothingStore.Domain.Entities;
 
 /// <summary>
 /// Conta de autenticação de usuário vinculada a um funcionário.
+/// Inclui proteção contra força bruta (lockout temporário), recuperação de senha e entrada por código no e-mail (OTP).
 /// </summary>
 public sealed class User
 {
+    public const int MaxFailedAttemptsBeforeLockout = 5;
+    public static readonly TimeSpan DefaultLockoutDuration = TimeSpan.FromMinutes(15);
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
@@ -15,6 +21,10 @@ public sealed class User
     public bool IsActive { get; set; } = true;
     public string? ResetTokenHash { get; set; }
     public DateTimeOffset? ResetTokenExpiresAt { get; set; }
+    public string? EmailLoginCodeHash { get; set; }
+    public DateTimeOffset? EmailLoginCodeExpiresAt { get; set; }
+    public int FailedLoginAttempts { get; set; }
+    public DateTimeOffset? LockoutEndAt { get; set; }
     public DateTimeOffset? LastLoginAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
@@ -31,12 +41,12 @@ public sealed class User
         CreatedAt = DateTimeOffset.UtcNow;
     }
 
-    public void SetEmail(string email)
+    public void SetEmail(string emailOrLogin)
     {
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
-            throw new DomainException("Informe um endereço de e-mail válido.");
+        if (string.IsNullOrWhiteSpace(emailOrLogin))
+            throw new DomainException("Informe um login ou usuário válido.");
 
-        Email = email.Trim().ToLowerInvariant();
+        Email = emailOrLogin.Trim().ToLowerInvariant();
     }
 
     public void SetPasswordHash(string passwordHash)
@@ -47,6 +57,26 @@ public sealed class User
         PasswordHash = passwordHash;
         ResetTokenHash = null;
         ResetTokenExpiresAt = null;
+        FailedLoginAttempts = 0;
+        LockoutEndAt = null;
+    }
+
+    public bool IsLockedOut(DateTimeOffset nowUtc) =>
+        LockoutEndAt.HasValue && LockoutEndAt.Value > nowUtc;
+
+    public void RecordFailedAccessAttempt(DateTimeOffset nowUtc)
+    {
+        FailedLoginAttempts++;
+        if (FailedLoginAttempts >= MaxFailedAttemptsBeforeLockout)
+        {
+            LockoutEndAt = nowUtc.Add(DefaultLockoutDuration);
+        }
+    }
+
+    public void ResetFailedAccessAttempts()
+    {
+        FailedLoginAttempts = 0;
+        LockoutEndAt = null;
     }
 
     public void GeneratePasswordResetToken(string tokenHash, TimeSpan validity)
@@ -60,11 +90,53 @@ public sealed class User
 
     public bool IsResetTokenValid(string tokenHash, DateTimeOffset nowUtc)
     {
-        return IsActive
-            && !string.IsNullOrWhiteSpace(ResetTokenHash)
-            && ResetTokenExpiresAt.HasValue
-            && ResetTokenExpiresAt.Value >= nowUtc
-            && string.Equals(ResetTokenHash, tokenHash, StringComparison.Ordinal);
+        if (!IsActive ||
+            IsLockedOut(nowUtc) ||
+            string.IsNullOrWhiteSpace(ResetTokenHash) ||
+            string.IsNullOrWhiteSpace(tokenHash) ||
+            !ResetTokenExpiresAt.HasValue ||
+            ResetTokenExpiresAt.Value < nowUtc)
+        {
+            return false;
+        }
+
+        return FixedTimeStringEquals(ResetTokenHash, tokenHash);
+    }
+
+    public void GenerateEmailLoginCode(string codeHash, TimeSpan validity)
+    {
+        if (!IsActive)
+            throw new DomainException("Esta conta está desativada.");
+
+        EmailLoginCodeHash = codeHash;
+        EmailLoginCodeExpiresAt = DateTimeOffset.UtcNow.Add(validity);
+    }
+
+    public bool IsEmailLoginCodeValid(string codeHash, DateTimeOffset nowUtc)
+    {
+        if (!IsActive ||
+            IsLockedOut(nowUtc) ||
+            string.IsNullOrWhiteSpace(EmailLoginCodeHash) ||
+            string.IsNullOrWhiteSpace(codeHash) ||
+            !EmailLoginCodeExpiresAt.HasValue ||
+            EmailLoginCodeExpiresAt.Value < nowUtc)
+        {
+            return false;
+        }
+
+        return FixedTimeStringEquals(EmailLoginCodeHash, codeHash);
+    }
+
+    public void ClearEmailLoginCode()
+    {
+        EmailLoginCodeHash = null;
+        EmailLoginCodeExpiresAt = null;
+    }
+
+    private static bool FixedTimeStringEquals(string left, string right)
+    {
+        var leftBytes = Encoding.UTF8.GetBytes(left);
+        var rightBytes = Encoding.UTF8.GetBytes(right);
+        return CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
     }
 }
-
