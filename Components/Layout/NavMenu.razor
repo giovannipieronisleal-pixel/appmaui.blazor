@@ -1,0 +1,30 @@
+﻿@inject MauiAdminGateway Gateway
+
+<nav class="adm-nav">
+    <NavLink class="adm-nav-item" href="" Match="NavLinkMatch.All">
+        <span>Dashboard</span>
+    </NavLink>
+
+    <NavLink class="adm-nav-item" href="produtos">
+        <span>Produtos &amp; Variantes</span>
+    </NavLink>
+
+    <NavLink class="adm-nav-item" href="estoque">
+        <span>Controle de Estoque</span>
+    </NavLink>
+
+    @if (Gateway.IsAdmin)
+    {
+        <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
+            Administração
+        </div>
+
+        <NavLink class="adm-nav-item" href="funcionarios">
+            <span>Funcionários &amp; Acesso</span>
+        </NavLink>
+
+        <NavLink class="adm-nav-item" href="configuracoes-loja">
+            <span>Configurações da loja</span>
+        </NavLink>
+    }
+</nav>

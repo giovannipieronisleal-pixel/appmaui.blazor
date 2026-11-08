@@ -1,0 +1,126 @@
+@page "/"
+@inject CatalogDataGateway CatalogGateway
+
+<PageTitle>@_store.StoreName — Catálogo de Roupas</PageTitle>
+
+<section class="hero-section">
+    <div class="container hero-grid">
+        <div>
+            <span class="hero-eyebrow">Coleção Atual &bull; Catálogo Digital</span>
+            <h1 class="hero-title">@_store.StoreName</h1>
+            <p class="hero-description">@_store.StoreDescription</p>
+            <div class="hero-actions">
+                <a href="/catalogo" class="btn btn-dark">Explorar Catálogo</a>
+                <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="btn btn-whatsapp">
+                    Consultar pelo WhatsApp
+                </a>
+            </div>
+        </div>
+
+        <div class="hero-showcase-card">
+            <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.5rem;">
+                Como funciona nosso atendimento
+            </div>
+            <h3 style="font-size: 1.2rem; margin-bottom: 0.75rem;">Escolha sua peça e consulte em 1 clique</h3>
+            <ol style="padding-left: 1.25rem; color: var(--text-secondary); font-size: 0.94rem; display: flex; flex-direction: column; gap: 0.55rem;">
+                <li>Navegue pelas fotografias, cores e tamanhos reais disponíveis em estoque.</li>
+                <li>Na página do produto, selecione a <strong>Cor</strong> e o <strong>Tamanho</strong> desejados.</li>
+                <li>Clique em <strong>"Consultar pelo WhatsApp"</strong> para iniciar a conversa com a mensagem já preenchida.</li>
+            </ol>
+        </div>
+    </div>
+</section>
+
+<div class="container">
+    <div class="category-strip">
+        <a href="/catalogo" class="category-pill active">Todas as Peças (@_products.Count)</a>
+        @foreach (var cat in _categories)
+        {
+            <a href="/catalogo?categoria=@cat.Slug" class="category-pill">
+                @cat.Name (@cat.ProductCount)
+            </a>
+        }
+    </div>
+
+    <div class="section-header">
+        <div>
+            <h2 class="section-title">Destaques do Catálogo</h2>
+            <p style="color: var(--text-secondary); font-size: 0.95rem;">
+                Disponibilidade atualizada diretamente pelo nosso controle de estoque.
+            </p>
+        </div>
+        <a href="/catalogo" class="btn btn-outline">Ver todos os produtos &rarr;</a>
+    </div>
+
+    <div class="product-grid">
+        @foreach (var product in _products)
+        {
+            <article class="product-card">
+                <a href="/produto/@product.Slug" class="product-image-wrap">
+                    @if (!string.IsNullOrWhiteSpace(product.PrimaryImageUrl))
+                    {
+                        <img src="@product.PrimaryImageUrl" alt="@product.Name" class="product-image" loading="lazy" />
+                    }
+                    else
+                    {
+                        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.9rem;">
+                            Sem fotografia
+                        </div>
+                    }
+
+                    @if (product.HasAvailableStock)
+                    {
+                        <span class="stock-badge badge-in-stock">Disponível (@product.TotalStockQuantity un.)</span>
+                    }
+                    else
+                    {
+                        <span class="stock-badge badge-out-of-stock">Esgotado</span>
+                    }
+                </a>
+
+                <div class="product-card-body">
+                    <span class="product-category">@product.CategoryName</span>
+                    <a href="/produto/@product.Slug" class="product-title">@product.Name</a>
+                    <div class="product-price">@product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
+
+                    <div class="product-meta-row">
+                        <div class="color-dots" title="Cores disponíveis">
+                            @foreach (var color in product.AvailableColors.Take(5))
+                            {
+                                <span class="color-dot" style="background-color: @color.ColorHex;" title="@color.Color"></span>
+                            }
+                        </div>
+                        <div class="size-chips">
+                            @foreach (var size in product.AvailableSizes)
+                            {
+                                <span class="size-chip-mini">@size</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+                        <a href="/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
+                            Ver cores e tamanhos
+                        </a>
+                    </div>
+                </div>
+            </article>
+        }
+    </div>
+</div>
+
+@code {
+    private PublicStoreSettingsDto _store = new("Aura Vestuário", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private IReadOnlyList<CategoryDto> _categories = [];
+    private IReadOnlyList<CatalogProductCardDto> _products = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _store = await CatalogGateway.GetStoreInfoAsync();
+        _categories = await CatalogGateway.GetCategoriesAsync();
+        _products = await CatalogGateway.GetProductsAsync(new CatalogQueryFilter());
+    }
+}

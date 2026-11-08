@@ -1,0 +1,218 @@
+﻿@page "/"
+@inject MauiAdminGateway Gateway
+@inject NavigationManager Navigation
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Dashboard Operacional</h1>
+        <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
+            Visão geral em tempo real dos produtos, unidades em estoque e últimas movimentações.
+        </p>
+    </div>
+
+    <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+        <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadDashboardAsync">
+            Atualizar Dados
+        </button>
+        @if (Gateway.CanManageStock)
+        {
+            <a href="estoque" class="adm-btn adm-btn-primary">
+                + Registrar Movimentação
+            </a>
+        }
+        @if (Gateway.CanManageProducts)
+        {
+            <a href="produtos" class="adm-btn adm-btn-success">
+                + Gerenciar Produtos
+            </a>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert-banner alert-error">@_error</div>
+}
+
+@if (_summary is not null)
+{
+    <!-- Indicadores Principais (KPIs) -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label">Produtos Cadastrados</div>
+            <div class="kpi-value">@_summary.TotalRegisteredProducts</div>
+            <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                @_summary.TotalVisibleProducts visíveis no catálogo público
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-label">Unidades em Estoque</div>
+            <div class="kpi-value" style="color: var(--adm-success);">@_summary.TotalUnitsInStock</div>
+            <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                Soma de todas as variantes ativas
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-label">Estoque Baixo</div>
+            <div class="kpi-value" style="color: var(--adm-warning);">@_summary.LowStockVariantsCount</div>
+            <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                Variantes próximas de esgotar
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-label">Sem Estoque (Esgotados)</div>
+            <div class="kpi-value" style="color: var(--adm-danger);">@_summary.OutOfStockVariantsCount</div>
+            <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                Variantes com saldo zero
+            </div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.25rem;">
+        <!-- Alertas de Estoque Baixo e Sem Estoque -->
+        <section class="adm-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Alertas de Reposição (@_summary.StockAlerts.Count)</h2>
+                <a href="estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Ir para Estoque &rarr;</a>
+            </div>
+
+            @if (_summary.StockAlerts.Count == 0)
+            {
+                <p style="color: var(--adm-muted); font-size: 0.9rem;">
+                    Todas as variantes estão com nível de estoque saudável!
+                </p>
+            }
+            else
+            {
+                <table class="adm-table">
+                    <thead>
+                        <tr>
+                            <th>Produto / Variante</th>
+                            <th>SKU</th>
+                            <th>Saldo</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var alert in _summary.StockAlerts)
+                        {
+                            <tr>
+                                <td>
+                                    <div style="font-weight: 600;">@alert.ProductName</div>
+                                    <div style="font-size: 0.8rem; color: var(--adm-muted);">
+                                        Cor: @alert.Color &bull; Tam: <strong>@alert.Size</strong>
+                                    </div>
+                                </td>
+                                <td style="font-size: 0.8rem; color: var(--adm-muted);">@alert.Sku</td>
+                                <td style="font-weight: 700;">@alert.StockQuantity un.</td>
+                                <td>
+                                    @if (alert.IsOutOfStock)
+                                    {
+                                        <span class="pill-badge pill-red">Sem estoque</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="pill-badge pill-amber">Estoque baixo (&le; @alert.LowStockThreshold)</span>
+                                    }
+                                </td>
+                                <td style="text-align: right;">
+                                    <a href="produtos/@alert.ProductId" class="adm-btn adm-btn-outline" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;">
+                                        Ver
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        <!-- Últimas Movimentações -->
+        <section class="adm-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Últimas Movimentações</h2>
+                <a href="estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Histórico completo &rarr;</a>
+            </div>
+
+            @if (_summary.RecentMovements.Count == 0)
+            {
+                <p style="color: var(--adm-muted); font-size: 0.9rem;">Nenhuma movimentação registrada.</p>
+            }
+            else
+            {
+                <table class="adm-table">
+                    <thead>
+                        <tr>
+                            <th>Data/Hora</th>
+                            <th>Peça (Cor/Tam)</th>
+                            <th>Tipo</th>
+                            <th>Saldo</th>
+                            <th>Responsável</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var mov in _summary.RecentMovements)
+                        {
+                            <tr>
+                                <td style="font-size: 0.78rem; color: var(--adm-muted);">
+                                    @mov.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")
+                                </td>
+                                <td>
+                                    <div style="font-weight: 600;">@mov.ProductName</div>
+                                    <div style="font-size: 0.78rem; color: var(--adm-muted);">@mov.Color / @mov.Size</div>
+                                </td>
+                                <td>
+                                    @if (mov.MovementType == "IN")
+                                    {
+                                        <span class="pill-badge pill-green">+@mov.QuantityChanged Entrada</span>
+                                    }
+                                    else if (mov.MovementType == "OUT")
+                                    {
+                                        <span class="pill-badge pill-red">-@mov.QuantityChanged Saída</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="pill-badge pill-amber">Ajuste (@mov.QuantityChanged)</span>
+                                    }
+                                </td>
+                                <td style="font-size: 0.82rem;">
+                                    @mov.PreviousQuantity &rarr; <strong>@mov.NewQuantity</strong>
+                                </td>
+                                <td style="font-size: 0.8rem; color: var(--adm-muted);">
+                                    @mov.EmployeeName
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private DashboardSummaryDto? _summary;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardAsync();
+    }
+
+    private async Task LoadDashboardAsync()
+    {
+        _error = null;
+        try
+        {
+            _summary = await Gateway.GetDashboardSummaryAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

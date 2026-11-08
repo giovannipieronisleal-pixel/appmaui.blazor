@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ClothingStore.Domain/ClothingStore.Domain.csproj" />
+    <Project Path="src/ClothingStore.Shared/ClothingStore.Shared.csproj" />
+    <Project Path="src/ClothingStore.Application/ClothingStore.Application.csproj" />
+    <Project Path="src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj" />
+    <Project Path="src/ClothingStore.Api/ClothingStore.Api.csproj" />
+    <Project Path="src/ClothingStore.Web/ClothingStore.Web.csproj" />
+  </Folder>
+  <Folder Name="/mobile/">
+    <Project Path="appmaui.blazor.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj" />
+  </Folder>
+</Solution>

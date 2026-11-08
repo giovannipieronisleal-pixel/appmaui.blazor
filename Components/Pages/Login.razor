@@ -1,0 +1,194 @@
+@page "/login"
+@inject MauiAdminGateway Gateway
+@inject NavigationManager Navigation
+
+<div class="adm-card" style="padding: 2rem; box-shadow: 0 20px 40px rgba(0,0,0,0.35);">
+    <div style="text-align: center; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--adm-muted);">
+            Sistema de Gestão &amp; Estoque
+        </div>
+        <h1 style="font-size: 1.55rem; font-weight: 700; margin: 0.35rem 0;">
+            @(_isRecoveryMode ? "Recuperação de Acesso" : "Acesso de Funcionários")
+        </h1>
+        <p style="font-size: 0.88rem; color: var(--adm-muted); margin: 0;">
+            @(_isRecoveryMode
+                ? "Solicite um código de recuperação e defina uma nova senha."
+                : "Entre com suas credenciais individuais para gerenciar o catálogo e estoque.")
+        </p>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert-banner alert-error">@_errorMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <div class="alert-banner alert-success">@_successMessage</div>
+    }
+
+    @if (!_isRecoveryMode)
+    {
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <label class="adm-label">E-mail corporativo</label>
+                <input type="email" class="adm-input" @bind="_email" placeholder="admin@loja.com" />
+            </div>
+
+            <div>
+                <label class="adm-label">Senha</label>
+                <input type="password" class="adm-input" @bind="_password" placeholder="••••••••" />
+            </div>
+
+            <button type="button" class="adm-btn adm-btn-primary" style="width: 100%; padding: 0.8rem;" @onclick="HandleLoginAsync">
+                Entrar no Sistema
+            </button>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem; font-size: 0.84rem;">
+                <button type="button"
+                        style="background:none;border:none;color:var(--adm-muted);cursor:pointer;text-decoration:underline;padding:0;"
+                        @onclick="() => SwitchMode(true)">
+                    Esqueci minha senha
+                </button>
+            </div>
+
+            <div style="margin-top: 0.75rem; padding-top: 1rem; border-top: 1px solid var(--adm-border); font-size: 0.8rem; color: var(--adm-muted);">
+                <div style="font-weight: 600; margin-bottom: 0.4rem;">Contas rápidas para teste:</div>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" class="adm-btn adm-btn-outline" style="font-size: 0.78rem; padding: 0.35rem 0.65rem;" @onclick="FillAdminCredentials">
+                        Proprietária (Admin)
+                    </button>
+                    <button type="button" class="adm-btn adm-btn-outline" style="font-size: 0.78rem; padding: 0.35rem 0.65rem;" @onclick="FillEmployeeCredentials">
+                        Funcionário (Estoque/Produtos)
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <label class="adm-label">E-mail da conta</label>
+                <input type="email" class="adm-input" @bind="_email" placeholder="seuemail@loja.com" />
+            </div>
+
+            @if (!_resetCodeRequested)
+            {
+                <button type="button" class="adm-btn adm-btn-primary" style="width: 100%;" @onclick="HandleRequestResetCodeAsync">
+                    Gerar Código de Recuperação
+                </button>
+            }
+            else
+            {
+                <div>
+                    <label class="adm-label">Código de recuperação (6 dígitos)</label>
+                    <input type="text" class="adm-input" @bind="_resetCode" placeholder="123456" />
+                </div>
+
+                <div>
+                    <label class="adm-label">Nova senha (mínimo 6 caracteres)</label>
+                    <input type="password" class="adm-input" @bind="_newPassword" placeholder="Nova senha" />
+                </div>
+
+                <button type="button" class="adm-btn adm-btn-success" style="width: 100%;" @onclick="HandleConfirmResetPasswordAsync">
+                    Redefinir Senha
+                </button>
+            }
+
+            <button type="button" class="adm-btn adm-btn-outline" style="width: 100%;" @onclick="() => SwitchMode(false)">
+                Voltar para o Login
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private string _email = "admin@loja.com";
+    private string _password = "Admin@123";
+    private bool _isRecoveryMode;
+    private bool _resetCodeRequested;
+    private string _resetCode = string.Empty;
+    private string _newPassword = string.Empty;
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private void FillAdminCredentials()
+    {
+        _email = "admin@loja.com";
+        _password = "Admin@123";
+        _errorMessage = null;
+    }
+
+    private void FillEmployeeCredentials()
+    {
+        _email = "funcionario@loja.com";
+        _password = "Func@123";
+        _errorMessage = null;
+    }
+
+    private void SwitchMode(bool recovery)
+    {
+        _isRecoveryMode = recovery;
+        _resetCodeRequested = false;
+        _errorMessage = null;
+        _successMessage = null;
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        try
+        {
+            await Gateway.LoginAsync(new LoginRequest(_email, _password));
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleRequestResetCodeAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        try
+        {
+            var resp = await Gateway.ForgotPasswordAsync(new ForgotPasswordRequest(_email));
+            _resetCodeRequested = true;
+            if (!string.IsNullOrWhiteSpace(resp.DemoResetCode))
+            {
+                _resetCode = resp.DemoResetCode;
+                _successMessage = $"{resp.Message} (Código: {resp.DemoResetCode})";
+            }
+            else
+            {
+                _successMessage = resp.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleConfirmResetPasswordAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        try
+        {
+            await Gateway.ResetPasswordAsync(new ResetPasswordRequest(_email, _resetCode, _newPassword));
+            _isRecoveryMode = false;
+            _resetCodeRequested = false;
+            _password = _newPassword;
+            _successMessage = "Senha redefinida com sucesso! Você já pode entrar.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+}

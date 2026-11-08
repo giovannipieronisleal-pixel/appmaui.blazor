@@ -1,0 +1,76 @@
+﻿@inherits LayoutComponentBase
+@inject MauiAdminGateway Gateway
+@inject NavigationManager Navigation
+@implements IDisposable
+
+@if (!Gateway.IsAuthenticated)
+{
+    <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: #18181B;">
+        <div style="width: 100%; max-width: 460px;">
+            <appmaui.blazor.Components.Pages.Login />
+        </div>
+    </div>
+}
+else
+{
+    <div class="adm-shell">
+        <aside class="adm-sidebar">
+            <div class="adm-brand">
+                <div>GESTÃO DE ESTOQUE</div>
+                <div style="font-size: 0.75rem; font-weight: 400; color: #A1A1AA; margin-top: 0.2rem;">
+                    Catálogo &amp; Roupas (.NET MAUI)
+                </div>
+            </div>
+
+            <NavMenu />
+        </aside>
+
+        <div class="adm-main">
+            <header class="adm-topbar">
+                <div>
+                    <span style="font-weight: 600;">@Gateway.CurrentEmployee?.FullName</span>
+                    <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")" style="margin-left: 0.5rem;">
+                        @(Gateway.IsAdmin ? "Administrador" : "Funcionário")
+                    </span>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 0.82rem; color: var(--adm-muted);">
+                        @Gateway.CurrentEmployee?.Email
+                    </span>
+                    <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.4rem 0.8rem;" @onclick="HandleLogout">
+                        Sair
+                    </button>
+                </div>
+            </header>
+
+            <main class="adm-content">
+                @Body
+            </main>
+        </div>
+    </div>
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Gateway.AuthStateChanged += OnAuthStateChanged;
+        await Gateway.TryRestoreSessionAsync();
+    }
+
+    private void OnAuthStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleLogout()
+    {
+        Gateway.Logout();
+        Navigation.NavigateTo("/");
+    }
+
+    public void Dispose()
+    {
+        Gateway.AuthStateChanged -= OnAuthStateChanged;
+    }
+}

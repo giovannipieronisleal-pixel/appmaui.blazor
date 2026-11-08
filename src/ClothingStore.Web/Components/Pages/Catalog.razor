@@ -1,0 +1,226 @@
+@page "/catalogo"
+@inject CatalogDataGateway CatalogGateway
+@inject NavigationManager Navigation
+
+<PageTitle>Catálogo de Roupas — @_store.StoreName</PageTitle>
+
+<div class="container">
+    <div style="padding: 2rem 0 0.5rem; border-bottom: 1px solid var(--border-color);">
+        <h1 style="font-size: 1.85rem; font-weight: 700;">Catálogo de Roupas</h1>
+        <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 0.25rem;">
+            Filtre por categoria, tamanho, cor ou pesquise pelo nome da peça.
+        </p>
+    </div>
+
+    <div class="catalog-layout">
+        <!-- Painel de Filtros -->
+        <aside class="filter-panel">
+            <div>
+                <div class="filter-group-title">Pesquisar Peça</div>
+                <input type="text"
+                       class="form-input"
+                       placeholder="Ex.: Camiseta, Linho, Vestido..."
+                       @bind="_searchText"
+                       @bind:event="oninput"
+                       @onkeyup="ApplyFiltersAsync" />
+            </div>
+
+            <div>
+                <div class="filter-group-title">Categoria</div>
+                <select class="form-select" @bind="_selectedCategorySlug" @bind:after="ApplyFiltersAsync">
+                    <option value="">Todas as categorias</option>
+                    @foreach (var cat in _filters.Categories)
+                    {
+                        <option value="@cat.Slug">@cat.Name (@cat.ProductCount)</option>
+                    }
+                </select>
+            </div>
+
+            <div>
+                <div class="filter-group-title">Tamanho</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.45rem;">
+                    @foreach (var size in _filters.Sizes)
+                    {
+                        var isSelected = string.Equals(_selectedSize, size, StringComparison.OrdinalIgnoreCase);
+                        <button type="button"
+                                class="selector-btn @(isSelected ? "active" : "")"
+                                style="padding: 0.4rem 0.75rem; font-size: 0.82rem;"
+                                @onclick="() => ToggleSizeFilterAsync(size)">
+                            @size
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div>
+                <div class="filter-group-title">Cor</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.45rem;">
+                    @foreach (var colorOpt in _filters.Colors)
+                    {
+                        var isSelected = string.Equals(_selectedColor, colorOpt.Color, StringComparison.OrdinalIgnoreCase);
+                        <button type="button"
+                                class="selector-btn @(isSelected ? "active" : "")"
+                                style="padding: 0.4rem 0.7rem; font-size: 0.82rem;"
+                                @onclick="() => ToggleColorFilterAsync(colorOpt.Color)">
+                            <span class="color-dot" style="background-color: @colorOpt.ColorHex;"></span>
+                            <span>@colorOpt.Color</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div>
+                <label style="display: flex; align-items: center; gap: 0.55rem; font-size: 0.9rem; cursor: pointer;">
+                    <input type="checkbox" @bind="_onlyInStock" @bind:after="ApplyFiltersAsync" />
+                    <span>Apenas produtos em estoque</span>
+                </label>
+            </div>
+
+            <button type="button" class="btn btn-outline" style="width: 100%;" @onclick="ClearFiltersAsync">
+                Limpar Filtros
+            </button>
+        </aside>
+
+        <!-- Grade de Produtos -->
+        <section>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <span style="font-size: 0.92rem; color: var(--text-secondary);">
+                    Exibindo <strong>@_products.Count</strong> peça(s) encontrada(s)
+                </span>
+            </div>
+
+            @if (_products.Count == 0)
+            {
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3rem; text-align: center;">
+                    <h3 style="margin-bottom: 0.5rem;">Nenhum produto encontrado com esses filtros</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 1.25rem;">
+                        Tente remover alguns filtros de cor ou tamanho para visualizar mais opções do catálogo.
+                    </p>
+                    <button type="button" class="btn btn-dark" @onclick="ClearFiltersAsync">Ver todas as peças</button>
+                </div>
+            }
+            else
+            {
+                <div class="product-grid">
+                    @foreach (var product in _products)
+                    {
+                        <article class="product-card">
+                            <a href="/produto/@product.Slug" class="product-image-wrap">
+                                @if (!string.IsNullOrWhiteSpace(product.PrimaryImageUrl))
+                                {
+                                    <img src="@product.PrimaryImageUrl" alt="@product.Name" class="product-image" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">
+                                        Sem fotografia
+                                    </div>
+                                }
+
+                                @if (product.HasAvailableStock)
+                                {
+                                    <span class="stock-badge badge-in-stock">Em estoque (@product.TotalStockQuantity un.)</span>
+                                }
+                                else
+                                {
+                                    <span class="stock-badge badge-out-of-stock">Sem estoque</span>
+                                }
+                            </a>
+
+                            <div class="product-card-body">
+                                <span class="product-category">@product.CategoryName</span>
+                                <a href="/produto/@product.Slug" class="product-title">@product.Name</a>
+                                <div class="product-price">@product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
+
+                                <div class="product-meta-row">
+                                    <div class="color-dots">
+                                        @foreach (var c in product.AvailableColors)
+                                        {
+                                            <span class="color-dot" style="background-color: @c.ColorHex;" title="@c.Color"></span>
+                                        }
+                                    </div>
+                                    <div class="size-chips">
+                                        @foreach (var s in product.AvailableSizes)
+                                        {
+                                            <span class="size-chip-mini">@s</span>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div style="margin-top: 0.75rem;">
+                                    <a href="/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
+                                        Selecionar Cor e Tamanho
+                                    </a>
+                                </div>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "categoria")]
+    public string? QueryCategorySlug { get; set; }
+
+    private PublicStoreSettingsDto _store = new("Aura Vestuário", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private CatalogFiltersDto _filters = new([], [], []);
+    private IReadOnlyList<CatalogProductCardDto> _products = [];
+
+    private string? _searchText;
+    private string? _selectedCategorySlug;
+    private string? _selectedColor;
+    private string? _selectedSize;
+    private bool _onlyInStock;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _store = await CatalogGateway.GetStoreInfoAsync();
+        _filters = await CatalogGateway.GetFiltersAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(QueryCategorySlug))
+        {
+            _selectedCategorySlug = QueryCategorySlug;
+        }
+        await ApplyFiltersAsync();
+    }
+
+    private async Task ToggleSizeFilterAsync(string size)
+    {
+        _selectedSize = string.Equals(_selectedSize, size, StringComparison.OrdinalIgnoreCase) ? null : size;
+        await ApplyFiltersAsync();
+    }
+
+    private async Task ToggleColorFilterAsync(string color)
+    {
+        _selectedColor = string.Equals(_selectedColor, color, StringComparison.OrdinalIgnoreCase) ? null : color;
+        await ApplyFiltersAsync();
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        var query = new CatalogQueryFilter(
+            Search: _searchText,
+            CategorySlug: _selectedCategorySlug,
+            Color: _selectedColor,
+            Size: _selectedSize,
+            OnlyInStock: _onlyInStock);
+
+        _products = await CatalogGateway.GetProductsAsync(query);
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _searchText = null;
+        _selectedCategorySlug = null;
+        _selectedColor = null;
+        _selectedSize = null;
+        _onlyInStock = false;
+        await ApplyFiltersAsync();
+    }
+}

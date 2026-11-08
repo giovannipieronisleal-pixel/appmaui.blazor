@@ -1,0 +1,282 @@
+@page "/produto/{Slug}"
+@inject CatalogDataGateway CatalogGateway
+
+<PageTitle>@(_product?.Name ?? "Produto") — @_store.StoreName</PageTitle>
+
+<div class="container">
+    <div style="padding-top: 1.5rem;">
+        <a href="/catalogo" style="font-size: 0.9rem; color: var(--text-secondary);">&larr; Voltar para o Catálogo</a>
+    </div>
+
+    @if (_product is null)
+    {
+        <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3rem; margin: 2rem 0; text-align: center;">
+            <h2>Produto não encontrado</h2>
+            <p style="color: var(--text-secondary); margin: 0.75rem 0 1.5rem;">
+                Esta peça pode ter sido removida ou ocultada do catálogo.
+            </p>
+            <a href="/catalogo" class="btn btn-dark">Ver Catálogo Completo</a>
+        </div>
+    }
+    else
+    {
+        <div class="detail-grid">
+            <!-- Galeria de Fotografias do Produto -->
+            <div>
+                <div class="gallery-main">
+                    @if (!string.IsNullOrWhiteSpace(_activeImageUrl))
+                    {
+                        <img src="@_activeImageUrl" alt="@_product.Name" />
+                    }
+                    else
+                    {
+                        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">
+                            Sem fotografia cadastrada
+                        </div>
+                    }
+                </div>
+
+                @if (_product.Images.Count > 1)
+                {
+                    <div class="gallery-thumbs">
+                        @foreach (var img in _product.Images)
+                        {
+                            var isCurrent = string.Equals(_activeImageUrl, img.PublicUrl, StringComparison.Ordinal);
+                            <button type="button"
+                                    class="gallery-thumb @(isCurrent ? "active" : "")"
+                                    @onclick="() => _activeImageUrl = img.PublicUrl">
+                                <img src="@img.PublicUrl" alt="@(img.AltText ?? _product.Name)" />
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- Informações, Seletores de Cor/Tamanho e Botão WhatsApp -->
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 2rem;">
+                <span class="product-category">@_product.CategoryName</span>
+                <h1 style="font-size: 1.9rem; font-weight: 700; margin: 0.25rem 0 0.5rem;">@_product.Name</h1>
+                <div style="font-size: 1.6rem; font-weight: 700; margin-bottom: 1rem;">
+                    @_product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_product.Description))
+                {
+                    <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.98rem;">
+                        @_product.Description
+                    </p>
+                }
+
+                <!-- Seletor de Cor -->
+                <div style="margin-bottom: 1.35rem;">
+                    <div class="filter-group-title">
+                        1. Selecione a Cor: <span style="color: var(--text-primary);">@(_selectedColor ?? "Escolha uma opção")</span>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.55rem;">
+                        @foreach (var colorGroup in GetDistinctColors())
+                        {
+                            var isSelected = string.Equals(_selectedColor, colorGroup.Color, StringComparison.OrdinalIgnoreCase);
+                            <button type="button"
+                                    class="selector-btn @(isSelected ? "active" : "")"
+                                    @onclick="() => SelectColor(colorGroup.Color)">
+                                <span class="color-dot" style="background-color: @colorGroup.ColorHex;"></span>
+                                <span>@colorGroup.Color</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <!-- Seletor de Tamanho -->
+                <div style="margin-bottom: 1.5rem;">
+                    <div class="filter-group-title">
+                        2. Selecione o Tamanho: <span style="color: var(--text-primary);">@(_selectedSize ?? "Escolha uma opção")</span>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.55rem;">
+                        @foreach (var variant in GetVariantsForSelectedColor())
+                        {
+                            var isSelected = string.Equals(_selectedSize, variant.Size, StringComparison.OrdinalIgnoreCase);
+                            var outClass = variant.IsOutOfStock ? "out-of-stock" : "";
+                            <button type="button"
+                                    class="selector-btn @(isSelected ? "active" : "") @outClass"
+                                    @onclick="() => SelectSize(variant.Size)">
+                                <span>@variant.Size</span>
+                                <span style="font-size: 0.75rem; opacity: 0.8;">
+                                    (@(variant.StockQuantity > 0 ? $"{variant.StockQuantity} un." : "Esgotado"))
+                                </span>
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <!-- Status de Disponibilidade da Variante Selecionada -->
+                @{
+                    var selectedVariant = GetSelectedVariant();
+                }
+                <div style="padding: 0.9rem 1rem; border-radius: var(--radius-sm); background: var(--bg-subtle); margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                    @if (selectedVariant is not null)
+                    {
+                        <div>
+                            <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                Código da Variante: <strong>@selectedVariant.Sku</strong>
+                            </div>
+                            <div style="font-weight: 600;">
+                                Combinação: @selectedVariant.Color &bull; Tamanho @selectedVariant.Size
+                            </div>
+                        </div>
+
+                        @if (selectedVariant.IsOutOfStock)
+                        {
+                            <span class="stock-badge badge-out-of-stock" style="position: static;">Sem estoque no momento</span>
+                        }
+                        else if (selectedVariant.IsLowStock)
+                        {
+                            <span class="stock-badge badge-low-stock" style="position: static;">Últimas @selectedVariant.StockQuantity unidades!</span>
+                        }
+                        else
+                        {
+                            <span class="stock-badge badge-in-stock" style="position: static;">Em estoque (@selectedVariant.StockQuantity unidades)</span>
+                        }
+                    }
+                    else
+                    {
+                        <span style="font-size: 0.9rem; color: var(--text-secondary);">
+                            Selecione a cor e o tamanho acima para ver a disponibilidade exata.
+                        </span>
+                    }
+                </div>
+
+                <!-- Botão Oficial Consultar pelo WhatsApp -->
+                <a href="@GetWhatsAppConsultationUrl()"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="btn btn-whatsapp btn-whatsapp-lg">
+                    <span>Consultar pelo WhatsApp</span>
+                </a>
+
+                <div class="whatsapp-preview-box">
+                    <div style="font-weight: 700; margin-bottom: 0.25rem;">Mensagem automática que será enviada para +@_store.WhatsappNumber:</div>
+                    <div>"@WhatsAppLinkBuilder.BuildProductConsultationMessage(_product.Name, _selectedColor, _selectedSize)"</div>
+                </div>
+
+                <!-- Tabela Resumo de Todas as Variantes do Produto -->
+                <div style="margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
+                    <div class="filter-group-title">Disponibilidade por Cor e Tamanho</div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 0.5rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--text-muted);">
+                                <th style="padding: 0.45rem 0;">Cor</th>
+                                <th style="padding: 0.45rem 0;">Tamanho</th>
+                                <th style="padding: 0.45rem 0;">SKU</th>
+                                <th style="padding: 0.45rem 0; text-align: right;">Disponibilidade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var v in _product.Variants)
+                            {
+                                <tr style="border-bottom: 1px solid var(--bg-subtle);">
+                                    <td style="padding: 0.5rem 0;">@v.Color</td>
+                                    <td style="padding: 0.5rem 0; font-weight: 600;">@v.Size</td>
+                                    <td style="padding: 0.5rem 0; color: var(--text-muted);">@v.Sku</td>
+                                    <td style="padding: 0.5rem 0; text-align: right; font-weight: 600;">
+                                        @(v.StockQuantity > 0 ? $"{v.StockQuantity} un." : "Esgotado")
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = string.Empty;
+
+    private PublicStoreSettingsDto _store = new("Aura Vestuário", "5511999999999", "", null, DateTimeOffset.UtcNow);
+    private ProductDetailDto? _product;
+    private string? _activeImageUrl;
+    private string? _selectedColor;
+    private string? _selectedSize;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _store = await CatalogGateway.GetStoreInfoAsync();
+        _product = await CatalogGateway.GetProductDetailAsync(Slug);
+
+        if (_product is not null)
+        {
+            _activeImageUrl = _product.Images.FirstOrDefault()?.PublicUrl;
+
+            var preferredVariant = _product.Variants.FirstOrDefault(v => v.StockQuantity > 0)
+                ?? _product.Variants.FirstOrDefault();
+
+            if (preferredVariant is not null)
+            {
+                _selectedColor = preferredVariant.Color;
+                _selectedSize = preferredVariant.Size;
+            }
+        }
+    }
+
+    private IEnumerable<ColorOptionDto> GetDistinctColors()
+    {
+        if (_product is null)
+            return [];
+
+        return _product.Variants
+            .GroupBy(v => v.Color, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ColorOptionDto(g.Key, g.First().ColorHex));
+    }
+
+    private IEnumerable<ProductVariantDto> GetVariantsForSelectedColor()
+    {
+        if (_product is null)
+            return [];
+
+        if (string.IsNullOrWhiteSpace(_selectedColor))
+            return _product.Variants;
+
+        return _product.Variants.Where(v =>
+            string.Equals(v.Color, _selectedColor, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void SelectColor(string color)
+    {
+        _selectedColor = color;
+        var matchingVariants = GetVariantsForSelectedColor().ToList();
+        if (!matchingVariants.Any(v => string.Equals(v.Size, _selectedSize, StringComparison.OrdinalIgnoreCase)))
+        {
+            var inStock = matchingVariants.FirstOrDefault(v => v.StockQuantity > 0) ?? matchingVariants.FirstOrDefault();
+            _selectedSize = inStock?.Size;
+        }
+    }
+
+    private void SelectSize(string size)
+    {
+        _selectedSize = size;
+    }
+
+    private ProductVariantDto? GetSelectedVariant()
+    {
+        if (_product is null)
+            return null;
+
+        return _product.Variants.FirstOrDefault(v =>
+            string.Equals(v.Color, _selectedColor, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(v.Size, _selectedSize, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetWhatsAppConsultationUrl()
+    {
+        if (_product is null)
+            return "#";
+
+        return WhatsAppLinkBuilder.BuildProductConsultationLink(
+            _store.WhatsappNumber,
+            _product.Name,
+            _selectedColor,
+            _selectedSize);
+    }
+}
