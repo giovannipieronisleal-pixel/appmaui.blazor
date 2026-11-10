@@ -1,20 +1,28 @@
 @page "/configuracoes-loja"
+@using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
+@inject CatalogService CatalogService
 @inject NavigationManager Navigation
+@inject ThemeService Theme
+@inject GoogleCloudSyncService CloudSync
 
 @{
     var effectiveSlug = string.IsNullOrWhiteSpace(_form.StoreSlug)
         ? WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName)
         : WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreSlug);
-    var storeCatalogUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl("http://localhost:5190", effectiveSlug);
+
+    var baseSiteUrl = !string.IsNullOrWhiteSpace(_form.OnlineBaseUrl)
+        ? _form.OnlineBaseUrl.TrimEnd('/')
+        : "https://flaviaroupasdigital.com";
+
+    var storeCatalogUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl(baseSiteUrl, effectiveSlug);
     var qrCodeSvgUri = WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(storeCatalogUrl);
 }
 
 <div style="margin-bottom: 1.5rem;">
-    <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Configurações da loja</h1>
+    <h1 style="font-size: 1.65rem; font-weight: 800; margin: 0; color: var(--adm-text);">Configurações da Loja &amp; Catálogo</h1>
     <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
-        Personalize o Nome da loja, Link fixo para QR Code, Número de WhatsApp (DDI + DDD), Descrição e Logotipo.
-        Qualquer alteração salva aqui é refletida automaticamente no site público, sem necessidade de republicar.
+        Personalize o nome da loja, tema visual (Claro/Escuro), WhatsApp e compartilhe o link do seu catálogo com seus clientes.
     </p>
 </div>
 
@@ -28,128 +36,173 @@
     <div class="alert-banner alert-success">@_success</div>
 }
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.5rem; align-items: start;">
-    <!-- Formulário Principal de Configurações da Loja -->
-    <section class="adm-card">
-        <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">
-            Identidade, Link Fixo e Contato Comercial
-        </h2>
-
-        <div style="display: flex; flex-direction: column; gap: 1.1rem;">
-            <div>
-                <label class="adm-label">Nome da loja *</label>
-                <input type="text"
-                       class="adm-input"
-                       @bind="_form.StoreName"
-                       @bind:event="oninput"
-                       @bind:after="SyncSlugFromStoreNameIfUnlocked"
-                       placeholder="Digite o nome oficial da loja" />
-            </div>
-
-            <div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
-                    <label class="adm-label" style="margin: 0;">Identificador do Link da Loja (Slug para QR Code Fixo) *</label>
-                    <label style="font-size: 0.76rem; color: var(--adm-muted); display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
-                        <input type="checkbox" @bind="_autoSyncSlugWithName" />
-                        <span>Sincronizar com o nome da loja</span>
-                    </label>
-                </div>
-                <input type="text" class="adm-input" @bind="_form.StoreSlug" placeholder="minha-loja" />
-                <span style="font-size: 0.78rem; color: var(--adm-muted);">
-                    Link gerado com o nome da loja: <strong>/loja/@effectiveSlug</strong> (preparado para QR Code fixo e futura expansão multi-clientes).
-                </span>
-            </div>
-
-            <div>
-                <label class="adm-label">Número de WhatsApp com código do país (DDI) e DDD *</label>
-                <input type="text" class="adm-input" @bind="_form.WhatsappNumber" placeholder="Ex.: 5511999999999" />
-                <span style="font-size: 0.78rem; color: var(--adm-muted);">
-                    Informe DDI + DDD + Número (ex.: <strong>5511999999999</strong>). Usado no botão "Consultar pelo WhatsApp" do site.
-                </span>
-            </div>
-
-            <div>
-                <label class="adm-label">Descrição da loja *</label>
-                <textarea class="adm-textarea" rows="4" @bind="_form.StoreDescription" placeholder="Apresentação da loja exibida no catálogo público..."></textarea>
-            </div>
-
-            <div>
-                <label class="adm-label">Logotipo da loja (opcional — URL ou Upload abaixo)</label>
-                <input type="url" class="adm-input" @bind="_form.LogoPublicUrl" placeholder="https://... (deixe em branco se não quiser logotipo)" />
-            </div>
-
-            <div>
-                <label class="adm-label">Limite padrão para Alerta de Estoque Baixo (unidades)</label>
-                <input type="number" min="0" class="adm-input" @bind="_form.DefaultLowStockThreshold" />
-            </div>
-
-            <button type="button" class="adm-btn adm-btn-success" style="padding: 0.8rem;" @onclick="SaveSettingsAsync">
-                Salvar Configurações da Loja
-            </button>
-        </div>
-    </section>
-
-    <!-- Coluna Direita: Link da Loja + QR Code Fixo + Logotipo + Simulação WhatsApp -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; align-items: start;">
+    <!-- Coluna Esquerda: Tema do App + Identidade da Loja -->
     <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-        <!-- Card do Link do Site e QR Code Fixo -->
-        <section class="adm-card" style="border-left: 4px solid var(--adm-success);">
-            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.5rem;">
-                Link Oficial do Catálogo &amp; QR Code Fixo
-            </h2>
-            <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0;">
-                Este link contém o nome da loja e permanece fixo para impressão em etiquetas, sacolas e balcão:
+        <!-- Card 1: Aparência e Tema do Aplicativo (Android) -->
+        <section class="adm-card" style="border-left: 4px solid var(--adm-accent);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--adm-text);">
+                    🎨 Tema do Aplicativo (Modo Claro &amp; Escuro)
+                </h2>
+                <span class="pill-badge pill-blue">Android</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0; margin-bottom: 0.75rem;">
+                Escolha a aparência visual do aplicativo de acordo com a sua preferência:
             </p>
 
-            <div style="background: #F4F4F5; border: 1px solid var(--adm-border); border-radius: 8px; padding: 0.75rem 1rem; font-family: monospace; font-size: 0.9rem; font-weight: 700; word-break: break-all; margin-bottom: 0.85rem;">
+            <div class="theme-selector-grid">
+                <div class="theme-card-option @(Theme.ThemePreference == "system" ? "active" : "")"
+                     @onclick='() => ChangeTheme("system")'>
+                    <div style="font-size: 1.3rem; margin-bottom: 0.2rem;">🌓</div>
+                    <div>Automático</div>
+                    <div style="font-size: 0.72rem; color: var(--adm-muted); font-weight: 500;">Segue o Android</div>
+                </div>
+
+                <div class="theme-card-option @(Theme.ThemePreference == "light" ? "active" : "")"
+                     @onclick='() => ChangeTheme("light")'>
+                    <div style="font-size: 1.3rem; margin-bottom: 0.2rem;">☀️</div>
+                    <div>Modo Claro</div>
+                    <div style="font-size: 0.72rem; color: var(--adm-muted); font-weight: 500;">Fundo Branco</div>
+                </div>
+
+                <div class="theme-card-option @(Theme.ThemePreference == "dark" ? "active" : "")"
+                     @onclick='() => ChangeTheme("dark")'>
+                    <div style="font-size: 1.3rem; margin-bottom: 0.2rem;">🌙</div>
+                    <div>Modo Escuro</div>
+                    <div style="font-size: 0.72rem; color: var(--adm-muted); font-weight: 500;">OLED / Alto Contraste</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Card 2: Dados da Loja e Contato -->
+        <section class="adm-card">
+            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem; color: var(--adm-text);">
+                🏪 Identidade da Loja &amp; WhatsApp
+            </h2>
+
+            <div style="display: flex; flex-direction: column; gap: 1.1rem;">
+                <div>
+                    <label class="adm-label">Nome da Loja *</label>
+                    <input type="text"
+                           class="adm-input"
+                           @bind="_form.StoreName"
+                           @bind:event="oninput"
+                           @bind:after="SyncSlugFromStoreNameIfUnlocked"
+                           placeholder="Ex.: Flavia Roupas" />
+                </div>
+
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                        <label class="adm-label" style="margin: 0;">Endereço do Link da Loja (Final da URL) *</label>
+                        <label style="font-size: 0.76rem; color: var(--adm-muted); display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                            <input type="checkbox" @bind="_autoSyncSlugWithName" />
+                            <span>Sincronizar com o nome</span>
+                        </label>
+                    </div>
+                    <input type="text" class="adm-input" @bind="_form.StoreSlug" placeholder="flavia-roupas" />
+                    <span style="font-size: 0.78rem; color: var(--adm-muted);">
+                        Link gerado para os seus clientes: <strong>/loja/@effectiveSlug</strong>
+                    </span>
+                </div>
+
+                <div>
+                    <label class="adm-label">Número do WhatsApp (DDD + Celular) *</label>
+                    <input type="text" class="adm-input" @bind="_form.WhatsappNumber" placeholder="Ex.: 21975219710" />
+                    <span style="font-size: 0.78rem; color: var(--adm-muted);">
+                        Pode digitar apenas o DDD + número (ex.: <strong>21975219710</strong>). O código do Brasil (+55) é inserido automaticamente!
+                    </span>
+                </div>
+
+                <div>
+                    <label class="adm-label">Descrição e Bio da Loja *</label>
+                    <textarea class="adm-textarea" rows="3" @bind="_form.StoreDescription" placeholder="Apresentação exibida para os clientes no catálogo online..."></textarea>
+                </div>
+
+                <div>
+                    <label class="adm-label">Alerta de Estoque Baixo (avisa quando restar menos de quantas unidades)</label>
+                    <input type="number" min="0" class="adm-input" @bind="_form.DefaultLowStockThreshold" />
+                </div>
+
+                <button type="button" class="adm-btn adm-btn-success" style="padding: 0.85rem; font-size: 0.95rem; font-weight: 700;" @onclick="SaveSettingsAsync">
+                    💾 Salvar Configurações da Loja
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Coluna Direita: Link Oficial da Loja + QR Code + Logotipo -->
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- Card 3: Link Oficial do Catálogo da Sua Loja -->
+        <section class="adm-card" style="border-left: 4px solid var(--adm-success);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--adm-text);">
+                    🌐 Link Oficial do Catálogo da Sua Loja
+                </h2>
+                <span class="pill-badge pill-green">🟢 Catálogo Pronto</span>
+            </div>
+
+            <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0; margin-bottom: 0.85rem; line-height: 1.45;">
+                Este é o link oficial exclusivo da sua loja! Compartilhe com suas clientes ou divulgue nas suas redes sociais:
+            </p>
+
+            <div style="background: var(--adm-input-bg); border: 1.5px solid var(--adm-border); border-radius: 8px; padding: 0.85rem 1rem; font-family: monospace; font-size: 0.95rem; font-weight: 700; word-break: break-all; margin-bottom: 0.95rem; color: var(--adm-accent);">
                 @storeCatalogUrl
             </div>
 
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.15rem;">
-                <a href="/loja/@effectiveSlug" class="adm-btn adm-btn-primary">
-                    Visualizar Catálogo da Loja Agora
-                </a>
-                <button type="button" class="adm-btn adm-btn-outline" @onclick="() => CopyStoreUrlAsync(storeCatalogUrl)">
-                    @(_copiedUrl ? "Link Copiado!" : "Copiar Link")
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
+                <button type="button" class="adm-btn adm-btn-primary" style="flex: 1; min-width: 140px;" @onclick="() => CopyStoreUrlAsync(storeCatalogUrl)">
+                    @(_copiedUrl ? "✓ Link Copiado!" : "📋 Copiar Link")
                 </button>
-                <button type="button" class="adm-btn adm-btn-outline" @onclick="() => OpenBrowserAsync(storeCatalogUrl)">
+
+                <button type="button" class="adm-btn adm-btn-success" style="flex: 1; min-width: 160px;" @onclick="() => ShareOnWhatsAppAsync(storeCatalogUrl)">
+                    💬 Enviar no WhatsApp
+                </button>
+
+                <a href="/loja/@effectiveSlug" class="adm-btn adm-btn-outline" style="min-width: 110px;">
+                    👁️ Ver no App
+                </a>
+
+                <button type="button" class="adm-btn adm-btn-outline" style="min-width: 140px;" @onclick="() => OpenBrowserAsync(storeCatalogUrl)">
                     Abrir no Navegador &nearr;
                 </button>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 1.25rem; background: #FAF9F6; border: 1px solid var(--adm-border); border-radius: 10px; padding: 1rem; flex-wrap: wrap;">
-                <img src="@qrCodeSvgUri" alt="QR Code da Loja" style="width: 120px; height: 120px; border-radius: 8px;" />
-                <div style="flex: 1; min-width: 180px;">
-                    <div style="font-weight: 700; font-size: 0.95rem;">QR Code Fixo — @_form.StoreName</div>
-                    <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
-                        Aponta diretamente para <strong>/loja/@effectiveSlug</strong>. Quando você altera produtos, preços, fotos ou WhatsApp no aplicativo, o cliente que escanear este QR Code verá tudo atualizado automaticamente.
+            <!-- QR Code do Balcão e Sacolas -->
+            <div style="display: flex; align-items: center; gap: 1.25rem; background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 1rem; flex-wrap: wrap;">
+                <img src="@qrCodeSvgUri" alt="QR Code da Loja" style="width: 110px; height: 110px; border-radius: 8px; background: #FFFFFF; padding: 4px;" />
+                <div style="flex: 1; min-width: 170px;">
+                    <div style="font-weight: 800; font-size: 0.95rem; color: var(--adm-text);">📱 QR Code do Balcão &amp; Sacolas</div>
+                    <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem; line-height: 1.4;">
+                        Imprima e coloque no balcão ou nas etiquetas das roupas: suas clientes apontam a câmera do celular e abrem o catálogo na hora!
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Card de Upload de Logotipo -->
+        <!-- Card 4: Logotipo da Loja -->
         <section class="adm-card">
-            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.75rem;">
-                Logotipo da Loja (Opcional)
+            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.75rem; color: var(--adm-text);">
+                🖼️ Logotipo da Loja (Opcional)
             </h2>
 
             @if (!string.IsNullOrWhiteSpace(_form.LogoPublicUrl))
             {
-                <div style="padding: 1rem; background: #FAF9F6; border: 1px solid var(--adm-border); border-radius: 8px; display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                <div style="padding: 1rem; background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 8px; display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
                     <img src="@_form.LogoPublicUrl" alt="Logotipo" style="height: 52px; max-width: 160px; object-fit: contain;" />
-                    <span style="font-weight: 700; font-size: 1.1rem;">@_form.StoreName</span>
+                    <span style="font-weight: 700; font-size: 1.1rem; color: var(--adm-text);">@_form.StoreName</span>
                 </div>
             }
             else
             {
-                <div style="padding: 1rem; background: #FAF9F6; border: 1px dashed var(--adm-border); border-radius: 8px; color: var(--adm-muted); font-size: 0.88rem; margin-bottom: 1rem;">
-                    Nenhum logotipo configurado (o site exibirá o nome <strong>@_form.StoreName</strong> em destaque).
+                <div style="padding: 1rem; background: var(--adm-input-bg); border: 1px dashed var(--adm-border); border-radius: 8px; color: var(--adm-muted); font-size: 0.88rem; margin-bottom: 1rem;">
+                    Nenhum logotipo configurado (o catálogo exibirá o nome <strong>@_form.StoreName</strong> em destaque).
                 </div>
             }
 
             <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
                 <button type="button" class="adm-btn adm-btn-primary" @onclick="PickAndUploadLogoAsync">
-                    Enviar Logotipo do Dispositivo
+                    📷 Enviar Logotipo do Celular
                 </button>
                 @if (!string.IsNullOrWhiteSpace(_form.LogoPublicUrl))
                 {
@@ -160,24 +213,46 @@
             </div>
         </section>
 
-        <!-- Card de Simulação do Botão Consultar pelo WhatsApp -->
-        <section class="adm-card">
-            <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.75rem;">
-                Simulação do Botão "Consultar pelo WhatsApp" no Site
-            </h2>
-            <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0;">
-                Veja como o cliente será redirecionado ao clicar em um produto no catálogo:
-            </p>
-
-            <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 1rem; font-size: 0.86rem; color: #166534;">
-                <div style="font-weight: 700; margin-bottom: 0.35rem;">Link Oficial Gerado:</div>
-                <div style="word-break: break-all; font-family: monospace; font-size: 0.78rem; margin-bottom: 0.65rem;">
-                    @WhatsAppLinkBuilder.BuildProductConsultationLink(_form.WhatsappNumber, "Camiseta Básica", "Preta", "M")
+        <!-- Card 5: Opções Avançadas (Discreto e Opcional para Administradores) -->
+        <details style="background: var(--adm-surface); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem 1rem;">
+            <summary style="cursor: pointer; font-weight: 600; font-size: 0.86rem; color: var(--adm-muted); user-select: none;">
+                ⚙️ Opções Avançadas de Domínio / Nuvem
+            </summary>
+            <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.85rem;">
+                <div>
+                    <label class="adm-label">Endereço Base Personalizado (URL do Servidor / Domínio)</label>
+                    <input type="url"
+                           class="adm-input"
+                           @bind="_form.OnlineBaseUrl"
+                           placeholder="https://flaviaroupasdigital.com" />
+                    <span style="font-size: 0.75rem; color: var(--adm-muted);">
+                        Altere apenas se você tiver um servidor ou domínio próprio configurado.
+                    </span>
                 </div>
-                <div style="font-weight: 700; margin-bottom: 0.2rem;">Mensagem preenchida automaticamente:</div>
-                <div>"@WhatsAppLinkBuilder.BuildProductConsultationMessage("Camiseta Básica", "Preta", "M")"</div>
+
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer;">
+                    <input type="checkbox" @bind="_form.AutoSyncOnlineOnSave" />
+                    <span>Sincronizar dados automaticamente ao salvar roupas ou categorias</span>
+                </label>
+
+                @if (_form.LastOnlineSyncAt.HasValue)
+                {
+                    <div style="font-size: 0.78rem; color: var(--adm-muted);">
+                        Última sincronização com nuvem: <strong>@_form.LastOnlineSyncAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</strong>
+                    </div>
+                }
+
+                <div>
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="font-size: 0.8rem; padding: 0.4rem 0.75rem;"
+                            disabled="@CloudSync.IsSyncing"
+                            @onclick="SyncToCloudNowAsync">
+                        @(CloudSync.IsSyncing ? "⏳ Sincronizando..." : "🔄 Forçar Sincronização com Nuvem")
+                    </button>
+                </div>
             </div>
-        </section>
+        </details>
     </div>
 </div>
 
@@ -188,7 +263,8 @@
         StoreSlug = "minha-loja",
         WhatsappNumber = "5511900000000",
         StoreDescription = "Catálogo digital oficial da loja.",
-        DefaultLowStockThreshold = 3
+        DefaultLowStockThreshold = 3,
+        AutoSyncOnlineOnSave = true
     };
 
     private bool _autoSyncSlugWithName = true;
@@ -198,7 +274,14 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Theme.OnThemeChanged += StateHasChanged;
+        CloudSync.OnSyncStatusChanged += StateHasChanged;
         await LoadSettingsAsync();
+    }
+
+    private void ChangeTheme(string preference)
+    {
+        Theme.SetThemePreference(preference);
     }
 
     private async Task LoadSettingsAsync()
@@ -214,7 +297,10 @@
                 WhatsappNumber = current.WhatsappNumber,
                 StoreDescription = current.StoreDescription,
                 LogoPublicUrl = current.LogoPublicUrl,
-                DefaultLowStockThreshold = current.DefaultLowStockThreshold
+                DefaultLowStockThreshold = current.DefaultLowStockThreshold,
+                OnlineBaseUrl = current.OnlineBaseUrl,
+                AutoSyncOnlineOnSave = current.AutoSyncOnlineOnSave,
+                LastOnlineSyncAt = current.LastOnlineSyncAt
             };
         }
         catch (Exception ex)
@@ -246,7 +332,49 @@
             _form.StoreSlug = updated.StoreSlug;
             _form.WhatsappNumber = updated.WhatsappNumber;
             _form.LogoPublicUrl = updated.LogoPublicUrl;
-            _success = $"Configurações salvas! O link do catálogo (/loja/{updated.StoreSlug}) e os dados da loja já estão ativos.";
+            _form.OnlineBaseUrl = updated.OnlineBaseUrl;
+            _form.AutoSyncOnlineOnSave = updated.AutoSyncOnlineOnSave;
+            _form.LastOnlineSyncAt = updated.LastOnlineSyncAt;
+
+            _success = "✓ Configurações da loja salvas com sucesso!";
+
+            // Se houver URL de nuvem configurada, tenta sincronizar em background sem travar nem assustar o usuário
+            if (!string.IsNullOrWhiteSpace(_form.OnlineBaseUrl))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await CloudSync.SyncCatalogToCloudAsync();
+                    }
+                    catch
+                    {
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SyncToCloudNowAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var (ok, msg) = await CloudSync.SyncCatalogToCloudAsync();
+            if (ok)
+            {
+                _success = msg;
+                await LoadSettingsAsync();
+            }
+            else
+            {
+                _error = msg;
+            }
         }
         catch (Exception ex)
         {
@@ -260,21 +388,43 @@
         {
             await Clipboard.Default.SetTextAsync(url);
             _copiedUrl = true;
+            _success = "✓ Link copiado para a área de transferência! Cole onde quiser.";
+            StateHasChanged();
+            _ = Task.Delay(3000).ContinueWith(_ =>
+            {
+                _copiedUrl = false;
+                InvokeAsync(StateHasChanged);
+            });
         }
         catch
         {
         }
     }
 
-    private static async Task OpenBrowserAsync(string url)
+    private async Task ShareOnWhatsAppAsync(string url)
     {
         try
         {
-            await LocalWebServerLauncher.EnsureWebCatalogRunningAsync();
-            await Launcher.Default.OpenAsync(new Uri(url));
+            var text = $"Olá! Confira as novidades e peças disponíveis no nosso catálogo oficial: {url}";
+            var shareUrl = $"https://wa.me/?text={Uri.EscapeDataString(text)}";
+            await Browser.Default.OpenAsync(new Uri(shareUrl), BrowserLaunchMode.External);
         }
         catch
         {
+            await CopyStoreUrlAsync(url);
+        }
+    }
+
+    private async Task OpenBrowserAsync(string url)
+    {
+        try
+        {
+            LocalWebServerLauncher.Initialize(CatalogService);
+            await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Não foi possível abrir o navegador: {ex.Message}";
         }
     }
 
@@ -318,5 +468,11 @@
         {
             _error = ex.Message;
         }
+    }
+
+    public void Dispose()
+    {
+        Theme.OnThemeChanged -= StateHasChanged;
+        CloudSync.OnSyncStatusChanged -= StateHasChanged;
     }
 }

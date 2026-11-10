@@ -6,17 +6,17 @@
     <div>
         <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Gerenciamento de Produtos</h1>
         <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
-            Cadastre peças, gerencie fotografias, variantes de cor/tamanho e controle a visibilidade no site público.
+            Cadastre peças, edite informações, gerencie fotografias, variantes de cor/tamanho e controle a visibilidade no site público.
         </p>
     </div>
 
     @if (Gateway.CanManageProducts)
     {
         <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
-            <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _showNewCategoryModal = !_showNewCategoryModal">
+            <button type="button" class="adm-btn adm-btn-outline" @onclick="ToggleNewCategoryModal">
                 + Nova Categoria
             </button>
-            <button type="button" class="adm-btn adm-btn-primary" @onclick="() => _showNewProductModal = !_showNewProductModal">
+            <button type="button" class="adm-btn adm-btn-primary" @onclick="OpenNewProductModal">
                 + Novo Produto
             </button>
         </div>
@@ -41,7 +41,7 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; align-items: end;">
             <div>
                 <label class="adm-label">Nome da Categoria *</label>
-                <input type="text" class="adm-input" @bind="_newCategory.Name" placeholder="Ex.: Saias & Shorts" />
+                <input type="text" class="adm-input" @bind="_newCategory.Name" placeholder="Ex.: Moda Praia, Fitness..." />
             </div>
             <div>
                 <label class="adm-label">Descrição</label>
@@ -59,7 +59,72 @@
     </div>
 }
 
-<!-- Formulário Rápido de Novo Produto -->
+<!-- Formulário de Edição Rápida de Item Existente -->
+@if (_editingProductId.HasValue && Gateway.CanManageProducts)
+{
+    <div class="adm-card" style="border-left: 4px solid var(--adm-primary); background: var(--adm-input-bg);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+            <h3 style="margin: 0; font-size: 1.08rem;">Editar Item: @_editProductForm.Name</h3>
+            <a href="/produtos/@_editingProductId.Value" class="adm-btn adm-btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;">
+                Abrir Editor Completo (Fotos, Cores &amp; Tamanhos) &rarr;
+            </a>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+            <div>
+                <label class="adm-label">Nome do Produto *</label>
+                <input type="text" class="adm-input" @bind="_editProductForm.Name" placeholder="Nome da peça" />
+            </div>
+
+            <div>
+                <label class="adm-label">Categoria *</label>
+                <select class="adm-select" @bind="_editProductCategorySelection">
+                    @foreach (var cat in _categories)
+                    {
+                        <option value="@cat.Id.ToString()">@cat.Name</option>
+                    }
+                    <option value="__NEW__">+ Digitar nova categoria...</option>
+                </select>
+                @if (_editProductCategorySelection == "__NEW__" || _categories.Count == 0)
+                {
+                    <input type="text"
+                           class="adm-input"
+                           style="margin-top: 0.45rem;"
+                           @bind="_editProductForm.CategoryName"
+                           placeholder="Digite o nome da nova categoria..." />
+                }
+            </div>
+
+            <div>
+                <label class="adm-label">Preço de Venda (R$) *</label>
+                <input type="number" step="0.01" class="adm-input" @bind="_editProductForm.BasePrice" />
+            </div>
+
+            <div style="grid-column: 1 / -1;">
+                <label class="adm-label">Descrição da Peça</label>
+                <textarea class="adm-textarea" rows="2" @bind="_editProductForm.Description" placeholder="Composição do tecido, modelagem e detalhes..."></textarea>
+            </div>
+
+            <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                    <input type="checkbox" @bind="_editProductForm.IsVisibleOnSite" />
+                    <span>Exibir no site público</span>
+                </label>
+
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" class="adm-btn adm-btn-success" @onclick="SaveQuickEditProductAsync">
+                        Salvar Alterações
+                    </button>
+                    <button type="button" class="adm-btn adm-btn-outline" @onclick="CancelQuickEditProduct">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Formulário de Novo Produto -->
 @if (_showNewProductModal && Gateway.CanManageProducts)
 {
     <div class="adm-card" style="border-left: 4px solid var(--adm-success);">
@@ -69,31 +134,62 @@
                 <label class="adm-label">Nome do Produto *</label>
                 <input type="text" class="adm-input" @bind="_newProduct.Name" placeholder="Ex.: Jaqueta Jeans Oversized" />
             </div>
+
             <div>
                 <label class="adm-label">Categoria *</label>
-                <select class="adm-select" @bind="_newProduct.CategoryId">
+                <select class="adm-select" @bind="_newProductCategorySelection">
                     @foreach (var cat in _categories)
                     {
-                        <option value="@cat.Id">@cat.Name</option>
+                        <option value="@cat.Id.ToString()">@cat.Name</option>
                     }
+                    <option value="__NEW__">+ Digitar nova categoria...</option>
                 </select>
+                @if (_newProductCategorySelection == "__NEW__" || _categories.Count == 0)
+                {
+                    <input type="text"
+                           class="adm-input"
+                           style="margin-top: 0.45rem;"
+                           @bind="_newProduct.CategoryName"
+                           placeholder="Digite o nome da nova categoria (ex.: Vestidos)..." />
+                }
             </div>
+
             <div>
                 <label class="adm-label">Preço de Venda (R$) *</label>
                 <input type="number" step="0.01" class="adm-input" @bind="_newProduct.BasePrice" />
             </div>
+
+            <div>
+                <label class="adm-label">Cor Inicial (Opcional)</label>
+                <input type="text" class="adm-input" @bind="_newProduct.InitialColor" placeholder="Ex.: Preto, Branco, Azul" />
+            </div>
+
+            <div>
+                <label class="adm-label">Tamanho Inicial (Opcional)</label>
+                <input type="text" class="adm-input" @bind="_newProduct.InitialSize" placeholder="Ex.: P, M, G, 38..." />
+            </div>
+
+            <div>
+                <label class="adm-label">Estoque Inicial (Opcional)</label>
+                <input type="number" min="0" class="adm-input" @bind="_newProduct.InitialStockQuantity" />
+            </div>
+
             <div style="grid-column: 1 / -1;">
                 <label class="adm-label">Descrição da Peça</label>
                 <textarea class="adm-textarea" rows="2" @bind="_newProduct.Description" placeholder="Composição do tecido, modelagem e detalhes..."></textarea>
             </div>
+
             <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                 <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
                     <input type="checkbox" @bind="_newProduct.IsVisibleOnSite" />
                     <span>Exibir imediatamente no site público</span>
                 </label>
 
-                <div style="display: flex; gap: 0.5rem;">
-                    <button type="button" class="adm-btn adm-btn-success" @onclick="CreateProductAsync">
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" class="adm-btn adm-btn-success" @onclick="() => CreateProductAsync(openDetailsAfterCreate: false)">
+                        Salvar Produto
+                    </button>
+                    <button type="button" class="adm-btn adm-btn-primary" @onclick="() => CreateProductAsync(openDetailsAfterCreate: true)">
                         Criar e Configurar Fotos/Variantes &rarr;
                     </button>
                     <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _showNewProductModal = false">
@@ -121,7 +217,7 @@
             <option value="">Todas as categorias</option>
             @foreach (var cat in _categories)
             {
-                <option value="@cat.Id">@cat.Name (@cat.ProductCount)</option>
+                <option value="@cat.Id.ToString()">@cat.Name (@cat.ProductCount)</option>
             }
         </select>
     </div>
@@ -145,32 +241,46 @@
             </tr>
         </thead>
         <tbody>
+            @if (_products.Count == 0)
+            {
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 2rem; color: var(--adm-muted);">
+                        Nenhum produto cadastrado ainda. Clique em <strong>+ Novo Produto</strong> acima para adicionar o primeiro item.
+                    </td>
+                </tr>
+            }
             @foreach (var prod in _products)
             {
                 var coverUrl = prod.Images.FirstOrDefault()?.PublicUrl;
                 <tr>
-                    <td style="width: 64px;">
+                    <td data-label="Foto">
                         @if (!string.IsNullOrWhiteSpace(coverUrl))
                         {
-                            <img src="@coverUrl" alt="@prod.Name" style="width: 48px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid var(--adm-border);" />
+                            <img src="@coverUrl" alt="@prod.Name" style="width: 52px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--adm-border);" />
                         }
                         else
                         {
-                            <div style="width: 48px; height: 60px; background: #F4F4F5; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: var(--adm-muted);">
+                            <div style="width: 52px; height: 64px; background: #E2E8F0; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 600; color: var(--adm-muted);">
                                 Sem foto
                             </div>
                         }
                     </td>
-                    <td>
-                        <div style="font-weight: 700;">@prod.Name</div>
-                        <div style="font-size: 0.78rem; color: var(--adm-muted);">/@prod.Slug</div>
+                    <td data-label="Produto">
+                        <div>
+                            <div style="font-weight: 800; font-size: 1rem;">@prod.Name</div>
+                            <div style="font-size: 0.78rem; color: var(--adm-muted);">/@prod.Slug</div>
+                        </div>
                     </td>
-                    <td>@prod.CategoryName</td>
-                    <td style="font-weight: 600;">@prod.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</td>
-                    <td>
-                        <span class="pill-badge pill-slate">@prod.Variants.Count combinação(ões)</span>
+                    <td data-label="Categoria">
+                        <span class="pill-badge pill-slate">@prod.CategoryName</span>
                     </td>
-                    <td>
+                    <td data-label="Preço" style="font-weight: 800; font-size: 1rem;">
+                        @prod.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))
+                    </td>
+                    <td data-label="Variantes">
+                        <span class="pill-badge pill-slate">@prod.Variants.Count cor/tam</span>
+                    </td>
+                    <td data-label="Estoque Total">
                         @if (prod.TotalStockQuantity > 0)
                         {
                             <span class="pill-badge pill-green">@prod.TotalStockQuantity un.</span>
@@ -180,12 +290,12 @@
                             <span class="pill-badge pill-red">0 un. (Esgotado)</span>
                         }
                     </td>
-                    <td>
+                    <td data-label="No Site">
                         @if (Gateway.CanManageProducts)
                         {
                             <button type="button"
                                     class="adm-btn @(prod.IsVisibleOnSite ? "adm-btn-success" : "adm-btn-outline")"
-                                    style="padding: 0.3rem 0.65rem; font-size: 0.76rem;"
+                                    style="padding: 0.35rem 0.75rem; min-height: 36px; font-size: 0.78rem;"
                                     @onclick="() => ToggleVisibilityAsync(prod)">
                                 @(prod.IsVisibleOnSite ? "Visível no Site" : "Oculto no Site")
                             </button>
@@ -195,19 +305,32 @@
                             <span>@(prod.IsVisibleOnSite ? "Sim" : "Não")</span>
                         }
                     </td>
-                    <td style="text-align: right; white-space: nowrap;">
-                        <a href="/produtos/@prod.Id" class="adm-btn adm-btn-primary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;">
-                            Gerenciar Fotos &amp; Variantes
-                        </a>
-                        @if (Gateway.CanManageProducts)
-                        {
-                            <button type="button"
-                                    class="adm-btn adm-btn-danger"
-                                    style="padding: 0.4rem 0.65rem; font-size: 0.8rem; margin-left: 0.35rem;"
-                                    @onclick="() => DeleteProductAsync(prod)">
-                                Arquivar/Excluir
-                            </button>
-                        }
+                    <td data-label="Ações">
+                        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: flex-end; width: 100%;">
+                            @if (Gateway.CanManageProducts)
+                            {
+                                <button type="button"
+                                        class="adm-btn adm-btn-outline"
+                                        style="padding: 0.45rem 0.75rem; min-height: 38px; font-size: 0.82rem; flex: 1;"
+                                        @onclick="() => StartQuickEditProduct(prod)">
+                                    ✏️ Editar Item
+                                </button>
+                            }
+                            <a href="/produtos/@prod.Id"
+                               class="adm-btn adm-btn-primary"
+                               style="padding: 0.45rem 0.75rem; min-height: 38px; font-size: 0.82rem; flex: 1;">
+                                📷 Fotos &amp; Variantes
+                            </a>
+                            @if (Gateway.CanManageProducts)
+                            {
+                                <button type="button"
+                                        class="adm-btn adm-btn-danger"
+                                        style="padding: 0.45rem 0.7rem; min-height: 38px; font-size: 0.82rem;"
+                                        @onclick="() => DeleteProductAsync(prod)">
+                                    🗑️ Excluir
+                                </button>
+                            }
+                        </div>
                     </td>
                 </tr>
             }
@@ -223,8 +346,13 @@
 
     private bool _showNewCategoryModal;
     private bool _showNewProductModal;
-    private SaveCategoryRequest _newCategory = new() { DisplayOrder = 6, IsActive = true };
-    private SaveProductRequest _newProduct = new() { BasePrice = 149.90m, IsVisibleOnSite = true };
+    private SaveCategoryRequest _newCategory = new() { DisplayOrder = 1, IsActive = true };
+    private SaveProductRequest _newProduct = new() { BasePrice = 149.90m, IsVisibleOnSite = true, InitialStockQuantity = 5 };
+    private string _newProductCategorySelection = string.Empty;
+
+    private Guid? _editingProductId;
+    private SaveProductRequest _editProductForm = new();
+    private string _editProductCategorySelection = string.Empty;
 
     private string? _error;
     private string? _success;
@@ -234,16 +362,56 @@
         await LoadCategoriesAndProductsAsync();
     }
 
+    private void ToggleNewCategoryModal()
+    {
+        _showNewCategoryModal = !_showNewCategoryModal;
+        if (_showNewCategoryModal)
+        {
+            _newCategory = new SaveCategoryRequest
+            {
+                DisplayOrder = _categories.Count + 1,
+                IsActive = true
+            };
+        }
+    }
+
+    private void OpenNewProductModal()
+    {
+        _showNewProductModal = !_showNewProductModal;
+        if (_showNewProductModal)
+        {
+            _editingProductId = null;
+            EnsureDefaultCategoryForNewProduct();
+        }
+    }
+
+    private void EnsureDefaultCategoryForNewProduct()
+    {
+        if (_categories.Count > 0)
+        {
+            if (string.IsNullOrWhiteSpace(_newProductCategorySelection) ||
+                (_newProductCategorySelection != "__NEW__" && !_categories.Any(c => c.Id.ToString() == _newProductCategorySelection)))
+            {
+                _newProductCategorySelection = _categories[0].Id.ToString();
+            }
+            if (Guid.TryParse(_newProductCategorySelection, out var g))
+            {
+                _newProduct.CategoryId = g;
+            }
+        }
+        else
+        {
+            _newProductCategorySelection = "__NEW__";
+        }
+    }
+
     private async Task LoadCategoriesAndProductsAsync()
     {
         _error = null;
         try
         {
             _categories = await Gateway.GetCategoriesAsync();
-            if (_newProduct.CategoryId == Guid.Empty && _categories.Count > 0)
-            {
-                _newProduct.CategoryId = _categories[0].Id;
-            }
+            EnsureDefaultCategoryForNewProduct();
             await LoadProductsAsync();
         }
         catch (Exception ex)
@@ -273,9 +441,11 @@
         {
             var created = await Gateway.CreateCategoryAsync(_newCategory);
             _showNewCategoryModal = false;
-            _newCategory = new SaveCategoryRequest { DisplayOrder = _categories.Count + 1, IsActive = true };
+            _newCategory = new SaveCategoryRequest { DisplayOrder = _categories.Count + 2, IsActive = true };
             await LoadCategoriesAndProductsAsync();
+            _newProductCategorySelection = created.Id.ToString();
             _newProduct.CategoryId = created.Id;
+            _newProduct.CategoryName = null;
             _success = $"Categoria '{created.Name}' criada com sucesso!";
         }
         catch (Exception ex)
@@ -284,14 +454,109 @@
         }
     }
 
-    private async Task CreateProductAsync()
+    private async Task CreateProductAsync(bool openDetailsAfterCreate)
     {
         _error = null;
         _success = null;
         try
         {
+            if (_newProductCategorySelection == "__NEW__" || _categories.Count == 0)
+            {
+                _newProduct.CategoryId = Guid.Empty;
+                if (string.IsNullOrWhiteSpace(_newProduct.CategoryName))
+                {
+                    _error = "Digite o nome da nova categoria ou selecione uma categoria existente.";
+                    return;
+                }
+            }
+            else if (Guid.TryParse(_newProductCategorySelection, out var selectedCatId))
+            {
+                _newProduct.CategoryId = selectedCatId;
+                _newProduct.CategoryName = null;
+            }
+            else if (_categories.Count > 0)
+            {
+                _newProduct.CategoryId = _categories[0].Id;
+                _newProduct.CategoryName = null;
+            }
+
             var created = await Gateway.CreateProductAsync(_newProduct);
-            Navigation.NavigateTo($"/produtos/{created.Id}");
+            _showNewProductModal = false;
+            _newProduct = new SaveProductRequest
+            {
+                CategoryId = created.CategoryId,
+                BasePrice = 149.90m,
+                IsVisibleOnSite = true,
+                InitialStockQuantity = 5
+            };
+            _newProductCategorySelection = created.CategoryId.ToString();
+
+            if (openDetailsAfterCreate)
+            {
+                Navigation.NavigateTo($"/produtos/{created.Id}");
+                return;
+            }
+
+            await LoadCategoriesAndProductsAsync();
+            _success = $"Produto '{created.Name}' cadastrado com sucesso!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void StartQuickEditProduct(ProductDetailDto prod)
+    {
+        _error = null;
+        _success = null;
+        _showNewProductModal = false;
+        _editingProductId = prod.Id;
+        _editProductCategorySelection = prod.CategoryId.ToString();
+        _editProductForm = new SaveProductRequest
+        {
+            CategoryId = prod.CategoryId,
+            Name = prod.Name,
+            Description = prod.Description,
+            BasePrice = prod.BasePrice,
+            IsVisibleOnSite = prod.IsVisibleOnSite
+        };
+    }
+
+    private void CancelQuickEditProduct()
+    {
+        _editingProductId = null;
+        _editProductForm = new SaveProductRequest();
+    }
+
+    private async Task SaveQuickEditProductAsync()
+    {
+        if (!_editingProductId.HasValue)
+            return;
+
+        _error = null;
+        _success = null;
+        try
+        {
+            if (_editProductCategorySelection == "__NEW__" || _categories.Count == 0)
+            {
+                _editProductForm.CategoryId = Guid.Empty;
+                if (string.IsNullOrWhiteSpace(_editProductForm.CategoryName))
+                {
+                    _error = "Digite o nome da nova categoria ou selecione uma categoria existente.";
+                    return;
+                }
+            }
+            else if (Guid.TryParse(_editProductCategorySelection, out var selectedCatId))
+            {
+                _editProductForm.CategoryId = selectedCatId;
+                _editProductForm.CategoryName = null;
+            }
+
+            var updated = await Gateway.UpdateProductAsync(_editingProductId.Value, _editProductForm);
+            _editingProductId = null;
+            await LoadCategoriesAndProductsAsync();
+            _success = $"Item '{updated.Name}' atualizado com sucesso!";
         }
         catch (Exception ex)
         {
@@ -322,7 +587,11 @@
         try
         {
             await Gateway.DeleteOrArchiveProductAsync(prod.Id);
-            await LoadProductsAsync();
+            if (_editingProductId == prod.Id)
+            {
+                _editingProductId = null;
+            }
+            await LoadCategoriesAndProductsAsync();
             _success = $"Produto '{prod.Name}' arquivado/removido com sucesso.";
         }
         catch (Exception ex)
@@ -331,4 +600,3 @@
         }
     }
 }
-

@@ -17,6 +17,9 @@ public sealed class StoreSettings
     public string? LogoStoragePath { get; set; }
     public string? LogoPublicUrl { get; set; }
     public int DefaultLowStockThreshold { get; set; } = 3;
+    public string? OnlineBaseUrl { get; set; }
+    public bool AutoSyncOnlineOnSave { get; set; } = true;
+    public DateTimeOffset? LastOnlineSyncAt { get; set; }
     public Guid? UpdatedByEmployeeId { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
@@ -31,9 +34,12 @@ public sealed class StoreSettings
         string? logoStoragePath = null,
         string? logoPublicUrl = null,
         int defaultLowStockThreshold = 3,
-        string? customSlug = null)
+        string? customSlug = null,
+        string? onlineBaseUrl = null,
+        bool autoSyncOnlineOnSave = true,
+        DateTimeOffset? lastOnlineSyncAt = null)
     {
-        UpdateSettings(storeName, whatsappNumber, storeDescription, defaultLowStockThreshold, null, customSlug);
+        UpdateSettings(storeName, whatsappNumber, storeDescription, defaultLowStockThreshold, null, customSlug, onlineBaseUrl, autoSyncOnlineOnSave, lastOnlineSyncAt);
         SetLogo(logoStoragePath, logoPublicUrl, null);
     }
 
@@ -43,7 +49,10 @@ public sealed class StoreSettings
         string storeDescription,
         int defaultLowStockThreshold,
         Guid? employeeId,
-        string? customSlug = null)
+        string? customSlug = null,
+        string? onlineBaseUrl = null,
+        bool autoSyncOnlineOnSave = true,
+        DateTimeOffset? lastOnlineSyncAt = null)
     {
         if (string.IsNullOrWhiteSpace(storeName))
             throw new DomainException("O nome da loja é obrigatório.");
@@ -61,6 +70,12 @@ public sealed class StoreSettings
         WhatsappNumber = sanitizedNumber;
         StoreDescription = storeDescription.Trim();
         DefaultLowStockThreshold = defaultLowStockThreshold;
+        OnlineBaseUrl = string.IsNullOrWhiteSpace(onlineBaseUrl) ? null : onlineBaseUrl.Trim().TrimEnd('/');
+        AutoSyncOnlineOnSave = autoSyncOnlineOnSave;
+        if (lastOnlineSyncAt.HasValue)
+        {
+            LastOnlineSyncAt = lastOnlineSyncAt.Value;
+        }
         UpdatedByEmployeeId = employeeId;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
@@ -79,6 +94,13 @@ public sealed class StoreSettings
             throw new DomainException("O número de WhatsApp é obrigatório.");
 
         var digitsOnly = Regex.Replace(rawNumber, @"\D", "");
+
+        // Se o usuário informar apenas DDD + Telefone (10 ou 11 dígitos, ex.: 21975219710), adiciona o DDI do Brasil (55) automaticamente
+        if ((digitsOnly.Length == 10 || digitsOnly.Length == 11) && !digitsOnly.StartsWith("55"))
+        {
+            digitsOnly = "55" + digitsOnly;
+        }
+
         if (digitsOnly.Length < 10 || digitsOnly.Length > 15)
             throw new DomainException("Informe o número de WhatsApp completo com código do país (DDI) e DDD (ex.: 5511999999999).");
 
@@ -87,10 +109,13 @@ public sealed class StoreSettings
 
     /// <summary>
     /// Gera o link público da loja com o nome/slug da loja para uso em QR Code fixo.
+    /// Se OnlineBaseUrl estiver configurado (ex.: Google Cloud Run), utiliza o link online 24h automaticamente.
     /// </summary>
-    public string BuildStoreCatalogUrl(string baseSiteUrl)
+    public string BuildStoreCatalogUrl(string? baseSiteUrl = null)
     {
-        var cleanBase = string.IsNullOrWhiteSpace(baseSiteUrl) ? "http://localhost:5190" : baseSiteUrl.TrimEnd('/');
+        var cleanBase = !string.IsNullOrWhiteSpace(OnlineBaseUrl)
+            ? OnlineBaseUrl.TrimEnd('/')
+            : (string.IsNullOrWhiteSpace(baseSiteUrl) ? "http://localhost:5190" : baseSiteUrl.TrimEnd('/'));
         var slug = string.IsNullOrWhiteSpace(StoreSlug) ? Category.GenerateSlug(StoreName) : StoreSlug;
         return $"{cleanBase}/loja/{slug}";
     }

@@ -6,38 +6,44 @@
 
 <nav class="adm-nav">
     <NavLink class="adm-nav-item" href="/" Match="NavLinkMatch.All">
-        <span>Dashboard</span>
+        <span class="adm-nav-icon">📊</span>
+        <span>Início</span>
     </NavLink>
 
     <NavLink class="adm-nav-item" href="/produtos">
-        <span>Produtos &amp; Variantes</span>
+        <span class="adm-nav-icon">👗</span>
+        <span>Produtos</span>
     </NavLink>
 
     <NavLink class="adm-nav-item" href="/estoque">
-        <span>Controle de Estoque</span>
+        <span class="adm-nav-icon">📦</span>
+        <span>Estoque</span>
     </NavLink>
 
     @if (Gateway.IsAdmin)
     {
-        <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
+        <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94A3B8; padding: 1rem 0.85rem 0.25rem;">
             Administração
         </div>
 
         <NavLink class="adm-nav-item" href="/funcionarios">
-            <span>Funcionários &amp; Acesso</span>
+            <span class="adm-nav-icon">👥</span>
+            <span>Equipe</span>
         </NavLink>
 
         <NavLink class="adm-nav-item" href="/configuracoes-loja">
-            <span>Configurações da loja</span>
+            <span class="adm-nav-icon">⚙️</span>
+            <span>Loja</span>
         </NavLink>
     }
 
-    <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #71717A; padding: 1rem 0.85rem 0.25rem;">
-        Catálogo Público (QR Code)
+    <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94A3B8; padding: 1rem 0.85rem 0.25rem;">
+        Catálogo Público
     </div>
 
     <NavLink class="adm-nav-item" href="@($"/loja/{_storeSlug}")">
-        <span>Ver Site (/loja/@_storeSlug)</span>
+        <span class="adm-nav-icon">🌐</span>
+        <span>Site</span>
     </NavLink>
 </nav>
 

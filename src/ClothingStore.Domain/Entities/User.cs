@@ -19,6 +19,10 @@ public sealed class User
     public Guid RoleId { get; set; }
     public Role? Role { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool TwoFactorEnabled { get; set; }
+    public string? TwoFactorSecret { get; set; }
+    public List<string> TwoFactorBackupCodes { get; set; } = [];
+    public string? SecurityPinHash { get; set; }
     public string? ResetTokenHash { get; set; }
     public DateTimeOffset? ResetTokenExpiresAt { get; set; }
     public string? EmailLoginCodeHash { get; set; }
@@ -131,6 +135,60 @@ public sealed class User
     {
         EmailLoginCodeHash = null;
         EmailLoginCodeExpiresAt = null;
+    }
+
+    public void EnableTwoFactor(string base32Secret, List<string>? backupCodes = null)
+    {
+        if (string.IsNullOrWhiteSpace(base32Secret))
+            throw new DomainException("A chave de autenticação em duas etapas é inválida.");
+
+        TwoFactorEnabled = true;
+        TwoFactorSecret = base32Secret.Trim().ToUpperInvariant();
+        TwoFactorBackupCodes = backupCodes ?? [];
+    }
+
+    public void DisableTwoFactor()
+    {
+        TwoFactorEnabled = false;
+        TwoFactorSecret = null;
+        TwoFactorBackupCodes.Clear();
+    }
+
+    public bool VerifyTwoFactorCode(string code)
+    {
+        if (!TwoFactorEnabled || string.IsNullOrWhiteSpace(TwoFactorSecret) || string.IsNullOrWhiteSpace(code))
+            return false;
+
+        var clean = code.Trim();
+
+        // 1. Testa código TOTP (Google Authenticator / Authy)
+        if (Common.TwoFactorHelper.VerifyTotp(TwoFactorSecret, clean))
+            return true;
+
+        // 2. Testa código de emergência/backup
+        var matchedBackup = TwoFactorBackupCodes.FirstOrDefault(b =>
+            string.Equals(b.Replace("-", ""), clean.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
+
+        if (matchedBackup is not null)
+        {
+            TwoFactorBackupCodes.Remove(matchedBackup);
+            return true;
+        }
+
+        return false;
+    }
+
+    public void SetSecurityPin(string pinHash)
+    {
+        if (string.IsNullOrWhiteSpace(pinHash))
+            throw new DomainException("O hash do PIN de segurança é obrigatório.");
+
+        SecurityPinHash = pinHash;
+    }
+
+    public void RemoveSecurityPin()
+    {
+        SecurityPinHash = null;
     }
 
     private static bool FixedTimeStringEquals(string left, string right)

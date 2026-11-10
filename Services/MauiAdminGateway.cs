@@ -20,6 +20,7 @@ public sealed class MauiAdminGateway
     private readonly ProductManagementService _productService;
     private readonly StockManagementService _stockService;
     private readonly EmployeeAndSettingsService _employeeAndSettingsService;
+    private readonly GoogleCloudSyncService? _cloudSyncService;
 
     private DateTimeOffset _skipRemoteApiUntil = DateTimeOffset.MinValue;
 
@@ -37,13 +38,15 @@ public sealed class MauiAdminGateway
         AuthService authService,
         ProductManagementService productService,
         StockManagementService stockService,
-        EmployeeAndSettingsService employeeAndSettingsService)
+        EmployeeAndSettingsService employeeAndSettingsService,
+        GoogleCloudSyncService? cloudSyncService = null)
     {
         _apiClient = apiClient;
         _authService = authService;
         _productService = productService;
         _stockService = stockService;
         _employeeAndSettingsService = employeeAndSettingsService;
+        _cloudSyncService = cloudSyncService;
     }
 
     private bool ShouldTryRemoteApi => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
@@ -125,6 +128,14 @@ public sealed class MauiAdminGateway
             () => _apiClient.GetSetupStatusAsync(),
             () => _authService.GetSetupStatusAsync());
 
+    public async Task<LoginResponse> RegisterUserAccountAsync(RegisterUserAccountRequest request)
+    {
+        var localResp = await _authService.RegisterUserAccountAsync(request);
+        _apiClient.SetSession(localResp.AccessToken, localResp.Employee);
+        await PersistSessionAsync(localResp);
+        return localResp;
+    }
+
     public async Task<LoginResponse> RegisterInitialAdminByEmailAsync(RegisterInitialAdminRequest request)
     {
         var response = await ExecuteWithFallbackAsync(
@@ -140,7 +151,26 @@ public sealed class MauiAdminGateway
         return response;
     }
 
-    public async Task<LoginResponse> LoginAsync(LoginRequest request)
+    public async Task<LoginChallengeResponse> LoginWithChallengeAsync(LoginRequest request, bool rememberMe = true)
+    {
+        var challenge = await _authService.LoginWithChallengeAsync(request);
+        if (!challenge.RequiresTwoFactor && challenge.AuthResult is not null)
+        {
+            _apiClient.SetSession(challenge.AuthResult.AccessToken, challenge.AuthResult.Employee);
+            await PersistSessionAsync(challenge.AuthResult, rememberMe);
+        }
+        return challenge;
+    }
+
+    public async Task<LoginResponse> VerifyTwoFactorLoginAsync(VerifyTwoFactorLoginRequest request, bool rememberMe = true)
+    {
+        var response = await _authService.VerifyTwoFactorLoginAsync(request);
+        _apiClient.SetSession(response.AccessToken, response.Employee);
+        await PersistSessionAsync(response, rememberMe);
+        return response;
+    }
+
+    public async Task<LoginResponse> LoginAsync(LoginRequest request, bool rememberMe = true)
     {
         var response = await ExecuteWithFallbackAsync(
             () => _apiClient.LoginAsync(request),
@@ -151,7 +181,7 @@ public sealed class MauiAdminGateway
                 return localResp;
             });
 
-        await PersistSessionAsync(response);
+        await PersistSessionAsync(response, rememberMe);
         return response;
     }
 
@@ -160,7 +190,7 @@ public sealed class MauiAdminGateway
             () => _apiClient.RequestEmailLoginCodeAsync(request),
             () => _authService.RequestEmailLoginCodeAsync(request));
 
-    public async Task<LoginResponse> LoginWithEmailCodeAsync(VerifyEmailLoginCodeRequest request)
+    public async Task<LoginResponse> LoginWithEmailCodeAsync(VerifyEmailLoginCodeRequest request, bool rememberMe = true)
     {
         var response = await ExecuteWithFallbackAsync(
             () => _apiClient.LoginWithEmailCodeAsync(request),
@@ -171,19 +201,26 @@ public sealed class MauiAdminGateway
                 return localResp;
             });
 
-        await PersistSessionAsync(response);
+        await PersistSessionAsync(response, rememberMe);
         return response;
     }
 
-    private async Task PersistSessionAsync(LoginResponse response)
+    private async Task PersistSessionAsync(LoginResponse response, bool rememberMe = true)
     {
         AccessToken = response.AccessToken;
         CurrentEmployee = response.Employee;
 
         try
         {
-            var serialized = JsonSerializer.Serialize(response);
-            await SecureStorage.Default.SetAsync(SessionStorageKey, serialized);
+            if (rememberMe)
+            {
+                var serialized = JsonSerializer.Serialize(response);
+                await SecureStorage.Default.SetAsync(SessionStorageKey, serialized);
+            }
+            else
+            {
+                SecureStorage.Default.Remove(SessionStorageKey);
+            }
         }
         catch
         {
@@ -217,6 +254,66 @@ public sealed class MauiAdminGateway
             () => _apiClient.ResetPasswordAsync(request),
             () => _authService.ResetPasswordAsync(request));
 
+    public async Task ChangePasswordAsync(ChangePasswordRequest request)
+    {
+        EnsureAuthenticated();
+        await _authService.ChangePasswordAsync(CurrentEmployee!.UserId, request);
+    }
+
+    public async Task<EmployeeProfileDto> UpdateUserProfileAsync(UpdateUserProfileRequest request)
+    {
+        EnsureAuthenticated();
+        var updated = await _authService.UpdateUserProfileAsync(CurrentEmployee!.UserId, request);
+        CurrentEmployee = updated;
+        _apiClient.SetSession(AccessToken ?? string.Empty, updated);
+        AuthStateChanged?.Invoke();
+        return updated;
+    }
+
+    public async Task SetSecurityPinAsync(SetSecurityPinRequest request)
+    {
+        EnsureAuthenticated();
+        await _authService.SetSecurityPinAsync(CurrentEmployee!.UserId, request);
+        CurrentEmployee = CurrentEmployee with { HasSecurityPin = true };
+        _apiClient.SetSession(AccessToken ?? string.Empty, CurrentEmployee);
+        AuthStateChanged?.Invoke();
+    }
+
+    public async Task RemoveSecurityPinAsync(RemoveSecurityPinRequest request)
+    {
+        EnsureAuthenticated();
+        await _authService.RemoveSecurityPinAsync(CurrentEmployee!.UserId, request);
+        CurrentEmployee = CurrentEmployee with { HasSecurityPin = false };
+        _apiClient.SetSession(AccessToken ?? string.Empty, CurrentEmployee);
+        AuthStateChanged?.Invoke();
+    }
+
+    public Task<TwoFactorSetupDto> GenerateTwoFactorSetupAsync()
+    {
+        EnsureAuthenticated();
+        return _authService.GenerateTwoFactorSetupAsync(CurrentEmployee!.UserId);
+    }
+
+    public async Task<EmployeeProfileDto> EnableTwoFactorAsync(EnableTwoFactorRequest request)
+    {
+        EnsureAuthenticated();
+        var updated = await _authService.EnableTwoFactorAsync(CurrentEmployee!.UserId, request);
+        CurrentEmployee = updated;
+        _apiClient.SetSession(AccessToken ?? string.Empty, updated);
+        AuthStateChanged?.Invoke();
+        return updated;
+    }
+
+    public async Task<EmployeeProfileDto> DisableTwoFactorAsync(DisableTwoFactorRequest request)
+    {
+        EnsureAuthenticated();
+        var updated = await _authService.DisableTwoFactorAsync(CurrentEmployee!.UserId, request);
+        CurrentEmployee = updated;
+        _apiClient.SetSession(AccessToken ?? string.Empty, updated);
+        AuthStateChanged?.Invoke();
+        return updated;
+    }
+
     // Dashboard
     public Task<DashboardSummaryDto> GetDashboardSummaryAsync()
     {
@@ -235,12 +332,24 @@ public sealed class MauiAdminGateway
             () => _productService.GetAllCategoriesAsync());
     }
 
-    public Task<CategoryDto> CreateCategoryAsync(SaveCategoryRequest request)
+    public async Task<CategoryDto> CreateCategoryAsync(SaveCategoryRequest request)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.CreateCategoryAsync(request),
             () => _productService.CreateCategoryAsync(request));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
+    }
+
+    public async Task<CategoryDto> UpdateCategoryAsync(Guid categoryId, SaveCategoryRequest request)
+    {
+        EnsureProductPermission();
+        var result = await ExecuteWithFallbackAsync(
+            () => _apiClient.UpdateCategoryAsync(categoryId, request),
+            () => _productService.UpdateCategoryAsync(categoryId, request));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
     public Task<IReadOnlyList<ProductDetailDto>> GetProductsAsync(
@@ -262,36 +371,43 @@ public sealed class MauiAdminGateway
             () => _productService.GetProductByIdAsync(productId));
     }
 
-    public Task<ProductDetailDto> CreateProductAsync(SaveProductRequest request)
+    public async Task<ProductDetailDto> CreateProductAsync(SaveProductRequest request)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.CreateProductAsync(request),
-            () => _productService.CreateProductAsync(request));
+            () => _productService.CreateProductAsync(request, CurrentEmployee?.EmployeeId));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
-    public Task<ProductDetailDto> UpdateProductAsync(Guid productId, SaveProductRequest request)
+    public async Task<ProductDetailDto> UpdateProductAsync(Guid productId, SaveProductRequest request)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.UpdateProductAsync(productId, request),
             () => _productService.UpdateProductAsync(productId, request));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
-    public Task<ProductDetailDto> ToggleProductVisibilityAsync(Guid productId, bool isVisibleOnSite)
+    public async Task<ProductDetailDto> ToggleProductVisibilityAsync(Guid productId, bool isVisibleOnSite)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.ToggleProductVisibilityAsync(productId, isVisibleOnSite),
             () => _productService.ToggleVisibilityAsync(productId, isVisibleOnSite));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
-    public Task DeleteOrArchiveProductAsync(Guid productId)
+    public async Task DeleteOrArchiveProductAsync(Guid productId)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        await ExecuteWithFallbackAsync(
             () => _apiClient.DeleteOrArchiveProductAsync(productId),
             () => _productService.DeleteOrArchiveProductAsync(productId));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
     }
 
     // Imagens do Produto
@@ -339,37 +455,44 @@ public sealed class MauiAdminGateway
     }
 
     // Variantes
-    public Task<ProductVariantDto> AddVariantAsync(Guid productId, SaveProductVariantRequest request)
+    public async Task<ProductVariantDto> AddVariantAsync(Guid productId, SaveProductVariantRequest request)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.AddVariantAsync(productId, request),
             () => _productService.AddVariantAsync(productId, CurrentEmployee!.EmployeeId, request));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
-    public Task<ProductVariantDto> UpdateVariantAsync(Guid variantId, SaveProductVariantRequest request)
+    public async Task<ProductVariantDto> UpdateVariantAsync(Guid variantId, SaveProductVariantRequest request)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.UpdateVariantAsync(variantId, request),
-            () => _productService.UpdateVariantAsync(variantId, request));
+            () => _productService.UpdateVariantAsync(variantId, request, CurrentEmployee?.EmployeeId));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
-    public Task DeleteVariantAsync(Guid variantId)
+    public async Task DeleteVariantAsync(Guid variantId)
     {
         EnsureProductPermission();
-        return ExecuteWithFallbackAsync(
+        await ExecuteWithFallbackAsync(
             () => _apiClient.DeleteVariantAsync(variantId),
             () => _productService.DeleteVariantAsync(variantId));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
     }
 
     // Controle de Estoque e Movimentações
-    public Task<StockMovementDto> RegisterStockMovementAsync(CreateStockMovementRequest request)
+    public async Task<StockMovementDto> RegisterStockMovementAsync(CreateStockMovementRequest request)
     {
         EnsureStockPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.RegisterStockMovementAsync(request),
             () => _stockService.RegisterMovementAsync(CurrentEmployee!.EmployeeId, request));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
     public Task<IReadOnlyList<StockMovementDto>> GetStockMovementsAsync(
@@ -425,12 +548,14 @@ public sealed class MauiAdminGateway
             () => _employeeAndSettingsService.GetAdminStoreSettingsAsync());
     }
 
-    public Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(UpdateStoreSettingsRequest request)
+    public async Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(UpdateStoreSettingsRequest request)
     {
         EnsureAdminPermission();
-        return ExecuteWithFallbackAsync(
+        var result = await ExecuteWithFallbackAsync(
             () => _apiClient.UpdateStoreSettingsAsync(request),
             () => _employeeAndSettingsService.UpdateStoreSettingsAsync(CurrentEmployee!.EmployeeId, request));
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
     }
 
     public Task<AdminStoreSettingsDto> UploadStoreLogoAsync(string fileName, Stream fileStream, string contentType)

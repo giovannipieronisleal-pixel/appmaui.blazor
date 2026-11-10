@@ -9,7 +9,8 @@
 @inject NavigationManager Navigation
 
 @{
-    var fullStoreUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl("http://localhost:5190", _store.StoreSlug);
+    var baseSite = !string.IsNullOrWhiteSpace(_store.OnlineBaseUrl) ? _store.OnlineBaseUrl : "http://localhost:5190";
+    var fullStoreUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl(baseSite, _store.StoreSlug);
 }
 
 @if (Gateway.IsAuthenticated)
@@ -230,7 +231,7 @@
                 &larr; Voltar para o Catálogo (@_store.StoreName)
             </button>
 
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem; align-items: start;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; align-items: start;">
                 <!-- Galeria de Fotografias -->
                 <div>
                     <div style="aspect-ratio: 3 / 4; background: #F3F1EC; border-radius: 10px; overflow: hidden; border: 1px solid #E7E5E4; margin-bottom: 0.75rem;">
@@ -457,12 +458,12 @@
         }
     }
 
-    private static async Task OpenExternalWebsiteAsync(string url)
+    private async Task OpenExternalWebsiteAsync(string url)
     {
         try
         {
-            await LocalWebServerLauncher.EnsureWebCatalogRunningAsync();
-            await Launcher.Default.OpenAsync(new Uri(url));
+            LocalWebServerLauncher.Initialize(CatalogService);
+            await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url);
         }
         catch
         {

@@ -29,20 +29,20 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; align-items: end;">
             <div>
                 <label class="adm-label">1. Produto</label>
-                <select class="adm-select" @bind="_selectedProductId" @bind:after="OnProductSelectionChanged">
+                <select class="adm-select" @bind="_selectedProductIdString" @bind:after="OnProductSelectionChanged">
                     @foreach (var prod in _products)
                     {
-                        <option value="@prod.Id">@prod.Name</option>
+                        <option value="@prod.Id.ToString()">@prod.Name</option>
                     }
                 </select>
             </div>
 
             <div>
                 <label class="adm-label">2. Variante (Cor / Tamanho)</label>
-                <select class="adm-select" @bind="_movementRequest.ProductVariantId">
+                <select class="adm-select" @bind="_selectedVariantIdString" @bind:after="OnVariantSelectionChanged">
                     @foreach (var v in GetVariantsOfSelectedProduct())
                     {
-                        <option value="@v.Id">@v.Color - Tam @v.Size (SKU: @v.Sku | Saldo: @v.StockQuantity un.)</option>
+                        <option value="@v.Id.ToString()">@v.Color - Tam @v.Size (SKU: @v.Sku | Saldo: @v.StockQuantity un.)</option>
                     }
                 </select>
             </div>
@@ -119,15 +119,17 @@
             @foreach (var m in _movements)
             {
                 <tr>
-                    <td style="font-size: 0.82rem; white-space: nowrap;">
-                        @m.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                    <td data-label="Data/Hora" style="font-size: 0.84rem;">
+                        @m.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                     </td>
-                    <td style="font-weight: 600;">@m.ProductName</td>
-                    <td>
-                        <span>@m.Color / <strong>@m.Size</strong></span>
-                        <div style="font-size: 0.75rem; color: var(--adm-muted);">@m.VariantSku</div>
+                    <td data-label="Produto" style="font-weight: 700;">@m.ProductName</td>
+                    <td data-label="Variante">
+                        <div>
+                            <span>@m.Color / <strong>@m.Size</strong></span>
+                            <div style="font-size: 0.76rem; color: var(--adm-muted);">@m.VariantSku</div>
+                        </div>
                     </td>
-                    <td>
+                    <td data-label="Tipo">
                         @if (m.MovementType == "IN")
                         {
                             <span class="pill-badge pill-green">Entrada</span>
@@ -141,13 +143,13 @@
                             <span class="pill-badge pill-amber">Ajuste</span>
                         }
                     </td>
-                    <td>@m.PreviousQuantity un.</td>
-                    <td style="font-weight: 700;">
+                    <td data-label="Saldo Anterior">@m.PreviousQuantity un.</td>
+                    <td data-label="Alteração" style="font-weight: 800;">
                         @(m.MovementType == "OUT" ? $"-{m.QuantityChanged}" : m.QuantityChanged > 0 ? $"+{m.QuantityChanged}" : m.QuantityChanged.ToString())
                     </td>
-                    <td style="font-weight: 700;">@m.NewQuantity un.</td>
-                    <td style="font-size: 0.85rem; color: var(--adm-muted);">@m.Reason</td>
-                    <td style="font-size: 0.85rem; font-weight: 500;">@m.EmployeeName</td>
+                    <td data-label="Novo Saldo" style="font-weight: 800;">@m.NewQuantity un.</td>
+                    <td data-label="Motivo" style="font-size: 0.85rem; color: var(--adm-muted);">@m.Reason</td>
+                    <td data-label="Responsável" style="font-size: 0.85rem; font-weight: 600;">@m.EmployeeName</td>
                 </tr>
             }
         </tbody>
@@ -159,6 +161,8 @@
     private IReadOnlyList<StockMovementDto> _movements = [];
 
     private Guid _selectedProductId;
+    private string _selectedProductIdString = string.Empty;
+    private string _selectedVariantIdString = string.Empty;
     private string? _filterProductId;
     private CreateStockMovementRequest _movementRequest = new()
     {
@@ -184,6 +188,7 @@
             if (_selectedProductId == Guid.Empty && _products.Count > 0)
             {
                 _selectedProductId = _products[0].Id;
+                _selectedProductIdString = _selectedProductId.ToString();
                 OnProductSelectionChanged();
             }
             await LoadMovementsAsync();
@@ -196,10 +201,29 @@
 
     private void OnProductSelectionChanged()
     {
+        if (Guid.TryParse(_selectedProductIdString, out var prodGuid))
+        {
+            _selectedProductId = prodGuid;
+        }
+
         var firstVariant = GetVariantsOfSelectedProduct().FirstOrDefault();
         if (firstVariant is not null)
         {
             _movementRequest.ProductVariantId = firstVariant.Id;
+            _selectedVariantIdString = firstVariant.Id.ToString();
+        }
+        else
+        {
+            _movementRequest.ProductVariantId = Guid.Empty;
+            _selectedVariantIdString = string.Empty;
+        }
+    }
+
+    private void OnVariantSelectionChanged()
+    {
+        if (Guid.TryParse(_selectedVariantIdString, out var varGuid))
+        {
+            _movementRequest.ProductVariantId = varGuid;
         }
     }
 

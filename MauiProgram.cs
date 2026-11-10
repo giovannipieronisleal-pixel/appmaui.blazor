@@ -81,13 +81,16 @@ public static class MauiProgram
         builder.Services.AddSingleton<ProductManagementService>();
         builder.Services.AddSingleton<StockManagementService>();
         builder.Services.AddSingleton<EmployeeAndSettingsService>();
+        builder.Services.AddSingleton<ThemeService>();
+        builder.Services.AddSingleton<GoogleCloudSyncService>();
         builder.Services.AddSingleton<MauiAdminGateway>();
 
-        if (OperatingSystem.IsWindows())
-        {
-            _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
-        }
+        var app = builder.Build();
 
-        return builder.Build();
+        // Inicializa o servidor HTTP do catálogo público (porta 5190) em todas as plataformas (Windows e Android/iOS)
+        LocalWebServerLauncher.Initialize(app.Services.GetRequiredService<CatalogService>());
+        _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
+
+        return app;
     }
 }

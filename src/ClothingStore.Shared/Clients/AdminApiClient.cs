@@ -128,6 +128,13 @@ public sealed class AdminApiClient
         return (await response.Content.ReadFromJsonAsync<CategoryDto>(cancellationToken: ct))!;
     }
 
+    public async Task<CategoryDto> UpdateCategoryAsync(Guid categoryId, SaveCategoryRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PutAsJsonAsync($"/api/categories/{categoryId}", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<CategoryDto>(cancellationToken: ct))!;
+    }
+
     public async Task<IReadOnlyList<ProductDetailDto>> GetProductsAsync(
         string? search = null,
         Guid? categoryId = null,
@@ -335,6 +342,27 @@ public sealed class AdminApiClient
         var response = await _httpClient.DeleteAsync("/api/settings/logo", ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
+    }
+
+    // Sincronização em Nuvem (Google Cloud Run / 24h Online)
+    public async Task<bool> CheckCloudStatusAsync(string? customUrl = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(customUrl) ? "/api/cloud/status" : $"{customUrl.TrimEnd('/')}/api/cloud/status";
+            var response = await _httpClient.GetAsync(url, ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task SyncCloudStateAsync(CloudCatalogSyncPayload payload, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/cloud/sync-state", payload, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
     }
 
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)

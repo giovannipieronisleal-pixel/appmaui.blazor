@@ -171,7 +171,10 @@ public sealed class EmployeeAndSettingsService
             request.StoreDescription,
             request.DefaultLowStockThreshold,
             employeeId,
-            request.StoreSlug);
+            request.StoreSlug,
+            request.OnlineBaseUrl,
+            request.AutoSyncOnlineOnSave,
+            request.LastOnlineSyncAt);
 
         if (request.LogoPublicUrl is not null)
         {
@@ -244,6 +247,9 @@ public sealed class EmployeeAndSettingsService
             s.LogoStoragePath,
             s.LogoPublicUrl,
             s.DefaultLowStockThreshold,
-            s.UpdatedAt);
+            s.UpdatedAt,
+            s.OnlineBaseUrl,
+            s.AutoSyncOnlineOnSave,
+            s.LastOnlineSyncAt);
 }
 

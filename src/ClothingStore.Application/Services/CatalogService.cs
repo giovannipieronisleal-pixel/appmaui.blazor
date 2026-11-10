@@ -29,7 +29,10 @@ public sealed class CatalogService
             settings.WhatsappNumber,
             settings.StoreDescription,
             settings.LogoPublicUrl,
-            settings.UpdatedAt);
+            settings.UpdatedAt,
+            settings.OnlineBaseUrl,
+            settings.AutoSyncOnlineOnSave,
+            settings.LastOnlineSyncAt);
     }
 
     public async Task<IReadOnlyList<CategoryDto>> GetPublicCategoriesAsync(CancellationToken ct = default)

@@ -9,7 +9,10 @@ public sealed record PublicStoreSettingsDto(
     string WhatsappNumber,
     string StoreDescription,
     string? LogoPublicUrl,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? OnlineBaseUrl = null,
+    bool AutoSyncOnlineOnSave = true,
+    DateTimeOffset? LastOnlineSyncAt = null);
 
 public sealed record CategoryDto(
     Guid Id,

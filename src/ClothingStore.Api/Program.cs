@@ -270,9 +270,14 @@ app.MapGet("/api/products/{id:guid}", async (Guid id, ProductManagementService s
     Results.Ok(await service.GetProductByIdAsync(id, ct)))
     .RequireAuthorization();
 
-app.MapPost("/api/products", async (SaveProductRequest request, ProductManagementService service, CancellationToken ct) =>
+app.MapPost("/api/products", async (
+    SaveProductRequest request,
+    ClaimsPrincipal user,
+    ProductManagementService service,
+    CancellationToken ct) =>
 {
-    var created = await service.CreateProductAsync(request, ct);
+    var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
+    var created = await service.CreateProductAsync(request, employeeId, ct);
     return Results.Created($"/api/products/{created.Id}", created);
 }).RequireAuthorization(RoleNames.PolicyCanManageProducts);
 
@@ -375,10 +380,12 @@ app.MapPost("/api/products/{productId:guid}/variants", async (
 app.MapPut("/api/variants/{variantId:guid}", async (
     Guid variantId,
     SaveProductVariantRequest request,
+    ClaimsPrincipal user,
     ProductManagementService service,
     CancellationToken ct) =>
 {
-    return Results.Ok(await service.UpdateVariantAsync(variantId, request, ct));
+    var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
+    return Results.Ok(await service.UpdateVariantAsync(variantId, request, employeeId, ct));
 }).RequireAuthorization(RoleNames.PolicyCanManageProducts);
 
 app.MapDelete("/api/variants/{variantId:guid}", async (
@@ -481,5 +488,46 @@ app.MapDelete("/api/settings/logo", async (
     var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
     return Results.Ok(await service.RemoveStoreLogoAsync(employeeId, ct));
 }).RequireAuthorization(RoleNames.PolicyAdminOnly);
+
+// =============================================================================
+// 9. ENDPOINTS DE STATUS E SINCRONIZAÇÃO EM NUVEM (Google Cloud Run / 24h Online)
+// =============================================================================
+app.MapGet("/api/cloud/status", () => Results.Ok(new
+{
+    status = "online",
+    provider = "Google Cloud Run",
+    service = "ClothingStore",
+    timestamp = DateTimeOffset.UtcNow
+})).AllowAnonymous();
+
+app.MapPost("/api/cloud/sync-state", async (
+    CloudCatalogSyncPayload payload,
+    EmployeeAndSettingsService settingsService,
+    ProductManagementService productService,
+    CancellationToken ct) =>
+{
+    if (!string.IsNullOrWhiteSpace(payload.Settings.StoreName))
+    {
+        await settingsService.UpdateStoreSettingsAsync(null, payload.Settings, ct);
+    }
+
+    foreach (var cat in payload.Categories)
+    {
+        await productService.CreateCategoryAsync(cat, ct);
+    }
+
+    foreach (var prod in payload.Products)
+    {
+        await productService.CreateProductAsync(prod, null, ct);
+    }
+
+    return Results.Ok(new
+    {
+        message = "Catálogo online 24h sincronizado com sucesso!",
+        syncedAt = DateTimeOffset.UtcNow,
+        categoriesCount = payload.Categories.Count,
+        productsCount = payload.Products.Count
+    });
+}).RequireAuthorization(RoleNames.PolicyCanManageProducts);
 
 app.Run();

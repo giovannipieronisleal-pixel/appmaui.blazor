@@ -51,6 +51,9 @@ public sealed class SupabasePostgresClient
             logo_storage_path = settings.LogoStoragePath,
             logo_public_url = settings.LogoPublicUrl,
             default_low_stock_threshold = settings.DefaultLowStockThreshold,
+            online_base_url = settings.OnlineBaseUrl,
+            auto_sync_online_on_save = settings.AutoSyncOnlineOnSave,
+            last_online_sync_at = settings.LastOnlineSyncAt,
             updated_by_employee_id = settings.UpdatedByEmployeeId,
             updated_at = settings.UpdatedAt
         };

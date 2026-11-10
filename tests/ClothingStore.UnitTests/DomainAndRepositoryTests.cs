@@ -95,6 +95,10 @@ public class DomainAndRepositoryTests
         Assert.AreEqual("atelier-moda", settings.StoreSlug);
         Assert.AreEqual("http://localhost:5190/loja/atelier-moda", settings.BuildStoreCatalogUrl("http://localhost:5190"));
 
+        // Se OnlineBaseUrl estiver configurado (Google Cloud Run), utiliza o link online 24h automaticamente
+        settings.OnlineBaseUrl = "https://minhaloja-catalog-xyz.a.run.app";
+        Assert.AreEqual("https://minhaloja-catalog-xyz.a.run.app/loja/atelier-moda", settings.BuildStoreCatalogUrl());
+
         var message = WhatsAppLinkBuilder.BuildProductConsultationMessage("Camiseta Básica", "Preta", "M");
         Assert.AreEqual(
             "Olá! Tenho interesse no produto Camiseta Básica, na cor preta e tamanho M. Gostaria de saber mais informações.",
@@ -138,9 +142,9 @@ public class DomainAndRepositoryTests
             var categories = await repo.GetCategoriesAsync();
             var employees = await repo.GetEmployeesAsync();
 
-            // Nenhum produto ou categoria de exemplo
+            // Nenhum produto de exemplo, mas categorias padrão prontas para uso
             Assert.AreEqual(0, products.Count);
-            Assert.AreEqual(0, categories.Count);
+            Assert.IsTrue(categories.Count >= 7);
             // Apenas o login Admin padrão (login: admin / senha: admin)
             Assert.AreEqual(1, employees.Count);
             Assert.AreEqual("admin", employees[0].User?.Email);
@@ -274,7 +278,7 @@ public class DomainAndRepositoryTests
             Assert.AreEqual("maison-lumiere", publicStore.StoreSlug);
             Assert.AreEqual("5521998876655", publicStore.WhatsappNumber);
 
-            // 2. Criar Categoria, Produto, Foto e Variantes no App MAUI
+            // 2. Criar Categoria, Produto (inclusive com categoria digitada inline), Editar Produto e Variantes no App MAUI
             var cat = await productServiceMaui.CreateCategoryAsync(new SaveCategoryRequest
             {
                 Name = "Camisetas",
@@ -285,12 +289,24 @@ public class DomainAndRepositoryTests
 
             var newProduct = await productServiceMaui.CreateProductAsync(new SaveProductRequest
             {
-                CategoryId = cat.Id,
+                CategoryId = Guid.Empty,
+                CategoryName = "Camisetas",
                 Name = "Camiseta Básica",
                 Description = "Malha 100% algodão",
                 BasePrice = 129.90m,
                 IsVisibleOnSite = true
+            }, adminSession.Employee.EmployeeId);
+
+            // Editar dados do produto (nome, preço e descrição)
+            newProduct = await productServiceMaui.UpdateProductAsync(newProduct.Id, new SaveProductRequest
+            {
+                CategoryId = cat.Id,
+                Name = "Camiseta Básica",
+                Description = "Malha 100% algodão egípcio premium",
+                BasePrice = 139.90m,
+                IsVisibleOnSite = true
             });
+            Assert.AreEqual(139.90m, newProduct.BasePrice);
 
             using var fakeImageStream = new MemoryStream([137, 80, 78, 71, 13, 10, 26, 10]);
             var uploadedImg = await productServiceMaui.UploadProductImageAsync(
@@ -319,6 +335,18 @@ public class DomainAndRepositoryTests
                 LowStockThreshold = 2,
                 IsActive = true
             });
+
+            // Editar variante (inclusive ajustando quantidade em estoque)
+            vBrancoM = await productServiceMaui.UpdateVariantAsync(vBrancoM.Id, new SaveProductVariantRequest
+            {
+                Color = "Branco",
+                Size = "M",
+                CustomSku = vBrancoM.Sku,
+                InitialStockQuantity = 8,
+                UpdateStockQuantity = true,
+                LowStockThreshold = 2,
+                IsActive = true
+            }, adminSession.Employee.EmployeeId);
 
             // 3. Movimentação de estoque (+5 unidades em Preto P -> saldo vai para 8)
             var mov = await stockServiceMaui.RegisterMovementAsync(adminSession.Employee.EmployeeId, new CreateStockMovementRequest
@@ -352,6 +380,63 @@ public class DomainAndRepositoryTests
                 File.Delete(tempFile);
             if (Directory.Exists(tempUploads))
                 Directory.Delete(tempUploads, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task DefaultAdmin_Login_And_TwoFactor_ShouldWorkProperly()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"clothingstore_admin_test_{Guid.NewGuid():N}.json");
+        try
+        {
+            var hasher = new Pbkdf2PasswordHasher();
+            var repo = new ClothingStoreRepository(hasher, tempFile);
+            var jwt = new JwtTokenService(new ConfigurationBuilder().Build());
+            var authService = new AuthService(repo, hasher, jwt);
+
+            // 1. Login com usuário padrão admin e senha admin
+            var loginResp = await authService.LoginAsync(new LoginRequest("admin", "admin"));
+            Assert.IsNotNull(loginResp);
+            Assert.AreEqual("admin", loginResp.Employee.Email);
+            Assert.AreEqual("Administrador", loginResp.Employee.FullName);
+            Assert.IsTrue(loginResp.Employee.IsAdmin);
+
+            // 2. Testar que login com caixa alta (case-insensitive) também funciona
+            var loginCaseResp = await authService.LoginAsync(new LoginRequest("ADMIN", "admin"));
+            Assert.IsNotNull(loginCaseResp);
+
+            // 3. Configurar 2FA para o admin
+            var setup = await authService.GenerateTwoFactorSetupAsync(loginResp.Employee.UserId);
+            Assert.IsNotNull(setup);
+            Assert.AreEqual(16, setup.SecretKey.Length);
+            Assert.AreEqual(4, setup.BackupCodes.Count);
+
+            // 4. Ativar 2FA com o código TOTP atual
+            var currentOtp = ClothingStore.Domain.Common.TwoFactorHelper.GenerateCurrentTotp(setup.SecretKey);
+            var enabledProfile = await authService.EnableTwoFactorAsync(
+                loginResp.Employee.UserId,
+                new EnableTwoFactorRequest(setup.SecretKey, currentOtp, setup.BackupCodes));
+            Assert.IsTrue(enabledProfile.HasTwoFactorEnabled);
+
+            // 5. Tentar logar com senha: deve acusar que 2FA é exigido
+            var challenge = await authService.LoginWithChallengeAsync(new LoginRequest("admin", "admin"));
+            Assert.IsTrue(challenge.RequiresTwoFactor);
+            Assert.IsNull(challenge.AuthResult);
+
+            // 6. Completar login com código 2FA
+            var twoFactorLogin = await authService.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", currentOtp));
+            Assert.IsNotNull(twoFactorLogin);
+            Assert.AreEqual("admin", twoFactorLogin.Employee.Email);
+
+            // 7. Também permite usar código de emergência/backup
+            var backupCode = setup.BackupCodes[0];
+            var backupLogin = await authService.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", backupCode));
+            Assert.IsNotNull(backupLogin);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
         }
     }
 }

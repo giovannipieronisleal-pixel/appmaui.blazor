@@ -51,8 +51,12 @@ public sealed class SaveCategoryRequest
 
 public sealed class SaveProductRequest
 {
-    [Required(ErrorMessage = "A categoria é obrigatória.")]
     public Guid CategoryId { get; set; }
+
+    /// <summary>
+    /// Nome de nova categoria (opcional). Se preenchido, cria ou seleciona a categoria automaticamente.
+    /// </summary>
+    public string? CategoryName { get; set; }
 
     [Required(ErrorMessage = "O nome do produto é obrigatório.")]
     public string Name { get; set; } = string.Empty;
@@ -63,6 +67,13 @@ public sealed class SaveProductRequest
     public decimal BasePrice { get; set; }
 
     public bool IsVisibleOnSite { get; set; } = true;
+
+    /// <summary>
+    /// Campos opcionais para já cadastrar a primeira variante (Cor/Tamanho/Estoque) junto com o produto.
+    /// </summary>
+    public string? InitialColor { get; set; }
+    public string? InitialSize { get; set; }
+    public int InitialStockQuantity { get; set; }
 }
 
 public sealed class SaveProductVariantRequest
@@ -79,6 +90,11 @@ public sealed class SaveProductVariantRequest
 
     [Range(0, 100000)]
     public int InitialStockQuantity { get; set; }
+
+    /// <summary>
+    /// Quando verdadeiro na edição de variante, ajusta também o saldo em estoque para <see cref="InitialStockQuantity"/>.
+    /// </summary>
+    public bool UpdateStockQuantity { get; set; }
 
     [Range(0, 10000)]
     public int LowStockThreshold { get; set; } = 3;
@@ -168,6 +184,19 @@ public sealed class UpdateStoreSettingsRequest
 
     [Range(0, 1000)]
     public int DefaultLowStockThreshold { get; set; } = 3;
+
+    /// <summary>
+    /// URL pública 24h online do catálogo no Google Cloud Run (ou domínio próprio).
+    /// Ex.: https://minhaloja-catalog-xxxx.a.run.app
+    /// </summary>
+    public string? OnlineBaseUrl { get; set; }
+
+    /// <summary>
+    /// Define se o catálogo online no Google Cloud é atualizado automaticamente ao salvar itens.
+    /// </summary>
+    public bool AutoSyncOnlineOnSave { get; set; } = true;
+
+    public DateTimeOffset? LastOnlineSyncAt { get; set; }
 }
 
 public sealed record AdminStoreSettingsDto(
@@ -179,5 +208,16 @@ public sealed record AdminStoreSettingsDto(
     string? LogoStoragePath,
     string? LogoPublicUrl,
     int DefaultLowStockThreshold,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? OnlineBaseUrl = null,
+    bool AutoSyncOnlineOnSave = true,
+    DateTimeOffset? LastOnlineSyncAt = null);
+
+public sealed class CloudCatalogSyncPayload
+{
+    public UpdateStoreSettingsRequest Settings { get; set; } = new();
+    public List<SaveCategoryRequest> Categories { get; set; } = [];
+    public List<SaveProductRequest> Products { get; set; } = [];
+    public string? RawDatabaseJson { get; set; }
+}
 

@@ -138,6 +138,9 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
     logo_storage_path text NULL,
     logo_public_url text NULL,
     default_low_stock_threshold int NOT NULL DEFAULT 3 CHECK (default_low_stock_threshold >= 0),
+    online_base_url text NULL,
+    auto_sync_online_on_save boolean NOT NULL DEFAULT true,
+    last_online_sync_at timestamptz NULL,
     updated_by_employee_id uuid NULL REFERENCES public.employees(id) ON DELETE SET NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );

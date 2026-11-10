@@ -106,19 +106,97 @@ public sealed class ProductManagementService
         return CatalogService.MapToProductDetailDto(product, category);
     }
 
-    public async Task<ProductDetailDto> CreateProductAsync(SaveProductRequest request, CancellationToken ct = default)
+    private async Task<Category> ResolveOrCreateCategoryAsync(
+        Guid categoryId,
+        string? categoryName,
+        CancellationToken ct)
     {
-        var category = await _repository.GetCategoryByIdAsync(request.CategoryId, ct)
-            ?? throw new DomainException("A categoria selecionada não foi encontrada.");
+        if (!string.IsNullOrWhiteSpace(categoryName))
+        {
+            var trimmedName = categoryName.Trim();
+            var slug = Category.GenerateSlug(trimmedName);
+            var existingCategories = await _repository.GetCategoriesAsync(onlyActive: false, ct);
+            var matched = existingCategories.FirstOrDefault(c =>
+                string.Equals(c.Name, trimmedName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(c.Slug, slug, StringComparison.OrdinalIgnoreCase));
+
+            if (matched is not null)
+                return matched;
+
+            var created = new Category(trimmedName, null, existingCategories.Count + 1)
+            {
+                IsActive = true
+            };
+            await _repository.AddCategoryAsync(created, ct);
+            return created;
+        }
+
+        if (categoryId != Guid.Empty)
+        {
+            var byId = await _repository.GetCategoryByIdAsync(categoryId, ct);
+            if (byId is not null)
+                return byId;
+        }
+
+        var allCategories = await _repository.GetCategoriesAsync(onlyActive: false, ct);
+        if (allCategories.Count > 0)
+            return allCategories[0];
+
+        var fallbackCategory = new Category("Geral", "Categoria geral de peças", 1)
+        {
+            IsActive = true
+        };
+        await _repository.AddCategoryAsync(fallbackCategory, ct);
+        return fallbackCategory;
+    }
+
+    public async Task<ProductDetailDto> CreateProductAsync(
+        SaveProductRequest request,
+        Guid? employeeId = null,
+        CancellationToken ct = default)
+    {
+        var category = await ResolveOrCreateCategoryAsync(request.CategoryId, request.CategoryName, ct);
 
         var product = new Product(
-            request.CategoryId,
+            category.Id,
             request.Name,
             request.Description,
             request.BasePrice,
             request.IsVisibleOnSite);
 
         await _repository.AddProductAsync(product, ct);
+
+        if (!string.IsNullOrWhiteSpace(request.InitialColor) && !string.IsNullOrWhiteSpace(request.InitialSize))
+        {
+            var variant = product.AddVariant(
+                request.InitialColor,
+                request.InitialSize,
+                ProductVariant.ResolveDefaultColorHex(request.InitialColor),
+                customSku: null,
+                lowStockThreshold: 3);
+
+            await _repository.UpdateProductAsync(product, ct);
+
+            if (request.InitialStockQuantity > 0)
+            {
+                var effectiveEmpId = employeeId.HasValue && employeeId.Value != Guid.Empty
+                    ? employeeId.Value
+                    : (await _repository.GetEmployeesAsync(ct)).FirstOrDefault()?.Id ?? Guid.Empty;
+
+                if (effectiveEmpId != Guid.Empty)
+                {
+                    var movement = variant.ApplyStockMovement(
+                        effectiveEmpId,
+                        StockMovementType.In,
+                        request.InitialStockQuantity,
+                        "Estoque inicial no cadastro do produto");
+
+                    await _repository.RecordStockMovementAsync(variant, movement, ct);
+                    await _repository.UpdateProductAsync(product, ct);
+                }
+            }
+        }
+
         return CatalogService.MapToProductDetailDto(product, category);
     }
 
@@ -127,11 +205,10 @@ public sealed class ProductManagementService
         var product = await _repository.GetProductByIdAsync(productId, ct)
             ?? throw new DomainException("Produto não encontrado.");
 
-        var category = await _repository.GetCategoryByIdAsync(request.CategoryId, ct)
-            ?? throw new DomainException("A categoria selecionada não foi encontrada.");
+        var category = await ResolveOrCreateCategoryAsync(request.CategoryId, request.CategoryName, ct);
 
         product.UpdateDetails(
-            request.CategoryId,
+            category.Id,
             request.Name,
             request.Description,
             request.BasePrice,
@@ -209,6 +286,7 @@ public sealed class ProductManagementService
     public async Task<ProductVariantDto> UpdateVariantAsync(
         Guid variantId,
         SaveProductVariantRequest request,
+        Guid? employeeId = null,
         CancellationToken ct = default)
     {
         var variant = await _repository.GetVariantByIdAsync(variantId, ct)
@@ -228,6 +306,21 @@ public sealed class ProductManagementService
 
         var sku = string.IsNullOrWhiteSpace(request.CustomSku) ? variant.Sku : request.CustomSku;
         variant.UpdateDetails(sku, request.Color, request.Size, request.ColorHex, request.LowStockThreshold, request.IsActive);
+
+        if (request.UpdateStockQuantity && request.InitialStockQuantity >= 0 && request.InitialStockQuantity != variant.StockQuantity)
+        {
+            var effectiveEmpId = employeeId.HasValue && employeeId.Value != Guid.Empty
+                ? employeeId.Value
+                : (await _repository.GetEmployeesAsync(ct)).FirstOrDefault()?.Id ?? Guid.Empty;
+
+            var movement = variant.ApplyStockMovement(
+                effectiveEmpId,
+                StockMovementType.Adjustment,
+                request.InitialStockQuantity,
+                "Ajuste direto na edição da variante");
+
+            await _repository.RecordStockMovementAsync(variant, movement, ct);
+        }
 
         await _repository.UpdateProductAsync(product, ct);
 

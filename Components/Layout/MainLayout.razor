@@ -3,81 +3,139 @@
 @inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
+@inject ThemeService Theme
+@inject GoogleCloudSyncService CloudSync
 @implements IDisposable
 
-@if (!Gateway.IsAuthenticated && !IsPublicCatalogRoute())
-{
-    <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: #18181B;">
-        <div style="width: 100%; max-width: 460px;">
-            <appmaui.blazor.Components.Pages.Login />
-        </div>
-    </div>
-}
-else if (IsPublicCatalogRoute())
-{
-    <main style="padding: 1.25rem; max-width: 1280px; margin: 0 auto;">
-        @Body
-    </main>
-}
-else
-{
-    <div class="adm-shell">
-        <aside class="adm-sidebar">
-            <div class="adm-brand">
-                <div>@_storeName.ToUpperInvariant()</div>
-                <div style="font-size: 0.75rem; font-weight: 400; color: #A1A1AA; margin-top: 0.2rem;">
-                    Link: /loja/@_storeSlug
-                </div>
+<div class="@Theme.CurrentThemeClass">
+    @if (!Gateway.IsAuthenticated && !IsPublicCatalogRoute())
+    {
+        <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; background: var(--adm-bg);">
+            <div style="width: 100%; max-width: 440px;">
+                <appmaui.blazor.Components.Pages.Login />
             </div>
-
-            <NavMenu />
-        </aside>
-
-        <div class="adm-main">
-            <header class="adm-topbar">
-                <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
-                    <span style="font-weight: 600;">@Gateway.CurrentEmployee?.FullName</span>
-                    <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")">
-                        @(Gateway.IsAdmin ? "Administrador" : "Funcionário")
-                    </span>
-                </div>
-
-                <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
-                    <a href="/loja/@_storeSlug"
-                       class="adm-btn adm-btn-success"
-                       style="padding: 0.4rem 0.85rem; font-size: 0.82rem;">
-                        Ver Site da Loja (/loja/@_storeSlug)
-                    </a>
-
-                    <button type="button"
-                            class="adm-btn adm-btn-outline"
-                            style="padding: 0.4rem 0.8rem; font-size: 0.82rem;"
-                            @onclick="CopyStoreLinkAsync">
-                        @(_copied ? "Link Copiado!" : "Copiar Link do Site")
-                    </button>
-
-                    <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.4rem 0.8rem;" @onclick="HandleLogout">
-                        Sair
-                    </button>
-                </div>
-            </header>
-
-            <main class="adm-content">
-                @Body
-            </main>
         </div>
-    </div>
-}
+    }
+    else if (IsPublicCatalogRoute())
+    {
+        <main style="padding: 0.75rem; max-width: 1280px; margin: 0 auto;">
+            @Body
+        </main>
+    }
+    else
+    {
+        <div class="adm-shell">
+            <aside class="adm-sidebar">
+                <div class="adm-brand">
+                    <div>@_storeName.ToUpperInvariant()</div>
+                    <div style="font-size: 0.75rem; font-weight: 400; opacity: 0.8; margin-top: 0.2rem;">
+                        /loja/@_storeSlug
+                    </div>
+                </div>
+
+                <NavMenu />
+            </aside>
+
+            <div class="adm-main">
+                <header class="adm-topbar">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                        <strong style="font-size: 1rem; color: var(--adm-text);">@_storeName</strong>
+                        <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")">
+                            @(Gateway.IsAdmin ? "Admin" : "Equipe")
+                        </span>
+
+                        @if (!string.IsNullOrWhiteSpace(_onlineBaseUrl))
+                        {
+                            <span class="pill-badge pill-blue" title="Catálogo 24h Online no Google Cloud">
+                                ☁️ 24h Online
+                            </span>
+                        }
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                        <!-- Botão Alternador Rápido de Tema Claro / Escuro -->
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="padding: 0.4rem 0.65rem; min-height: 36px; font-size: 0.82rem;"
+                                title="@($"Tema atual: {Theme.ThemeDisplayName}. Toque para alternar.")"
+                                @onclick="Theme.ToggleTheme">
+                            @(Theme.IsDarkMode ? "☀️ Claro" : "🌙 Escuro")
+                        </button>
+
+                        <a href="/loja/@_storeSlug"
+                           class="adm-btn adm-btn-success"
+                           style="padding: 0.4rem 0.7rem; min-height: 36px; font-size: 0.8rem;">
+                            🌐 Ver Catálogo
+                        </a>
+
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="padding: 0.4rem 0.7rem; min-height: 36px; font-size: 0.8rem;"
+                                @onclick="OpenBrowserAsync">
+                            Abrir no Navegador &nearr;
+                        </button>
+
+                        <!-- Botão de Perfil / PIN do Usuário & Segurança (2FA) -->
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="padding: 0.35rem 0.65rem; min-height: 36px; font-size: 0.8rem; display: flex; align-items: center; gap: 0.45rem; border-color: var(--adm-accent);"
+                                title="Configurações do Usuário: E-mail, Senha, PIN e 2FA"
+                                @onclick="() => _showUserProfileModal = true">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--adm-accent); color: #fff; font-size: 0.72rem; font-weight: 800;">
+                                @GetUserInitials(Gateway.CurrentEmployee?.FullName)
+                            </span>
+                            <span style="max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                @(Gateway.CurrentEmployee?.FullName ?? "Meu Perfil")
+                            </span>
+                            <span class="pill-badge @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true || Gateway.CurrentEmployee?.HasSecurityPin == true ? "pill-green" : "pill-slate")" style="font-size: 0.68rem; padding: 0.1rem 0.35rem;">
+                                @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true ? "🛡️ 2FA" : (Gateway.CurrentEmployee?.HasSecurityPin == true ? "🔒 PIN" : "⚙️ PIN"))
+                            </span>
+                        </button>
+
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="padding: 0.4rem 0.65rem; min-height: 36px; font-size: 0.8rem;"
+                                @onclick="HandleLogout">
+                            Sair
+                        </button>
+                    </div>
+                </header>
+
+                <main class="adm-content">
+                    @Body
+                </main>
+            </div>
+        </div>
+    }
+</div>
+
+<appmaui.blazor.Components.Pages.UserProfileModal @bind-IsOpen="_showUserProfileModal" />
 
 @code {
     private string _storeName = "Minha Loja";
     private string _storeSlug = "minha-loja";
-    private bool _copied;
+    private string? _onlineBaseUrl;
+    private bool _showUserProfileModal;
+
+    private static string GetUserInitials(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return "U";
+
+        var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1)
+            return parts[0][0].ToString().ToUpperInvariant();
+
+        return (parts[0][0].ToString() + parts[^1][0].ToString()).ToUpperInvariant();
+    }
 
     protected override async Task OnInitializedAsync()
     {
         Gateway.AuthStateChanged += OnAuthStateChanged;
         Navigation.LocationChanged += OnLocationChanged;
+        Theme.OnThemeChanged += OnThemeChanged;
+        CloudSync.OnSyncStatusChanged += OnSyncStatusChanged;
+
         await Gateway.TryRestoreSessionAsync();
         await RefreshStoreInfoAsync();
     }
@@ -96,6 +154,7 @@ else
             var store = await CatalogService.GetPublicStoreSettingsAsync();
             _storeName = store.StoreName;
             _storeSlug = store.StoreSlug;
+            _onlineBaseUrl = store.OnlineBaseUrl;
         }
         catch
         {
@@ -104,7 +163,6 @@ else
 
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        _copied = false;
         await RefreshStoreInfoAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -114,13 +172,25 @@ else
         InvokeAsync(StateHasChanged);
     }
 
-    private async Task CopyStoreLinkAsync()
+    private void OnThemeChanged()
     {
-        var url = WhatsAppLinkBuilder.BuildStoreCatalogUrl("http://localhost:5190", _storeSlug);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnSyncStatusChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OpenBrowserAsync()
+    {
+        // Se houver URL do Google Cloud configurada, abre diretamente a URL online 24h!
+        var targetBase = !string.IsNullOrWhiteSpace(_onlineBaseUrl) ? _onlineBaseUrl : "http://localhost:5190";
+        var url = WhatsAppLinkBuilder.BuildStoreCatalogUrl(targetBase, _storeSlug);
         try
         {
-            await Clipboard.Default.SetTextAsync(url);
-            _copied = true;
+            LocalWebServerLauncher.Initialize(CatalogService);
+            await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url);
         }
         catch
         {
@@ -137,5 +207,7 @@ else
     {
         Gateway.AuthStateChanged -= OnAuthStateChanged;
         Navigation.LocationChanged -= OnLocationChanged;
+        Theme.OnThemeChanged -= OnThemeChanged;
+        CloudSync.OnSyncStatusChanged -= OnSyncStatusChanged;
     }
 }

@@ -71,17 +71,17 @@
         </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.25rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
         <!-- Alertas de Estoque Baixo e Sem Estoque -->
         <section class="adm-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Alertas de Reposição (@_summary.StockAlerts.Count)</h2>
-                <a href="/estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Ir para Estoque &rarr;</a>
+                <a href="/estoque" style="font-size: 0.85rem; color: var(--adm-accent); font-weight: 600; text-decoration: none;">Ir para Estoque &rarr;</a>
             </div>
 
             @if (_summary.StockAlerts.Count == 0)
             {
-                <p style="color: var(--adm-muted); font-size: 0.9rem;">
+                <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0;">
                     Todas as variantes estão com nível de estoque saudável!
                 </p>
             }
@@ -94,22 +94,24 @@
                             <th>SKU</th>
                             <th>Saldo</th>
                             <th>Status</th>
-                            <th></th>
+                            <th>Ação</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var alert in _summary.StockAlerts)
                         {
                             <tr>
-                                <td>
-                                    <div style="font-weight: 600;">@alert.ProductName</div>
-                                    <div style="font-size: 0.8rem; color: var(--adm-muted);">
-                                        Cor: @alert.Color &bull; Tam: <strong>@alert.Size</strong>
+                                <td data-label="Peça">
+                                    <div>
+                                        <div style="font-weight: 700;">@alert.ProductName</div>
+                                        <div style="font-size: 0.82rem; color: var(--adm-muted);">
+                                            Cor: @alert.Color &bull; Tam: <strong>@alert.Size</strong>
+                                        </div>
                                     </div>
                                 </td>
-                                <td style="font-size: 0.8rem; color: var(--adm-muted);">@alert.Sku</td>
-                                <td style="font-weight: 700;">@alert.StockQuantity un.</td>
-                                <td>
+                                <td data-label="SKU" style="font-size: 0.82rem; color: var(--adm-muted);">@alert.Sku</td>
+                                <td data-label="Saldo" style="font-weight: 800;">@alert.StockQuantity un.</td>
+                                <td data-label="Status">
                                     @if (alert.IsOutOfStock)
                                     {
                                         <span class="pill-badge pill-red">Sem estoque</span>
@@ -119,9 +121,9 @@
                                         <span class="pill-badge pill-amber">Estoque baixo (&le; @alert.LowStockThreshold)</span>
                                     }
                                 </td>
-                                <td style="text-align: right;">
-                                    <a href="/produtos/@alert.ProductId" class="adm-btn adm-btn-outline" style="padding: 0.3rem 0.6rem; font-size: 0.78rem;">
-                                        Ver
+                                <td data-label="Ação">
+                                    <a href="/produtos/@alert.ProductId" class="adm-btn adm-btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;">
+                                        Editar / Repor
                                     </a>
                                 </td>
                             </tr>
@@ -133,14 +135,14 @@
 
         <!-- Últimas Movimentações -->
         <section class="adm-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Últimas Movimentações</h2>
-                <a href="/estoque" style="font-size: 0.85rem; color: var(--adm-muted); text-decoration: underline;">Histórico completo &rarr;</a>
+                <a href="/estoque" style="font-size: 0.85rem; color: var(--adm-accent); font-weight: 600; text-decoration: none;">Histórico completo &rarr;</a>
             </div>
 
             @if (_summary.RecentMovements.Count == 0)
             {
-                <p style="color: var(--adm-muted); font-size: 0.9rem;">Nenhuma movimentação registrada.</p>
+                <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0;">Nenhuma movimentação registrada.</p>
             }
             else
             {
@@ -158,14 +160,16 @@
                         @foreach (var mov in _summary.RecentMovements)
                         {
                             <tr>
-                                <td style="font-size: 0.78rem; color: var(--adm-muted);">
+                                <td data-label="Data/Hora" style="font-size: 0.82rem; color: var(--adm-muted);">
                                     @mov.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")
                                 </td>
-                                <td>
-                                    <div style="font-weight: 600;">@mov.ProductName</div>
-                                    <div style="font-size: 0.78rem; color: var(--adm-muted);">@mov.Color / @mov.Size</div>
+                                <td data-label="Peça">
+                                    <div>
+                                        <div style="font-weight: 700;">@mov.ProductName</div>
+                                        <div style="font-size: 0.8rem; color: var(--adm-muted);">@mov.Color / @mov.Size</div>
+                                    </div>
                                 </td>
-                                <td>
+                                <td data-label="Tipo">
                                     @if (mov.MovementType == "IN")
                                     {
                                         <span class="pill-badge pill-green">+@mov.QuantityChanged Entrada</span>
@@ -179,10 +183,10 @@
                                         <span class="pill-badge pill-amber">Ajuste (@mov.QuantityChanged)</span>
                                     }
                                 </td>
-                                <td style="font-size: 0.82rem;">
-                                    @mov.PreviousQuantity &rarr; <strong>@mov.NewQuantity</strong>
+                                <td data-label="Saldo" style="font-size: 0.85rem;">
+                                    <span>@mov.PreviousQuantity &rarr; <strong>@mov.NewQuantity un.</strong></span>
                                 </td>
-                                <td style="font-size: 0.8rem; color: var(--adm-muted);">
+                                <td data-label="Responsável" style="font-size: 0.82rem; color: var(--adm-muted);">
                                     @mov.EmployeeName
                                 </td>
                             </tr>

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using ClothingStore.Application.Interfaces;
+using ClothingStore.Domain.Common;
 using ClothingStore.Domain.Entities;
 using ClothingStore.Domain.Enums;
 using ClothingStore.Domain.Exceptions;
@@ -8,9 +9,8 @@ using ClothingStore.Shared.DTOs;
 namespace ClothingStore.Application.Services;
 
 /// <summary>
-/// Serviço de autenticação segura por e-mail (senha ou código OTP enviado por e-mail),
-/// configuração inicial do proprietário, bloqueio contra força bruta e recuperação de acesso.
-/// Jamais vaza existência de contas, hashes ou códigos de segurança nas respostas da API.
+/// Serviço de autenticação segura por e-mail (senha, 2FA ou OTP),
+/// criação de contas, gestão de perfil, PIN numérico e segurança em dois fatores (TOTP).
 /// </summary>
 public sealed class AuthService
 {
@@ -35,6 +35,56 @@ public sealed class AuthService
     {
         var employees = await _repository.GetEmployeesAsync(ct);
         return new AuthSetupStatusDto(RequiresInitialSetup: employees.Count == 0);
+    }
+
+    public async Task<LoginResponse> RegisterUserAccountAsync(
+        RegisterUserAccountRequest request,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            throw new DomainException("Informe seu nome completo.");
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+            throw new DomainException("Informe um e-mail ou login de acesso válido.");
+
+        ValidatePasswordStrength(request.Password);
+
+        var existingUser = await _repository.GetUserByEmailAsync(request.Email, ct);
+        if (existingUser is not null)
+        {
+            throw new DomainException("Este e-mail/login já está cadastrado no sistema.");
+        }
+
+        var existingEmployees = await _repository.GetEmployeesAsync(ct);
+        var isFirstAccount = existingEmployees.Count == 0;
+        var roleName = isFirstAccount ? RoleNames.Admin : RoleNames.Employee;
+
+        var role = await _repository.GetRoleByNameAsync(roleName, ct)
+            ?? await _repository.GetRoleByNameAsync(RoleNames.Admin, ct)
+            ?? throw new DomainException("Perfil de acesso não encontrado.");
+
+        var passwordHash = _passwordHasher.HashPassword(request.Password);
+        var user = new User(request.Email, passwordHash, role.Id)
+        {
+            Role = role,
+            LastLoginAt = DateTimeOffset.UtcNow
+        };
+
+        var employee = new Employee(
+            user.Id,
+            request.FullName.Trim(),
+            isFirstAccount ? "Proprietário(a) / Administrador(a)" : "Equipe",
+            request.Phone?.Trim(),
+            canManageProducts: isFirstAccount,
+            canManageStock: true)
+        {
+            User = user
+        };
+
+        await _repository.AddEmployeeWithUserAsync(user, employee, ct);
+
+        var (token, expiresAt) = _jwtTokenService.GenerateToken(user, employee, role.Name);
+        return new LoginResponse(token, expiresAt, MapToProfileDto(employee, user, role.Name));
     }
 
     public async Task<LoginResponse> RegisterInitialAdminByEmailAsync(
@@ -100,7 +150,7 @@ public sealed class AuthService
         return new LoginResponse(token, expiresAt, MapToProfileDto(employee, user, RoleNames.Admin));
     }
 
-    public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
+    public async Task<LoginChallengeResponse> LoginWithChallengeAsync(LoginRequest request, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
             throw new DomainException("Informe seu e-mail e sua senha para entrar.");
@@ -110,7 +160,6 @@ public sealed class AuthService
 
         if (user is null)
         {
-            // Executa verificação dummy para manter tempo constante e impedir enumeração de e-mails por timing
             _ = _passwordHasher.VerifyPassword(request.Password, _passwordHasher.HashPassword("DummyTimingProtection@123"));
             throw new DomainException("Credenciais inválidas. Verifique seu e-mail e senha.");
         }
@@ -142,6 +191,64 @@ public sealed class AuthService
         if (!employee.IsActive)
             throw new DomainException("Credenciais inválidas ou conta desativada.");
 
+        // Se a conta possuir 2FA ativado, exige o código de segundo fator
+        if (user.TwoFactorEnabled)
+        {
+            return new LoginChallengeResponse(
+                RequiresTwoFactor: true,
+                TempSessionEmail: user.Email,
+                AuthResult: null);
+        }
+
+        user.ResetFailedAccessAttempts();
+        user.LastLoginAt = nowUtc;
+        var roleName = user.Role?.Name ?? RoleNames.Employee;
+        await _repository.UpdateEmployeeAsync(employee, user, ct);
+
+        var (token, expiresAt) = _jwtTokenService.GenerateToken(user, employee, roleName);
+        var loginResp = new LoginResponse(token, expiresAt, MapToProfileDto(employee, user, roleName));
+        return new LoginChallengeResponse(RequiresTwoFactor: false, TempSessionEmail: null, AuthResult: loginResp);
+    }
+
+    public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
+    {
+        var challenge = await LoginWithChallengeAsync(request, ct);
+        if (challenge.RequiresTwoFactor)
+        {
+            throw new DomainException("Esta conta possui autenticação em duas etapas (2FA) ativada. Informe o código de 6 dígitos.");
+        }
+
+        return challenge.AuthResult!;
+    }
+
+    public async Task<LoginResponse> VerifyTwoFactorLoginAsync(
+        VerifyTwoFactorLoginRequest request,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Code))
+            throw new DomainException("Informe o código de 6 dígitos.");
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var user = await _repository.GetUserByEmailAsync(request.Email, ct)
+            ?? throw new DomainException("Código de verificação inválido.");
+
+        if (user.IsLockedOut(nowUtc))
+            throw new DomainException("Conta temporariamente bloqueada por excesso de tentativas incorretas. Aguarde 15 minutos.");
+
+        if (!user.VerifyTwoFactorCode(request.Code))
+        {
+            user.RecordFailedAccessAttempt(nowUtc);
+            var empForUpdate = await _repository.GetEmployeeByUserIdAsync(user.Id, ct);
+            if (empForUpdate is not null)
+            {
+                await _repository.UpdateEmployeeAsync(empForUpdate, user, ct);
+            }
+            throw new DomainException("Código de autenticação em duas etapas inválido ou expirado.");
+        }
+
+        var employee = await _repository.GetEmployeeByUserIdAsync(user.Id, ct)
+            ?? throw new DomainException("Funcionário não encontrado.");
+
         user.ResetFailedAccessAttempts();
         user.LastLoginAt = nowUtc;
         var roleName = user.Role?.Name ?? RoleNames.Employee;
@@ -149,6 +256,132 @@ public sealed class AuthService
 
         var (token, expiresAt) = _jwtTokenService.GenerateToken(user, employee, roleName);
         return new LoginResponse(token, expiresAt, MapToProfileDto(employee, user, roleName));
+    }
+
+    public async Task<EmployeeProfileDto> UpdateUserProfileAsync(
+        Guid userId,
+        UpdateUserProfileRequest request,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            throw new DomainException("Informe seu nome completo.");
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+            throw new DomainException("Informe um e-mail válido.");
+
+        var user = await _repository.GetUserByIdAsync(userId, ct)
+            ?? throw new DomainException("Usuário não encontrado.");
+
+        var employee = await _repository.GetEmployeeByUserIdAsync(userId, ct)
+            ?? throw new DomainException("Funcionário não encontrado.");
+
+        user.SetEmail(request.Email);
+        employee.FullName = request.FullName.Trim();
+        employee.Phone = request.Phone?.Trim();
+        employee.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _repository.UpdateEmployeeAsync(employee, user, ct);
+        var roleName = user.Role?.Name ?? RoleNames.Employee;
+        return MapToProfileDto(employee, user, roleName);
+    }
+
+    public async Task SetSecurityPinAsync(
+        Guid userId,
+        SetSecurityPinRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _repository.GetUserByIdAsync(userId, ct)
+            ?? throw new DomainException("Usuário não encontrado.");
+
+        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
+            throw new DomainException("A senha atual informada está incorreta.");
+
+        if (string.IsNullOrWhiteSpace(request.Pin) || request.Pin.Length != 4 || !request.Pin.All(char.IsDigit))
+            throw new DomainException("O PIN de segurança deve conter exatamente 4 números.");
+
+        var pinHash = _passwordHasher.HashPassword(request.Pin);
+        user.SetSecurityPin(pinHash);
+
+        var employee = await _repository.GetEmployeeByUserIdAsync(userId, ct)
+            ?? throw new DomainException("Funcionário não encontrado.");
+
+        await _repository.UpdateEmployeeAsync(employee, user, ct);
+    }
+
+    public async Task RemoveSecurityPinAsync(
+        Guid userId,
+        RemoveSecurityPinRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _repository.GetUserByIdAsync(userId, ct)
+            ?? throw new DomainException("Usuário não encontrado.");
+
+        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
+            throw new DomainException("A senha atual informada está incorreta.");
+
+        user.RemoveSecurityPin();
+
+        var employee = await _repository.GetEmployeeByUserIdAsync(userId, ct)
+            ?? throw new DomainException("Funcionário não encontrado.");
+
+        await _repository.UpdateEmployeeAsync(employee, user, ct);
+    }
+
+    public async Task<TwoFactorSetupDto> GenerateTwoFactorSetupAsync(
+        Guid userId,
+        CancellationToken ct = default)
+    {
+        var user = await _repository.GetUserByIdAsync(userId, ct)
+            ?? throw new DomainException("Usuário não encontrado.");
+
+        var secret = TwoFactorHelper.GenerateBase32Secret(10);
+        var backupCodes = TwoFactorHelper.GenerateBackupCodes(4);
+        var otpUri = TwoFactorHelper.BuildOtpAuthUri(secret, user.Email, "Flavia Roupas");
+
+        return new TwoFactorSetupDto(secret, otpUri, backupCodes);
+    }
+
+    public async Task<EmployeeProfileDto> EnableTwoFactorAsync(
+        Guid userId,
+        EnableTwoFactorRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _repository.GetUserByIdAsync(userId, ct)
+            ?? throw new DomainException("Usuário não encontrado.");
+
+        var isValid = TwoFactorHelper.VerifyTotp(request.SecretKey, request.VerificationCode);
+        if (!isValid)
+            throw new DomainException("Código de 6 dígitos inválido. Verifique o aplicativo autenticador ou digite novamente.");
+
+        user.EnableTwoFactor(request.SecretKey, request.BackupCodes?.ToList());
+
+        var employee = await _repository.GetEmployeeByUserIdAsync(userId, ct)
+            ?? throw new DomainException("Funcionário não encontrado.");
+
+        await _repository.UpdateEmployeeAsync(employee, user, ct);
+        var roleName = user.Role?.Name ?? RoleNames.Employee;
+        return MapToProfileDto(employee, user, roleName);
+    }
+
+    public async Task<EmployeeProfileDto> DisableTwoFactorAsync(
+        Guid userId,
+        DisableTwoFactorRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _repository.GetUserByIdAsync(userId, ct)
+            ?? throw new DomainException("Usuário não encontrado.");
+
+        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
+            throw new DomainException("A senha atual informada está incorreta.");
+
+        user.DisableTwoFactor();
+
+        var employee = await _repository.GetEmployeeByUserIdAsync(userId, ct)
+            ?? throw new DomainException("Funcionário não encontrado.");
+
+        await _repository.UpdateEmployeeAsync(employee, user, ct);
+        var roleName = user.Role?.Name ?? RoleNames.Employee;
+        return MapToProfileDto(employee, user, roleName);
     }
 
     public async Task<RequestEmailLoginCodeResponse> RequestEmailLoginCodeAsync(
@@ -338,5 +571,7 @@ public sealed class AuthService
             employee.Phone,
             employee.HasProductManagementPermission(roleName),
             employee.HasStockManagementPermission(roleName),
-            employee.IsActive && user.IsActive);
+            employee.IsActive && user.IsActive,
+            user.TwoFactorEnabled,
+            !string.IsNullOrWhiteSpace(user.SecurityPinHash));
 }

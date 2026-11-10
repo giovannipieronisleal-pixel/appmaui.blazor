@@ -85,6 +85,11 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
             }
         }
 
+        if (state.Categories.Count == 0)
+        {
+            state.Categories.AddRange(ClothingStoreDatabaseState.CreateDefaultCategories());
+        }
+
         var categoriesById = state.Categories.ToDictionary(c => c.Id);
         foreach (var product in state.Products)
         {
@@ -190,8 +195,24 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         {
             RefreshFromDiskIfModified();
             var normalized = email.Trim().ToLowerInvariant();
-            return _state.Users.FirstOrDefault(u =>
+            var found = _state.Users.FirstOrDefault(u =>
                 string.Equals(u.Email, normalized, StringComparison.OrdinalIgnoreCase));
+
+            if (found is not null)
+                return found;
+
+            // Permite login por Nome de Usuário, Nome Completo ou E-mail
+            var matchedEmp = _state.Employees.FirstOrDefault(e =>
+                string.Equals(e.FullName, normalized, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Category.GenerateSlug(e.FullName), normalized, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Category.GenerateSlug(e.FullName).Replace("-", "."), normalized, StringComparison.OrdinalIgnoreCase));
+
+            if (matchedEmp is not null)
+            {
+                return _state.Users.FirstOrDefault(u => u.Id == matchedEmp.UserId);
+            }
+
+            return null;
         }
         finally
         {

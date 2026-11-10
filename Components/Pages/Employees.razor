@@ -97,33 +97,35 @@
             @foreach (var emp in _employees)
             {
                 <tr>
-                    <td>
-                        <div style="font-weight: 700;">@emp.FullName</div>
-                        <div style="font-size: 0.8rem; color: var(--adm-muted);">Login: <strong>@emp.Email</strong></div>
+                    <td data-label="Funcionário">
+                        <div>
+                            <div style="font-weight: 800;">@emp.FullName</div>
+                            <div style="font-size: 0.82rem; color: var(--adm-muted);">Login: <strong>@emp.Email</strong></div>
+                        </div>
                     </td>
-                    <td>@(emp.JobTitle ?? "-")</td>
-                    <td>
+                    <td data-label="Cargo">@(emp.JobTitle ?? "-")</td>
+                    <td data-label="Nível">
                         <span class="pill-badge @(emp.IsAdmin ? "pill-green" : "pill-slate")">
                             @(emp.IsAdmin ? "Administrador" : "Funcionário")
                         </span>
                     </td>
-                    <td>
+                    <td data-label="Permissões">
                         <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
                             @if (emp.CanManageProducts)
                             {
-                                <span class="pill-badge pill-green">Gerenciar Produtos</span>
+                                <span class="pill-badge pill-green">Produtos</span>
                             }
                             @if (emp.CanManageStock)
                             {
-                                <span class="pill-badge pill-green">Atualizar Estoque</span>
+                                <span class="pill-badge pill-green">Estoque</span>
                             }
                             @if (!emp.CanManageProducts && !emp.CanManageStock)
                             {
-                                <span class="pill-badge pill-slate">Somente Consulta</span>
+                                <span class="pill-badge pill-slate">Consulta</span>
                             }
                         </div>
                     </td>
-                    <td>
+                    <td data-label="Status">
                         @if (emp.IsActive)
                         {
                             <span class="pill-badge pill-green">Ativo</span>
@@ -133,19 +135,21 @@
                             <span class="pill-badge pill-red">Desativado</span>
                         }
                     </td>
-                    <td style="text-align: right; white-space: nowrap;">
-                        <button type="button"
-                                class="adm-btn adm-btn-outline"
-                                style="padding: 0.35rem 0.65rem; font-size: 0.78rem;"
-                                @onclick="() => ToggleProductPermissionAsync(emp)">
-                            @(emp.CanManageProducts ? "Revogar Edição Produtos" : "Conceder Edição Produtos")
-                        </button>
-                        <button type="button"
-                                class="adm-btn @(emp.IsActive ? "adm-btn-danger" : "adm-btn-success")"
-                                style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-left: 0.35rem;"
-                                @onclick="() => ToggleEmployeeStatusAsync(emp)">
-                            @(emp.IsActive ? "Desativar Acesso" : "Reativar Acesso")
-                        </button>
+                    <td data-label="Ações">
+                        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: flex-end; width: 100%;">
+                            <button type="button"
+                                    class="adm-btn adm-btn-outline"
+                                    style="padding: 0.4rem 0.7rem; min-height: 38px; font-size: 0.8rem;"
+                                    @onclick="() => ToggleProductPermissionAsync(emp)">
+                                @(emp.CanManageProducts ? "Revogar Edição Produtos" : "Permitir Edição Produtos")
+                            </button>
+                            <button type="button"
+                                    class="adm-btn @(emp.IsActive ? "adm-btn-danger" : "adm-btn-success")"
+                                    style="padding: 0.4rem 0.7rem; min-height: 38px; font-size: 0.8rem;"
+                                    @onclick="() => ToggleEmployeeStatusAsync(emp)">
+                                @(emp.IsActive ? "Desativar Acesso" : "Reativar Acesso")
+                            </button>
+                        </div>
                     </td>
                 </tr>
             }

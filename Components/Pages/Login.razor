@@ -4,75 +4,353 @@
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
 
-<div class="adm-card" style="padding: 1.85rem; box-shadow: 0 20px 40px rgba(0,0,0,0.35);">
-    <div style="text-align: center; margin-bottom: 1.4rem;">
-        <div style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--adm-muted);">
-            @_storeName &bull; Gestão &amp; Estoque
+<div class="adm-card" style="padding: 2.2rem; box-shadow: 0 20px 45px rgba(0,0,0,0.35); max-width: 490px; margin: 0 auto; border-radius: 16px;">
+    <!-- Cabeçalho -->
+    <div style="text-align: center; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--adm-accent);">
+            @_storeName &bull; Sistema Oficial
         </div>
-        <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0.35rem 0;">
-            Acesso Administrativo
-        </h1>
-        <p style="font-size: 0.86rem; color: var(--adm-muted); margin: 0;">
-            Entre com seu login e senha para gerenciar produtos, estoque e configurações da loja.
-        </p>
+
+        @if (_is2FaStep)
+        {
+            <div style="font-size: 2.3rem; margin: 0.5rem 0 0.2rem;">🛡️</div>
+            <h1 style="font-size: 1.55rem; font-weight: 800; margin: 0.25rem 0; color: var(--adm-text);">
+                Verificação em Duas Etapas (2FA)
+            </h1>
+            <p style="font-size: 0.86rem; color: var(--adm-muted); margin: 0;">
+                Sua conta está protegida. Digite o código de 6 dígitos gerado pelo app autenticador.
+            </p>
+        }
+        else if (_activeTab == "register")
+        {
+            <div style="font-size: 2.3rem; margin: 0.5rem 0 0.2rem;">🎉</div>
+            <h1 style="font-size: 1.6rem; font-weight: 800; margin: 0.25rem 0; color: var(--adm-text);">
+                Bem-vindo(a)! Crie sua Conta
+            </h1>
+            <p style="font-size: 0.86rem; color: var(--adm-muted); margin: 0;">
+                Crie sua conta para gerenciar seu catálogo, estoque e começar a vender online.
+            </p>
+        }
+        else
+        {
+            <div style="font-size: 2.3rem; margin: 0.5rem 0 0.2rem;">🔑</div>
+            <h1 style="font-size: 1.6rem; font-weight: 800; margin: 0.25rem 0; color: var(--adm-text);">
+                Entrar no Sistema
+            </h1>
+            <p style="font-size: 0.86rem; color: var(--adm-muted); margin: 0;">
+                Entre com seu usuário ou e-mail para acessar o painel da sua loja.
+            </p>
+        }
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    <!-- Seletor de Abas (Criar Conta vs Entrar) -->
+    @if (!_is2FaStep)
     {
-        <div class="alert-banner alert-error">@_errorMessage</div>
+        <div style="display: flex; background: var(--adm-input-bg); border-radius: 10px; padding: 4px; margin-bottom: 1.25rem; border: 1px solid var(--adm-border);">
+            <button type="button"
+                    class="adm-btn @(_activeTab == "register" ? "adm-btn-primary" : "adm-btn-outline")"
+                    style="flex: 1; border: none; padding: 0.6rem; font-size: 0.9rem; font-weight: 700;"
+                    @onclick='() => SwitchTab("register")'>
+                ✨ Criar Conta
+            </button>
+            <button type="button"
+                    class="adm-btn @(_activeTab == "login" ? "adm-btn-primary" : "adm-btn-outline")"
+                    style="flex: 1; border: none; padding: 0.6rem; font-size: 0.9rem; font-weight: 700;"
+                    @onclick='() => SwitchTab("login")'>
+                🔑 Entrar
+            </button>
+        </div>
     }
 
-    <div style="display: flex; flex-direction: column; gap: 1rem;">
-        <div>
-            <label class="adm-label">Login</label>
-            <input type="text"
-                   class="adm-input"
-                   autocomplete="username"
-                   @bind="_login"
-                   placeholder="admin" />
-        </div>
+    <!-- Alertas -->
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert-banner alert-error" style="margin-bottom: 1rem;">@_errorMessage</div>
+    }
 
-        <div>
-            <label class="adm-label">Senha</label>
-            <div style="display: flex; gap: 0.4rem;">
-                <input type="@(_showPassword ? "text" : "password")"
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <div class="alert-banner alert-success" style="margin-bottom: 1rem;">@_successMessage</div>
+    }
+
+    <!-- TELA 1: DESAFIO 2FA -->
+    @if (_is2FaStep)
+    {
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <div style="text-align: center; padding: 0.85rem; background: var(--adm-input-bg); border-radius: 10px; border: 1px solid var(--adm-border);">
+                <div style="font-weight: 700; font-size: 0.95rem; color: var(--adm-text);">Código do Google Authenticator</div>
+                <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.2rem;">
+                    Abra o app autenticador no celular e confira o código temporário:
+                </div>
+            </div>
+
+            <div>
+                <label class="adm-label" style="text-align: center; display: block;">Código de 6 dígitos</label>
+                <input type="text"
                        class="adm-input"
-                       autocomplete="current-password"
-                       @bind="_password"
-                       placeholder="admin" />
+                       style="font-size: 1.6rem; text-align: center; letter-spacing: 0.35em; font-weight: 800; font-family: monospace;"
+                       maxlength="9"
+                       @bind="_twoFactorCode"
+                       placeholder="000000"
+                       autocomplete="one-time-code" />
+                <span style="font-size: 0.75rem; color: var(--adm-muted); text-align: center; display: block; margin-top: 0.35rem;">
+                    Ou digite um dos seus códigos de recuperação (ex.: 8492-1923).
+                </span>
+            </div>
+
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; color: var(--adm-text); cursor: pointer; user-select: none;">
+                <input type="checkbox" @bind="_rememberMe" style="width: 17px; height: 17px; accent-color: var(--adm-accent);" />
+                <span>Continuar conectado neste dispositivo</span>
+            </label>
+
+            <button type="button"
+                    class="adm-btn adm-btn-primary"
+                    style="width: 100%; padding: 0.85rem; font-size: 0.95rem; font-weight: 700;"
+                    disabled="@_isBusy"
+                    @onclick="HandleVerifyTwoFactorAsync">
+                @(_isBusy ? "Verificando..." : "✓ Confirmar e Acessar")
+            </button>
+
+            <button type="button"
+                    class="adm-btn adm-btn-outline"
+                    style="width: 100%; padding: 0.65rem;"
+                    @onclick="CancelTwoFactorChallenge">
+                ← Voltar para o Login
+            </button>
+        </div>
+    }
+    <!-- TELA 2: FORMULÁRIO DE CADASTRO (JANELA INICIAL PADRÃO) -->
+    else if (_activeTab == "register")
+    {
+        <div style="display: flex; flex-direction: column; gap: 0.95rem;">
+            <div>
+                <label class="adm-label">Seu Nome Completo *</label>
+                <input type="text"
+                       class="adm-input"
+                       @bind="_regFullName"
+                       placeholder="Ex.: Flávia Santos" />
+            </div>
+
+            <div>
+                <label class="adm-label">Seu Usuário ou E-mail *</label>
+                <input type="text"
+                       class="adm-input"
+                       @bind="_regEmail"
+                       placeholder="Ex.: flavia ou flavia@gmail.com" />
+                <span style="font-size: 0.75rem; color: var(--adm-muted);">
+                    Você poderá usar tanto o usuário quanto o e-mail para fazer login.
+                </span>
+            </div>
+
+            <div>
+                <label class="adm-label">Senha de Acesso (mínimo 4 caracteres) *</label>
+                <input type="password"
+                       class="adm-input"
+                       @bind="_regPassword"
+                       placeholder="Crie uma senha de acesso" />
+            </div>
+
+            <div>
+                <label class="adm-label">Confirmar Senha *</label>
+                <input type="password"
+                       class="adm-input"
+                       @bind="_regConfirmPassword"
+                       placeholder="Repita a mesma senha" />
+            </div>
+
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; color: var(--adm-text); cursor: pointer; user-select: none; margin-top: 0.2rem;">
+                <input type="checkbox" @bind="_rememberMe" style="width: 17px; height: 17px; accent-color: var(--adm-accent);" />
+                <span>Continuar conectado neste dispositivo</span>
+            </label>
+
+            <button type="button"
+                    class="adm-btn adm-btn-primary"
+                    style="width: 100%; padding: 0.9rem; font-size: 1rem; font-weight: 800;"
+                    disabled="@_isBusy"
+                    @onclick="HandleRegisterAsync">
+                @(_isBusy ? "Criando Conta..." : "✨ Criar Minha Conta e Configurar Loja")
+            </button>
+
+            <!-- Botão para ir para a aba de Login -->
+            <div style="text-align: center; margin-top: 0.5rem; padding-top: 0.85rem; border-top: 1px solid var(--adm-border);">
+                <span style="font-size: 0.85rem; color: var(--adm-muted);">Já possui uma conta de acesso?</span>
                 <button type="button"
                         class="adm-btn adm-btn-outline"
-                        style="padding: 0 0.75rem; flex-shrink: 0;"
-                        @onclick="() => _showPassword = !_showPassword">
-                    @(_showPassword ? "Ocultar" : "Mostrar")
+                        style="margin-top: 0.5rem; width: 100%; padding: 0.65rem; font-weight: 700;"
+                        @onclick='() => SwitchTab("login")'>
+                    🔑 Entrar com Usuário ou E-mail
                 </button>
             </div>
         </div>
+    }
+    <!-- TELA 3: FORMULÁRIO DE LOGIN -->
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <label class="adm-label">Usuário ou E-mail *</label>
+                <input type="text"
+                       class="adm-input"
+                       autocomplete="username"
+                       @bind="_login"
+                       placeholder="admin, seu-usuario ou seu@email.com" />
+            </div>
 
-        <button type="button"
-                class="adm-btn adm-btn-primary"
-                style="width: 100%; padding: 0.85rem;"
-                disabled="@_isBusy"
-                @onclick="HandleLoginAsync">
-            @(_isBusy ? "Entrando..." : "Entrar no Sistema")
-        </button>
+            <div>
+                <label class="adm-label">Senha *</label>
+                <div style="display: flex; gap: 0.4rem;">
+                    <input type="@(_showPassword ? "text" : "password")"
+                           class="adm-input"
+                           autocomplete="current-password"
+                           @bind="_password"
+                           placeholder="Digite sua senha" />
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="padding: 0 0.75rem; flex-shrink: 0;"
+                            @onclick="() => _showPassword = !_showPassword">
+                        @(_showPassword ? "Ocultar" : "Mostrar")
+                    </button>
+                </div>
+            </div>
 
-        <a href="/loja/@_storeSlug"
-           class="adm-btn adm-btn-success"
-           style="width: 100%; padding: 0.75rem; text-align: center;">
-            Abrir Catálogo Público da Loja (/loja/@_storeSlug)
-        </a>
-    </div>
+            <!-- Checkbox Continuar Conectado -->
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; color: var(--adm-text); cursor: pointer; user-select: none;">
+                <input type="checkbox" @bind="_rememberMe" style="width: 17px; height: 17px; accent-color: var(--adm-accent);" />
+                <span>Continuar conectado neste dispositivo</span>
+            </label>
+
+            <button type="button"
+                    class="adm-btn adm-btn-primary"
+                    style="width: 100%; padding: 0.85rem; font-size: 0.95rem; font-weight: 700;"
+                    disabled="@_isBusy"
+                    @onclick="HandleLoginAsync">
+                @(_isBusy ? "Entrando..." : "Entrar no Sistema")
+            </button>
+
+            <!-- Botão para ir para a aba de Criar Conta -->
+            <div style="text-align: center; margin-top: 0.25rem; padding-top: 0.85rem; border-top: 1px solid var(--adm-border);">
+                <span style="font-size: 0.85rem; color: var(--adm-muted);">Ainda não tem uma conta?</span>
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        style="margin-top: 0.5rem; width: 100%; padding: 0.65rem; font-weight: 700;"
+                        @onclick='() => SwitchTab("register")'>
+                    ✨ Criar Minha Conta Grátis
+                </button>
+            </div>
+
+            <a href="/loja/@_storeSlug"
+               class="adm-btn adm-btn-success"
+               style="width: 100%; padding: 0.75rem; text-align: center; text-decoration: none; margin-top: 0.25rem;">
+                🌐 Abrir Catálogo Público (/loja/@_storeSlug)
+            </a>
+        </div>
+    }
 </div>
 
+<!-- ============================================================== -->
+<!-- POP-UP DE CONFIGURAÇÕES INICIAIS DA LOJA (APÓS CRIAR CONTA)   -->
+<!-- ============================================================== -->
+@if (_showInitialSetupModal)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.78); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 1rem; backdrop-filter: blur(4px);">
+        <div class="adm-card" style="width: 100%; max-width: 520px; padding: 1.85rem; box-shadow: 0 25px 60px rgba(0,0,0,0.6); border: 2px solid var(--adm-accent); border-radius: 16px; animation: modalPop 0.25s ease-out;">
+            <div style="text-align: center; margin-bottom: 1.25rem;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.25rem;">🎉</div>
+                <h2 style="font-size: 1.45rem; font-weight: 800; margin: 0; color: var(--adm-text);">
+                    Conta Criada com Sucesso!
+                </h2>
+                <p style="font-size: 0.88rem; color: var(--adm-muted); margin: 0.35rem 0 0; line-height: 1.4;">
+                    Vamos configurar os dados iniciais da sua loja para gerar o catálogo oficial:
+                </p>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_setupErrorMessage))
+            {
+                <div class="alert-banner alert-error" style="margin-bottom: 1rem;">@_setupErrorMessage</div>
+            }
+
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                    <label class="adm-label">Nome da Loja *</label>
+                    <input type="text"
+                           class="adm-input"
+                           @bind="_initStoreName"
+                           placeholder="Ex.: Flavia Roupas" />
+                </div>
+
+                <div>
+                    <label class="adm-label">Bio / Apresentação da Loja *</label>
+                    <textarea class="adm-textarea"
+                              rows="3"
+                              @bind="_initStoreBio"
+                              placeholder="Ex.: Moda feminina com elegância, peças exclusivas e entrega para todo o Brasil."></textarea>
+                </div>
+
+                <div>
+                    <label class="adm-label">WhatsApp de Atendimento da Loja *</label>
+                    <input type="text"
+                           class="adm-input"
+                           @bind="_initStoreWhatsapp"
+                           placeholder="Ex.: 21975219710" />
+                    <span style="font-size: 0.75rem; color: var(--adm-muted);">
+                        Pode digitar apenas DDD + número. O código do Brasil (+55) é adicionado automaticamente.
+                    </span>
+                </div>
+
+                <div style="margin-top: 0.5rem;">
+                    <button type="button"
+                            class="adm-btn adm-btn-success"
+                            style="width: 100%; padding: 0.9rem; font-size: 1rem; font-weight: 800;"
+                            disabled="@_isBusy"
+                            @onclick="CompleteInitialStoreSetupAsync">
+                        @(_isBusy ? "Salvando Loja..." : "🚀 Concluir e Começar a Vender!")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    @@keyframes modalPop {
+        from { transform: scale(0.92); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+</style>
+
 @code {
-    private string _login = "admin";
-    private string _password = "admin";
-    private bool _showPassword;
+    // A tela inicial padrão agora é "register" (Bem-vindo e criar conta)
+    private string _activeTab = "register";
     private bool _isBusy;
+    private bool _showPassword;
+    private bool _rememberMe = true;
+    private string? _errorMessage;
+    private string? _successMessage;
+
     private string _storeName = "Minha Loja";
     private string _storeSlug = "minha-loja";
-    private string? _errorMessage;
+
+    // Campos de Login (suporta usuário ou e-mail)
+    private string _login = "admin";
+    private string _password = "admin";
+
+    // Campos de 2FA
+    private bool _is2FaStep;
+    private string _twoFactorCode = string.Empty;
+    private string _twoFactorEmail = string.Empty;
+
+    // Campos de Cadastro
+    private string _regFullName = string.Empty;
+    private string _regEmail = string.Empty;
+    private string _regPassword = string.Empty;
+    private string _regConfirmPassword = string.Empty;
+
+    // Pop-up Inicial da Loja (Onboarding)
+    private bool _showInitialSetupModal;
+    private string _initStoreName = "Flavia Roupas";
+    private string _initStoreBio = "Catálogo oficial com novidades e tendências de moda.";
+    private string _initStoreWhatsapp = "21975219710";
+    private string? _setupErrorMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -81,10 +359,21 @@
             var store = await CatalogService.GetPublicStoreSettingsAsync();
             _storeName = store.StoreName;
             _storeSlug = store.StoreSlug;
+            _initStoreName = store.StoreName;
+            _initStoreBio = store.StoreDescription;
+            _initStoreWhatsapp = store.WhatsappNumber;
         }
         catch
         {
         }
+    }
+
+    private void SwitchTab(string tab)
+    {
+        _activeTab = tab;
+        _errorMessage = null;
+        _successMessage = null;
+        _is2FaStep = false;
     }
 
     private async Task HandleLoginAsync()
@@ -93,12 +382,144 @@
         _isBusy = true;
         try
         {
-            await Gateway.LoginAsync(new LoginRequest(_login, _password));
+            var challenge = await Gateway.LoginWithChallengeAsync(new LoginRequest(_login, _password), _rememberMe);
+            if (challenge.RequiresTwoFactor)
+            {
+                _is2FaStep = true;
+                _twoFactorEmail = challenge.TempSessionEmail ?? _login;
+                _twoFactorCode = string.Empty;
+                return;
+            }
+
             Navigation.NavigateTo("/");
         }
         catch (Exception ex)
         {
             _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task HandleVerifyTwoFactorAsync()
+    {
+        _errorMessage = null;
+        _isBusy = true;
+        try
+        {
+            await Gateway.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest(_twoFactorEmail, _twoFactorCode), _rememberMe);
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void CancelTwoFactorChallenge()
+    {
+        _is2FaStep = false;
+        _twoFactorCode = string.Empty;
+        _errorMessage = null;
+    }
+
+    private async Task HandleRegisterAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_regFullName))
+        {
+            _errorMessage = "Informe seu nome completo.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_regEmail))
+        {
+            _errorMessage = "Informe um usuário ou e-mail de acesso válido.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_regPassword) || _regPassword.Length < 4)
+        {
+            _errorMessage = "A senha deve ter no mínimo 4 caracteres.";
+            return;
+        }
+
+        if (_regPassword != _regConfirmPassword)
+        {
+            _errorMessage = "As senhas digitadas não coincidem.";
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            await Gateway.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                _regFullName.Trim(),
+                _regEmail.Trim(),
+                _regPassword));
+
+            // Conta criada com sucesso! Abre o pop-up de configuração inicial da loja
+            _showInitialSetupModal = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CompleteInitialStoreSetupAsync()
+    {
+        _setupErrorMessage = null;
+        if (string.IsNullOrWhiteSpace(_initStoreName))
+        {
+            _setupErrorMessage = "O nome da loja é obrigatório.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_initStoreBio))
+        {
+            _setupErrorMessage = "A bio / descrição da loja é obrigatória.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_initStoreWhatsapp))
+        {
+            _setupErrorMessage = "O WhatsApp da loja é obrigatório.";
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            var updateRequest = new UpdateStoreSettingsRequest
+            {
+                StoreName = _initStoreName.Trim(),
+                StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_initStoreName),
+                WhatsappNumber = _initStoreWhatsapp.Trim(),
+                StoreDescription = _initStoreBio.Trim(),
+                OnlineBaseUrl = "https://flaviaroupasdigital.com",
+                AutoSyncOnlineOnSave = true
+            };
+
+            await Gateway.UpdateStoreSettingsAsync(updateRequest);
+            _showInitialSetupModal = false;
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            _setupErrorMessage = ex.Message;
         }
         finally
         {
