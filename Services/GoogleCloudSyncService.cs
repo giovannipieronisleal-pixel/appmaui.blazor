@@ -1,8 +1,10 @@
 using System.Net.Http.Json;
 using ClothingStore.Application.Interfaces;
+using ClothingStore.Application.Services;
 using ClothingStore.Domain.Entities;
 using ClothingStore.Shared.Clients;
 using ClothingStore.Shared.DTOs;
+using ClothingStore.Shared.Helpers;
 
 namespace appmaui.blazor.Services;
 
@@ -81,6 +83,25 @@ public sealed class GoogleCloudSyncService
     }
 
     /// <summary>
+    /// Consulta se o domínio desejado para o site está disponível no Google Cloud.
+    /// </summary>
+    public async Task<CheckDomainAvailabilityResponse> CheckDomainAvailabilityAsync(
+        string rawDomain,
+        CancellationToken ct = default)
+    {
+        return await GoogleCloudDomainChecker.EvaluateDomainAsync(
+            rawDomain,
+            _httpClient,
+            async domain =>
+            {
+                var settings = await _repository.GetStoreSettingsAsync(ct);
+                return string.Equals(settings.OnlineBaseUrl, $"https://{domain}", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(settings.StoreSlug, domain, StringComparison.OrdinalIgnoreCase);
+            },
+            ct);
+    }
+
+    /// <summary>
     /// Sincroniza o catálogo local com o site 24h no Google Cloud.
     /// </summary>
     public async Task<(bool Success, string Message)> SyncCatalogToCloudAsync(CancellationToken ct = default)
@@ -113,7 +134,13 @@ public sealed class GoogleCloudSyncService
                     DefaultLowStockThreshold = settings.DefaultLowStockThreshold,
                     OnlineBaseUrl = settings.OnlineBaseUrl,
                     AutoSyncOnlineOnSave = settings.AutoSyncOnlineOnSave,
-                    LastOnlineSyncAt = DateTimeOffset.UtcNow
+                    LastOnlineSyncAt = DateTimeOffset.UtcNow,
+                    PlanTier = settings.PlanTier,
+                    BasicPlanMonthlyPrice = settings.BasicPlanMonthlyPrice,
+                    IntermediaryPlanMonthlyPrice = settings.IntermediaryPlanMonthlyPrice,
+                    PremiumPlanMonthlyPrice = settings.PremiumPlanMonthlyPrice,
+                    PicpayPixKey = settings.PicpayPixKey,
+                    Design = StoreDesignMapper.ToDto(settings.GetEffectivePublicDesign())
                 },
                 Categories = categories.Select(c => new SaveCategoryRequest
                 {

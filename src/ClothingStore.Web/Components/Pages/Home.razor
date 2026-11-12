@@ -1,149 +1,254 @@
 @page "/"
 @page "/loja/{StoreSlug}"
-@inject CatalogDataGateway CatalogGateway
+@inject CatalogDataGateway CatalogDataGateway
+@inject NavigationManager Navigation
 
-<PageTitle>@_store.StoreName — Catálogo de Roupas</PageTitle>
+<PageTitle>@(_store?.StoreName ?? "Loja Online") — Roupas &amp; Catálogo</PageTitle>
 
-<section class="hero-section">
-    <div class="container hero-grid">
-        <div>
-            <span class="hero-eyebrow">Coleção Atual &bull; /loja/@_store.StoreSlug</span>
-            <h1 class="hero-title">@_store.StoreName</h1>
-            <p class="hero-description">@_store.StoreDescription</p>
-            <div class="hero-actions">
-                <a href="/loja/@_store.StoreSlug/catalogo" class="btn btn-dark">Explorar Catálogo</a>
-                <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
-                   target="_blank"
-                   rel="noopener noreferrer"
-                   class="btn btn-whatsapp">
-                    Consultar pelo WhatsApp
-                </a>
-            </div>
-        </div>
-
-        <div class="hero-showcase-card">
-            <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.5rem;">
-                Como funciona nosso atendimento
-            </div>
-            <h3 style="font-size: 1.2rem; margin-bottom: 0.75rem;">Escolha sua peça e consulte em 1 clique</h3>
-            <ol style="padding-left: 1.25rem; color: var(--text-secondary); font-size: 0.94rem; display: flex; flex-direction: column; gap: 0.55rem;">
-                <li>Navegue pelas fotografias, cores e tamanhos reais disponíveis em estoque.</li>
-                <li>Na página do produto, selecione a <strong>Cor</strong> e o <strong>Tamanho</strong> desejados.</li>
-                <li>Clique em <strong>"Consultar pelo WhatsApp"</strong> para iniciar a conversa com a mensagem já preenchida.</li>
-            </ol>
-        </div>
+@if (_loading)
+{
+    <div class="lux-empty-card">
+        <p class="lux-hero-eyebrow">Carregando Loja</p>
+        <h2>Preparando as novidades para você...</h2>
     </div>
-</section>
+}
+else if (_store is { IsSiteActive: false })
+{
+    <section class="lux-empty-card">
+        <span class="lux-hero-eyebrow">Loja em Atualização</span>
+        <h1 class="lux-hero-title">@_store.StoreName</h1>
+        <p class="lux-hero-subtitle" style="margin-left: auto; margin-right: auto;">
+            @(_store.DeactivationReason ?? "Estamos atualizando nossa vitrine com novas peças. Você já pode falar direto com nossa equipe pelo WhatsApp!")
+        </p>
 
-<div class="container">
-    <div class="category-strip">
-        <a href="/loja/@_store.StoreSlug/catalogo" class="category-pill active">Todas as Peças (@_products.Count)</a>
-        @foreach (var cat in _categories)
+        @if (!string.IsNullOrWhiteSpace(_store.WhatsappNumber))
         {
-            <a href="/loja/@_store.StoreSlug/catalogo?categoria=@cat.Slug" class="category-pill">
-                @cat.Name (@cat.ProductCount)
-            </a>
-        }
-    </div>
-
-    <div class="section-header">
-        <div>
-            <h2 class="section-title">Destaques do Catálogo</h2>
-            <p style="color: var(--text-secondary); font-size: 0.95rem;">
-                Disponibilidade atualizada diretamente pelo nosso controle de estoque.
-            </p>
-        </div>
-        <a href="/loja/@_store.StoreSlug/catalogo" class="btn btn-outline">Ver todos os produtos &rarr;</a>
-    </div>
-
-    @if (_products.Count == 0)
-    {
-        <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3rem; text-align: center; margin-bottom: 2rem;">
-            <h3 style="margin-bottom: 0.5rem;">Novas peças em breve</h3>
-            <p style="color: var(--text-secondary); margin-bottom: 1.25rem;">
-                Nosso catálogo está sendo atualizado. Entre em contato pelo WhatsApp para atendimento personalizado.
-            </p>
             <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
                target="_blank"
                rel="noopener noreferrer"
-               class="btn btn-whatsapp">
-                Falar pelo WhatsApp
+               class="lux-btn lux-btn-whatsapp">
+                💬 Falar com a Loja no WhatsApp
             </a>
-        </div>
-    }
-    else
-    {
-        <div class="product-grid">
-            @foreach (var product in _products)
+        }
+    </section>
+}
+else
+{
+    <section class="lux-hero @HeroVariantClass">
+        <div class="lux-hero-copy">
+            @if (_design.ShowLookbookBadge)
             {
-                <article class="product-card">
-                    <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-image-wrap">
-                        @if (!string.IsNullOrWhiteSpace(product.PrimaryImageUrl))
-                        {
-                            <img src="@product.PrimaryImageUrl" alt="@product.Name" class="product-image" loading="lazy" />
-                        }
-                        else
-                        {
-                            <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.9rem;">
-                                Sem fotografia
-                            </div>
-                        }
-
-                        @if (product.HasAvailableStock)
-                        {
-                            <span class="stock-badge badge-in-stock">Disponível</span>
-                        }
-                        else
-                        {
-                            <span class="stock-badge badge-out-of-stock">Indisponível</span>
-                        }
-                    </a>
-
-                    <div class="product-card-body">
-                        <span class="product-category">@product.CategoryName</span>
-                        <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-title">@product.Name</a>
-                        <div class="product-price">@product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
-
-                        <div class="product-meta-row">
-                            <div class="color-dots" title="Cores disponíveis">
-                                @foreach (var color in product.AvailableColors.Take(5))
-                                {
-                                    <span class="color-dot" style="background-color: @color.ColorHex;" title="@color.Color"></span>
-                                }
-                            </div>
-                            <div class="size-chips">
-                                @foreach (var size in product.AvailableSizes)
-                                {
-                                    <span class="size-chip-mini">@size</span>
-                                }
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
-                            <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
-                                Ver cores e tamanhos
-                            </a>
-                        </div>
-                    </div>
-                </article>
+                <span class="lux-hero-eyebrow">@HeroEyebrowText</span>
             }
+
+            <h1 class="lux-hero-title">@HeroHeadlineText</h1>
+            <p class="lux-hero-subtitle">@(_store?.StoreDescription ?? "Escolha suas peças favoritas, confira cores e tamanhos disponíveis e faça seu pedido direto pelo WhatsApp.")</p>
+
+            <div class="lux-hero-actions">
+                <a href="@CatalogHref()" class="lux-btn lux-btn-primary">Ver Todas as Roupas</a>
+
+                @if (_store is not null && !string.IsNullOrWhiteSpace(_store.WhatsappNumber))
+                {
+                    <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="lux-btn lux-btn-whatsapp">
+                        💬 Tirar Dúvidas no WhatsApp
+                    </a>
+                }
+            </div>
+
+            <form class="lux-quick-search" @onsubmit="GoSearch" @onsubmit:preventDefault="true">
+                <input type="text"
+                       class="lux-input"
+                       placeholder="O que você procura? Ex.: Vestido, Calça, Camisa..."
+                       @bind="_quickSearch" />
+                <button type="submit" class="lux-btn lux-btn-outline">
+                    Buscar
+                </button>
+            </form>
         </div>
+
+        @if (_design.HeroLayout == "split")
+        {
+            <aside class="lux-concierge-panel" aria-label="Como comprar">
+                <h2 class="lux-concierge-heading">Comprar Aqui é Muito Simples</h2>
+                <div class="lux-concierge-step">
+                    <span class="lux-step-num">1</span>
+                    <div>
+                        <strong>Escolha a sua roupa</strong>
+                        <span>Veja as fotos, o preço e toque na peça que mais combina com você.</span>
+                    </div>
+                </div>
+                <div class="lux-concierge-step">
+                    <span class="lux-step-num">2</span>
+                    <div>
+                        <strong>Toque na cor e no tamanho</strong>
+                        <span>Você vê na hora o que temos disponível antes de chamar a loja.</span>
+                    </div>
+                </div>
+                <div class="lux-concierge-step">
+                    <span class="lux-step-num">3</span>
+                    <div>
+                        <strong>Finalize no WhatsApp</strong>
+                        <span>Um toque abre a conversa pronta com nossa equipe para entrega ou retirada.</span>
+                    </div>
+                </div>
+            </aside>
+        }
+    </section>
+
+    @if (_categories.Count > 0)
+    {
+        <section class="lux-section">
+            <div class="lux-section-head">
+                <div>
+                    <span class="lux-section-kicker">Escolha por Estilo</span>
+                    <h2 class="lux-section-title">Categorias da Loja</h2>
+                </div>
+                <a href="@CatalogHref()" class="lux-link-arrow">Ver tudo &rarr;</a>
+            </div>
+
+            <div class="lux-category-rail">
+                <a href="@CatalogHref()" class="lux-category-pill active">
+                    <span>Todas as roupas</span>
+                </a>
+                @foreach (var cat in _categories)
+                {
+                    <a href="@CatalogHref(cat.Slug)" class="lux-category-pill">
+                        <span>@cat.Name</span>
+                        <span class="lux-category-count">@cat.ProductCount</span>
+                    </a>
+                }
+            </div>
+        </section>
     }
-</div>
+
+    <section class="lux-section">
+        <div class="lux-section-head">
+            <div>
+                <span class="lux-section-kicker">Novidades &amp; Destaques</span>
+                <h2 class="lux-section-title">Peças para Você Escolher</h2>
+            </div>
+            <a href="@CatalogHref()" class="lux-link-arrow">Ver Todas (@_featuredProducts.Count+) &rarr;</a>
+        </div>
+
+        @if (_featuredProducts.Count == 0)
+        {
+            <div class="lux-empty-card">
+                <h3>Em breve novas peças!</h3>
+                <p class="lux-hero-subtitle" style="margin-left: auto; margin-right: auto;">
+                    Novos looks estão sendo preparados. Fale com nossa equipe no WhatsApp para saber o que acaba de chegar.
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="lux-product-grid">
+                @foreach (var product in _featuredProducts)
+                {
+                    <ProductCard Product="@product" StoreSlug="@EffectiveStoreSlug" />
+                }
+            </div>
+        }
+    </section>
+
+    <section class="lux-trust-strip" aria-label="Facilidades da loja">
+        <div class="lux-trust-card">
+            <span>🛍️</span>
+            <div>
+                <strong>Compra Fácil e Direta</strong>
+                <span>Sem cadastro complicado: gostou da peça, é só pedir no WhatsApp.</span>
+            </div>
+        </div>
+        <div class="lux-trust-card">
+            <span>✨</span>
+            <div>
+                <strong>Tamanhos Reais na Hora</strong>
+                <span>Confira cores e tamanhos disponíveis antes mesmo de enviar mensagem.</span>
+            </div>
+        </div>
+        <div class="lux-trust-card">
+            <span>💬</span>
+            <div>
+                <strong>Atendimento Humano</strong>
+                <span>Tire dúvidas sobre tecido, caimento e entrega direto com quem atende na loja.</span>
+            </div>
+        </div>
+    </section>
+}
 
 @code {
     [Parameter]
     public string? StoreSlug { get; set; }
 
-    private PublicStoreSettingsDto _store = new("Minha Loja", "minha-loja", "5511900000000", "", null, DateTimeOffset.UtcNow);
+    private PublicStoreSettingsDto? _store;
+    private StoreDesignDto _design = StoreDesignDto.CreateMinimalistaLuxo();
     private IReadOnlyList<CategoryDto> _categories = [];
-    private IReadOnlyList<CatalogProductCardDto> _products = [];
+    private IReadOnlyList<CatalogProductCardDto> _featuredProducts = [];
+    private bool _loading = true;
+    private string? _quickSearch;
+
+    private string? EffectiveStoreSlug =>
+        !string.IsNullOrWhiteSpace(StoreSlug) ? StoreSlug : _store?.StoreSlug;
+
+    private string HeroVariantClass => _design.HeroLayout switch
+    {
+        "centered" => "lux-hero-centered",
+        "banner" => "lux-hero-banner",
+        _ => "lux-hero-split"
+    };
+
+    private string HeroEyebrowText =>
+        !string.IsNullOrWhiteSpace(_design.HeroEyebrow)
+            ? _design.HeroEyebrow
+            : "Nova Coleção Disponível";
+
+    private string HeroHeadlineText =>
+        !string.IsNullOrWhiteSpace(_design.HeroHeadline)
+            ? _design.HeroHeadline
+            : (_store?.StoreName ?? "Catálogo Online");
 
     protected override async Task OnParametersSetAsync()
     {
-        _store = await CatalogGateway.GetStoreInfoAsync();
-        _categories = await CatalogGateway.GetCategoriesAsync();
-        _products = await CatalogGateway.GetProductsAsync(new CatalogQueryFilter());
+        _loading = true;
+        try
+        {
+            _store = await CatalogDataGateway.GetStoreInfoAsync();
+            _design = StoreDesignCssHelper.Sanitize(_store?.Design);
+
+            if (_store?.IsSiteActive != false)
+            {
+                _categories = await CatalogDataGateway.GetCategoriesAsync();
+                var products = await CatalogDataGateway.GetProductsAsync(new CatalogQueryFilter());
+                _featuredProducts = products.Take(12).ToList();
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void GoSearch()
+    {
+        var basePath = CatalogHref();
+        if (string.IsNullOrWhiteSpace(_quickSearch))
+        {
+            Navigation.NavigateTo(basePath);
+            return;
+        }
+        Navigation.NavigateTo($"{basePath}?busca={Uri.EscapeDataString(_quickSearch.Trim())}");
+    }
+
+    private string CatalogHref(string? categorySlug = null)
+    {
+        var basePath = string.IsNullOrWhiteSpace(EffectiveStoreSlug)
+            ? "/catalogo"
+            : $"/loja/{EffectiveStoreSlug}/catalogo";
+
+        return string.IsNullOrWhiteSpace(categorySlug)
+            ? basePath
+            : $"{basePath}?categoria={Uri.EscapeDataString(categorySlug)}";
     }
 }
-

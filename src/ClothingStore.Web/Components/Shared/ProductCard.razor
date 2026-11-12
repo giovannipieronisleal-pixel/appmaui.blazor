@@ -1,0 +1,81 @@
+@using ClothingStore.Shared.DTOs
+
+<article class="lux-product-card">
+    <a href="@DetailHref" class="lux-product-media" aria-label="Ver detalhes de @Product.Name">
+        @if (!string.IsNullOrWhiteSpace(Product.PrimaryImageUrl))
+        {
+            <img src="@Product.PrimaryImageUrl" alt="@Product.Name" loading="lazy" />
+        }
+        else
+        {
+            <div class="lux-product-placeholder">
+                <span>Atelier</span>
+            </div>
+        }
+
+        @if (!Product.HasAvailableStock)
+        {
+            <span class="lux-stock-pill lux-stock-out">Esgotado</span>
+        }
+        else if (Product.TotalStockQuantity <= 3)
+        {
+            <span class="lux-stock-pill lux-stock-low">Últimas peças</span>
+        }
+        else
+        {
+            <span class="lux-stock-pill lux-stock-ok">Disponível</span>
+        }
+    </a>
+
+    <div class="lux-product-body">
+        <div class="lux-product-meta">
+            <span class="lux-product-category">@Product.CategoryName</span>
+            @if (Product.AvailableSizes.Count > 0)
+            {
+                <span class="lux-product-sizes">Tam: @string.Join(" · ", Product.AvailableSizes.Take(4))</span>
+            }
+        </div>
+
+        <h3 class="lux-product-title">
+            <a href="@DetailHref">@Product.Name</a>
+        </h3>
+
+        <div class="lux-product-footer">
+            <span class="lux-product-price">@Product.BasePrice.ToString("C")</span>
+
+            @if (Product.AvailableColors.Count > 0)
+            {
+                <div class="lux-swatch-row" aria-label="Cores disponíveis">
+                    @foreach (var color in Product.AvailableColors.Take(4))
+                    {
+                        <span class="lux-swatch-item" title="@color.Color">
+                            <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+                                <circle cx="7" cy="7" r="5.5" fill="@color.ColorHex" stroke="rgba(120,113,108,0.45)" stroke-width="1" />
+                            </svg>
+                        </span>
+                    }
+                    @if (Product.AvailableColors.Count > 4)
+                    {
+                        <span class="lux-swatch-more">+@(Product.AvailableColors.Count - 4)</span>
+                    }
+                </div>
+            }
+        </div>
+
+        <a href="@DetailHref" class="lux-card-cta">
+            @(Product.HasAvailableStock ? "Ver Fotos & Escolher Tamanho →" : "Consultar Reposição →")
+        </a>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public CatalogProductCardDto Product { get; set; } = default!;
+
+    [Parameter]
+    public string? StoreSlug { get; set; }
+
+    private string DetailHref => string.IsNullOrWhiteSpace(StoreSlug)
+        ? $"/produto/{Product.Slug}"
+        : $"/loja/{StoreSlug}/produto/{Product.Slug}";
+}

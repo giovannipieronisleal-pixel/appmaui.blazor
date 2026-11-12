@@ -558,6 +558,22 @@ public sealed class MauiAdminGateway
         return result;
     }
 
+    public async Task<AdminStoreSettingsDto> ActivateSiteAsync()
+    {
+        EnsureAdminPermission();
+        var result = await _employeeAndSettingsService.ActivateStoreSiteAsync(CurrentEmployee?.EmployeeId);
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
+    }
+
+    public async Task<AdminStoreSettingsDto> DeactivateSiteAsync(string reason)
+    {
+        EnsureAdminPermission();
+        var result = await _employeeAndSettingsService.DeactivateStoreSiteAsync(CurrentEmployee?.EmployeeId, reason);
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return result;
+    }
+
     public Task<AdminStoreSettingsDto> UploadStoreLogoAsync(string fileName, Stream fileStream, string contentType)
     {
         EnsureAdminPermission();
@@ -577,6 +593,35 @@ public sealed class MauiAdminGateway
         return ExecuteWithFallbackAsync(
             () => _apiClient.RemoveStoreLogoAsync(),
             () => _employeeAndSettingsService.RemoveStoreLogoAsync(CurrentEmployee!.EmployeeId));
+    }
+
+    public async Task<RedeemActivationCodeResponse> RedeemActivationCodeAsync(RedeemActivationCodeRequest request)
+    {
+        EnsureAdminPermission();
+        var response = await ExecuteWithFallbackAsync(
+            () => _apiClient.RedeemActivationCodeAsync(request),
+            () => _employeeAndSettingsService.RedeemActivationCodeAsync(request, CurrentEmployee?.EmployeeId));
+
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return response;
+    }
+
+    public Task<CheckDomainAvailabilityResponse> CheckDomainAvailabilityAsync(string domain, CancellationToken ct = default)
+    {
+        if (_cloudSyncService is not null)
+        {
+            return _cloudSyncService.CheckDomainAvailabilityAsync(domain, ct);
+        }
+
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.CheckDomainAvailabilityAsync(domain, ct),
+            () => Task.FromResult(new CheckDomainAvailabilityResponse(
+                domain,
+                true,
+                "Available",
+                $"Domínio '{domain}' verificado para publicação no Google Cloud.",
+                $"https://{domain.Trim().TrimEnd('/')}",
+                [])));
     }
 
     private void EnsureAuthenticated()

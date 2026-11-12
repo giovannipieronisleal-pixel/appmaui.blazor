@@ -12,7 +12,15 @@ public sealed record PublicStoreSettingsDto(
     DateTimeOffset UpdatedAt,
     string? OnlineBaseUrl = null,
     bool AutoSyncOnlineOnSave = true,
-    DateTimeOffset? LastOnlineSyncAt = null);
+    DateTimeOffset? LastOnlineSyncAt = null,
+    bool IsSiteActive = true,
+    string? DeactivationReason = null,
+    DateTimeOffset? LastActivityAt = null,
+    string PlanTier = "Basico",
+    StoreDesignDto? Design = null,
+    DateTimeOffset? PlanActivatedAt = null,
+    DateTimeOffset? PlanExpiresAt = null,
+    string? ActiveGiftCardCode = null);
 
 public sealed record CategoryDto(
     Guid Id,

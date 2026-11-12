@@ -1,0 +1,10 @@
+@using ClothingStore.Shared.DTOs
+
+<style>
+    @((MarkupString)StoreDesignCssHelper.BuildRootCssBlock(Design))
+</style>
+
+@code {
+    [Parameter]
+    public StoreDesignDto? Design { get; set; }
+}

@@ -19,6 +19,11 @@ public sealed class CatalogService
     public async Task<PublicStoreSettingsDto> GetPublicStoreSettingsAsync(CancellationToken ct = default)
     {
         var settings = await _repository.GetStoreSettingsAsync(ct);
+        if (settings.CheckAndEnforceInactivity())
+        {
+            await _repository.UpdateStoreSettingsAsync(settings, ct);
+        }
+
         var slug = string.IsNullOrWhiteSpace(settings.StoreSlug)
             ? Category.GenerateSlug(settings.StoreName)
             : settings.StoreSlug;
@@ -32,7 +37,15 @@ public sealed class CatalogService
             settings.UpdatedAt,
             settings.OnlineBaseUrl,
             settings.AutoSyncOnlineOnSave,
-            settings.LastOnlineSyncAt);
+            settings.LastOnlineSyncAt,
+            settings.IsSiteActive,
+            settings.DeactivationReason,
+            settings.LastActivityAt,
+            settings.GetEffectivePlanTier(),
+            StoreDesignMapper.ToDto(settings.GetEffectivePublicDesign()),
+            settings.PlanActivatedAt,
+            settings.PlanExpiresAt,
+            settings.ActiveGiftCardCode);
     }
 
     public async Task<IReadOnlyList<CategoryDto>> GetPublicCategoriesAsync(CancellationToken ct = default)

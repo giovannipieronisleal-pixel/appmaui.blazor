@@ -29,20 +29,70 @@ public static class LocalWebServerLauncher
         _catalogService = catalogService;
     }
 
-    public static async Task OpenCatalogInBrowserAsync(string url)
+    public static async Task OpenCatalogInBrowserAsync(string url, string? localStoreSlug = null)
     {
         await EnsureWebCatalogRunningAsync();
 
-        var uri = new Uri(url);
+        var localUrl = $"http://localhost:{DefaultPort}";
+        if (!string.IsNullOrWhiteSpace(localStoreSlug))
+        {
+            localUrl = $"http://localhost:{DefaultPort}/loja/{localStoreSlug}";
+        }
+        else if (_catalogService is not null)
+        {
+            try
+            {
+                var store = await _catalogService.GetPublicStoreSettingsAsync();
+                if (!string.IsNullOrWhiteSpace(store.StoreSlug))
+                {
+                    localUrl = $"http://localhost:{DefaultPort}/loja/{store.StoreSlug}";
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        var targetUrl = url;
+
+        // Se for um domínio externo (não localhost), verifica se ele já está ativo na internet
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            var host = uri.Host.ToLowerInvariant();
+            if (host is not "localhost" and not "127.0.0.1")
+            {
+                var isOnline = false;
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+                    using var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(1500) };
+                    var checkRes = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                    isOnline = checkRes.IsSuccessStatusCode;
+                }
+                catch
+                {
+                    isOnline = false;
+                }
+
+                // Se o domínio ainda não tiver apontamento DNS na internet (ex.: lojas.minhaloja.com ainda em registro),
+                // abre automaticamente o servidor local para que o usuário consiga ver e testar o catálogo imediatamente!
+                if (!isOnline)
+                {
+                    targetUrl = localUrl;
+                }
+            }
+        }
+
+        var finalUri = new Uri(targetUrl);
         try
         {
             // BrowserLaunchMode.SystemPreferred abre o navegador (Chrome Custom Tabs no Android)
             // mantendo o processo do app ativo em primeiro plano para responder imediatamente na porta 5190.
-            await Browser.Default.OpenAsync(uri, BrowserLaunchMode.SystemPreferred);
+            await Browser.Default.OpenAsync(finalUri, BrowserLaunchMode.SystemPreferred);
         }
         catch
         {
-            await Launcher.Default.OpenAsync(uri);
+            await Launcher.Default.OpenAsync(finalUri);
         }
     }
 
@@ -196,6 +246,11 @@ public static class LocalWebServerLauncher
         var query = ParseQueryString(uri.Query);
 
         var store = await _catalogService.GetPublicStoreSettingsAsync();
+        if (!store.IsSiteActive)
+        {
+            return RenderDeactivatedStoreHtml(store);
+        }
+
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
         // Verifica se é rota de detalhe de produto: /produto/{slug} ou /loja/{storeSlug}/produto/{slug}
@@ -248,11 +303,25 @@ public static class LocalWebServerLauncher
         var storeHomeUrl = $"/loja/{H(store.StoreSlug)}";
         var generalWaUrl = WhatsAppLinkBuilder.BuildGeneralStoreLink(store.WhatsappNumber, store.StoreName);
 
+        var design = StoreDesignCssHelper.Sanitize(store.Design);
+        var heroClass = design.HeroLayout switch
+        {
+            "centered" => "hero hero-centered",
+            "banner" => "hero hero-banner",
+            _ => "hero"
+        };
+        var eyebrow = string.IsNullOrWhiteSpace(design.HeroEyebrow)
+            ? "Nova Coleção Disponível"
+            : H(design.HeroEyebrow);
+        var headline = string.IsNullOrWhiteSpace(design.HeroHeadline)
+            ? H(store.StoreName)
+            : H(design.HeroHeadline);
+
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"/>");
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>");
         sb.AppendLine($"<title>{H(store.StoreName)} — Catálogo Digital</title>");
-        sb.AppendLine(GetEmbeddedStyles());
+        sb.AppendLine(GetEmbeddedStyles(store.Design));
         sb.AppendLine("</head><body>");
 
         // Header
@@ -267,9 +336,12 @@ public static class LocalWebServerLauncher
         sb.AppendLine("</div></header>");
 
         // Hero & Filters
-        sb.AppendLine("<section class=\"hero\"><div class=\"container\">");
-        sb.AppendLine($"<div class=\"eyebrow\">Catálogo Digital Oficial &bull; /loja/{H(store.StoreSlug)}</div>");
-        sb.AppendLine($"<h1>{H(store.StoreName)}</h1>");
+        sb.AppendLine($"<section class=\"{heroClass}\"><div class=\"container\">");
+        if (design.ShowLookbookBadge)
+        {
+            sb.AppendLine($"<div class=\"eyebrow\">{eyebrow}</div>");
+        }
+        sb.AppendLine($"<h1>{headline}</h1>");
         sb.AppendLine($"<p class=\"hero-desc\">{H(store.StoreDescription)}</p>");
 
         sb.AppendLine($"<form method=\"get\" action=\"{storeHomeUrl}\" class=\"filter-bar\">");
@@ -310,9 +382,23 @@ public static class LocalWebServerLauncher
         sb.AppendLine($"<a href=\"{storeHomeUrl}\" class=\"btn-outline\">Limpar</a>");
         sb.AppendLine("</div></form></div></section>");
 
+        // Category quick pills
+        if (filters.Categories.Count > 0)
+        {
+            sb.AppendLine("<div style=\"display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.15rem;\">");
+            var allClass = string.IsNullOrWhiteSpace(categorySlug) ? "btn-dark" : "btn-outline";
+            sb.AppendLine($"<a href=\"{storeHomeUrl}\" class=\"{allClass}\">Todas as peças</a>");
+            foreach (var c in filters.Categories)
+            {
+                var cClass = string.Equals(c.Slug, categorySlug, StringComparison.OrdinalIgnoreCase) ? "btn-dark" : "btn-outline";
+                sb.AppendLine($"<a href=\"{storeHomeUrl}?cat={Uri.EscapeDataString(c.Slug)}\" class=\"{cClass}\">{H(c.Name)} ({c.ProductCount})</a>");
+            }
+            sb.AppendLine("</div>");
+        }
+
         // Products Grid
         sb.AppendLine("<main class=\"container main-section\">");
-        sb.AppendLine($"<h2 class=\"section-title\">Peças do Catálogo ({products.Count})</h2>");
+        sb.AppendLine($"<h2 class=\"section-title\">Roupas Disponíveis ({products.Count})</h2>");
         if (products.Count == 0)
         {
             sb.AppendLine("<div class=\"empty-box\">Nenhuma peça encontrada com os filtros selecionados.</div>");
@@ -333,16 +419,18 @@ public static class LocalWebServerLauncher
                 {
                     sb.AppendLine("<div class=\"no-img\">Sem foto</div>");
                 }
-                sb.AppendLine(p.HasAvailableStock
-                    ? "<span class=\"badge badge-ok\">Disponível</span>"
-                    : "<span class=\"badge badge-out\">Esgotado</span>");
+                sb.AppendLine(!p.HasAvailableStock
+                    ? "<span class=\"badge badge-out\">Esgotado</span>"
+                    : p.TotalStockQuantity <= 3
+                        ? "<span class=\"badge badge-ok\">Últimas peças</span>"
+                        : "<span class=\"badge badge-green\">Disponível</span>");
                 sb.AppendLine("</a>");
 
                 sb.AppendLine("<div class=\"card-body\">");
                 sb.AppendLine($"<div class=\"cat\">{H(p.CategoryName)}</div>");
                 sb.AppendLine($"<a href=\"{detailUrl}\" class=\"title\">{H(p.Name)}</a>");
                 sb.AppendLine($"<div class=\"price\">{p.BasePrice.ToString("C", ptBr)}</div>");
-                sb.AppendLine($"<a href=\"{detailUrl}\" class=\"btn-dark full\">Ver Detalhes &amp; Consultar</a>");
+                sb.AppendLine($"<a href=\"{detailUrl}\" class=\"btn-dark full\">Ver Fotos &amp; Escolher Tamanho</a>");
                 sb.AppendLine("</div></article>");
             }
             sb.AppendLine("</div>");
@@ -356,7 +444,7 @@ public static class LocalWebServerLauncher
         var storeHomeUrl = $"/loja/{H(store.StoreSlug)}";
         if (product is null)
         {
-            return $"<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/>{GetEmbeddedStyles()}</head><body><div class=\"container\" style=\"padding:3rem 1rem;\"><h2>Produto não encontrado</h2><a href=\"{storeHomeUrl}\" class=\"btn-dark\">Voltar ao catálogo</a></div></body></html>";
+            return $"<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/>{GetEmbeddedStyles(store.Design)}</head><body><div class=\"container\" style=\"padding:3rem 1rem;\"><h2>Produto não encontrado</h2><a href=\"{storeHomeUrl}\" class=\"btn-dark\">Voltar ao catálogo</a></div></body></html>";
         }
 
         var ptBr = new CultureInfo("pt-BR");
@@ -371,7 +459,7 @@ public static class LocalWebServerLauncher
         sb.AppendLine("<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"/>");
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>");
         sb.AppendLine($"<title>{H(product.Name)} — {H(store.StoreName)}</title>");
-        sb.AppendLine(GetEmbeddedStyles());
+        sb.AppendLine(GetEmbeddedStyles(store.Design));
         sb.AppendLine("</head><body>");
 
         sb.AppendLine("<header class=\"site-header\"><div class=\"container header-inner\">");
@@ -452,55 +540,97 @@ public static class LocalWebServerLauncher
         return sb.ToString();
     }
 
-    private static string GetEmbeddedStyles() => """
+    private static string RenderDeactivatedStoreHtml(PublicStoreSettingsDto store)
+    {
+        var generalWaUrl = WhatsAppLinkBuilder.BuildGeneralStoreLink(store.WhatsappNumber, store.StoreName);
+        var sb = new StringBuilder();
+        sb.AppendLine("<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"/>");
+        sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>");
+        sb.AppendLine($"<title>{H(store.StoreName)} — Loja Desativada</title>");
+        sb.AppendLine(GetEmbeddedStyles(store.Design));
+        sb.AppendLine("</head><body>");
+        sb.AppendLine("<header class=\"site-header\"><div class=\"container header-inner\">");
+        sb.AppendLine($"<div class=\"brand\"><span>{H(store.StoreName)}</span></div>");
+        sb.AppendLine("</div></header>");
+        sb.AppendLine("<main class=\"container\" style=\"padding: 4rem 1rem; text-align: center; max-width: 680px;\">");
+        sb.AppendLine("<div style=\"background: var(--brand-surface, #ffffff); color: var(--brand-text, #18181B); border: 1.5px solid var(--brand-border, #e2e8f0); border-radius: 16px; padding: 3rem 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.08);\">");
+        sb.AppendLine("<div style=\"font-size: 3.5rem; margin-bottom: 1rem;\">🛍️</div>");
+        sb.AppendLine("<h1 style=\"font-family: var(--brand-font-display, Georgia, serif); font-size: 1.85rem; font-weight: 700; color: var(--brand-text, #0f172a); margin-bottom: 0.75rem;\">Loja em Atualização</h1>");
+        sb.AppendLine($"<p style=\"font-size: 1.05rem; color: var(--brand-text-muted, #475569); line-height: 1.6; margin-bottom: 1.5rem;\">{H(store.DeactivationReason ?? "Estamos preparando novas peças para nossa vitrine!")}</p>");
+        if (!string.IsNullOrWhiteSpace(store.WhatsappNumber))
+        {
+            sb.AppendLine($"<a href=\"{H(generalWaUrl)}\" target=\"_blank\" rel=\"noopener\" class=\"btn-wa-top\" style=\"display: inline-block; padding: 0.85rem 1.75rem; font-size: 1rem;\">💬 Falar com a Loja no WhatsApp</a>");
+        }
+        sb.AppendLine("</div></main></body></html>");
+        return sb.ToString();
+    }
+
+    private static string GetEmbeddedStyles(StoreDesignDto? design = null)
+    {
+        var fontsHref = H(StoreDesignCssHelper.BuildGoogleFontsUrl(design));
+        var rootVars = StoreDesignCssHelper.BuildRootCssBlock(design);
+
+        return $$"""
+        <link rel="stylesheet" href="{{fontsHref}}" />
         <style>
-            * { box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-            body { margin: 0; background: #FAF9F6; color: #18181B; }
-            .container { max-width: 1180px; margin: 0 auto; padding: 0 1rem; }
-            .site-header { background: #FFFFFF; border-bottom: 1px solid #E7E5E4; position: sticky; top: 0; z-index: 20; }
-            .header-inner { display: flex; justify-content: space-between; align-items: center; min-height: 64px; gap: 0.75rem; flex-wrap: wrap; padding: 0.5rem 1rem; }
-            .brand { display: flex; align-items: center; gap: 0.65rem; text-decoration: none; color: #18181B; font-weight: 800; font-size: 1.2rem; text-transform: uppercase; }
-            .brand-logo { height: 40px; max-width: 140px; object-fit: contain; }
-            .btn-wa-top { background: #16A34A; color: #FFF; text-decoration: none; padding: 0.5rem 0.9rem; border-radius: 8px; font-weight: 600; font-size: 0.85rem; }
-            .hero { background: linear-gradient(180deg, #FFFFFF 0%, #FAF9F6 100%); border-bottom: 1px solid #E7E5E4; padding: 2rem 0; }
-            .eyebrow { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #78716C; }
-            .hero h1 { font-size: 2rem; margin: 0.35rem 0 0.6rem; }
-            .hero-desc { color: #57534E; max-width: 680px; margin: 0 0 1.25rem; line-height: 1.5; }
-            .filter-bar { background: #FFF; border: 1px solid #E7E5E4; border-radius: 10px; padding: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; align-items: end; }
-            .filter-bar label { display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.3rem; color: #57534E; }
-            .filter-bar input[type=text], .filter-bar select { width: 100%; padding: 0.55rem 0.7rem; border: 1px solid #D6D3D1; border-radius: 7px; font-size: 0.9rem; background: #FFF; }
+            {{rootVars}}
+            * { box-sizing: border-box; }
+            body { margin: 0; background: var(--brand-bg, #FAF8F5); color: var(--brand-text, #18181B); font-family: var(--brand-font-body, system-ui, sans-serif); line-height: 1.55; }
+            .container { max-width: 1240px; margin: 0 auto; padding: 0 1.25rem; }
+            .site-header { background: var(--brand-header-glass, rgba(255,255,255,0.9)); backdrop-filter: blur(12px); border-bottom: 1px solid var(--brand-border, #E7E2DA); position: sticky; top: 0; z-index: 20; }
+            .header-inner { display: flex; justify-content: space-between; align-items: center; min-height: 70px; gap: 0.75rem; flex-wrap: wrap; padding: 0.5rem 1.25rem; }
+            .brand { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: var(--brand-text, #18181B); font-family: var(--brand-font-display, Georgia, serif); font-weight: 600; font-size: 1.28rem; letter-spacing: -0.015em; }
+            .brand-logo { height: 40px; max-width: 140px; object-fit: contain; border-radius: var(--brand-radius-btn, 6px); }
+            .btn-wa-top { background: #16A34A; color: #FFF; text-decoration: none; padding: 0.55rem 1.05rem; border-radius: var(--brand-radius-btn, 6px); font-weight: 600; font-size: 0.85rem; }
+            .hero { background: var(--brand-surface, #FFFFFF); border-bottom: 1px solid var(--brand-border, #E7E2DA); padding: 2.5rem 0; }
+            .hero-centered .container { text-align: center; }
+            .hero-centered .hero-desc { margin-left: auto; margin-right: auto; }
+            .hero-banner { background: var(--brand-sidebar, #141416); color: #FAF8F5; border-bottom: 1px solid var(--brand-accent, #B69158); }
+            .hero-banner h1 { color: #FAF8F5; }
+            .hero-banner .hero-desc { color: #D6D0C4; }
+            .eyebrow { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.2em; color: var(--brand-accent, #B69158); }
+            .hero h1 { font-family: var(--brand-font-display, Georgia, serif); font-size: clamp(2rem, 4vw, 3.1rem); font-weight: 500; margin: 0.45rem 0 0.7rem; line-height: 1.1; }
+            .hero-desc { color: var(--brand-text-muted, #57534E); max-width: 680px; margin: 0 0 1.4rem; line-height: 1.6; }
+            .filter-bar { background: var(--brand-surface, #FFF); border: 1px solid var(--brand-border, #E7E2DA); border-radius: var(--brand-radius-card, 8px); padding: 1.1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; align-items: end; color: var(--brand-text, #18181B); }
+            .filter-bar label { display: block; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; margin-bottom: 0.35rem; color: var(--brand-text-muted, #57534E); }
+            .filter-bar input[type=text], .filter-bar select { width: 100%; padding: 0.58rem 0.75rem; border: 1px solid var(--brand-border, #E7E2DA); border-radius: var(--brand-radius-btn, 6px); font-size: 0.9rem; background: var(--brand-bg, #FAF8F5); color: var(--brand-text, #18181B); }
             .filter-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
             .chk { display: flex !important; align-items: center; gap: 0.35rem; cursor: pointer; margin: 0 !important; }
-            .btn-dark { background: #18181B; color: #FFF; border: none; padding: 0.58rem 0.95rem; border-radius: 7px; font-weight: 600; font-size: 0.86rem; text-decoration: none; display: inline-block; text-align: center; cursor: pointer; }
-            .btn-outline { background: #FFF; color: #18181B; border: 1px solid #D6D3D1; padding: 0.55rem 0.85rem; border-radius: 7px; font-weight: 600; font-size: 0.86rem; text-decoration: none; display: inline-block; }
+            .btn-dark { background: var(--brand-primary, #18181B); color: var(--brand-primary-fg, #FAF8F5); border: none; padding: 0.62rem 1.05rem; border-radius: var(--brand-radius-btn, 6px); font-weight: 600; font-size: 0.86rem; text-decoration: none; display: inline-block; text-align: center; cursor: pointer; }
+            .btn-outline { background: transparent; color: var(--brand-text, #18181B); border: 1px solid var(--brand-border, #E7E2DA); padding: 0.58rem 0.9rem; border-radius: var(--brand-radius-btn, 6px); font-weight: 600; font-size: 0.86rem; text-decoration: none; display: inline-block; }
             .full { width: 100%; margin-top: 0.6rem; }
-            .main-section { padding: 1.75rem 1rem 3rem; }
-            .section-title { font-size: 1.25rem; margin: 0 0 1.2rem; }
-            .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.25rem; }
-            .card { background: #FFF; border: 1px solid #E7E5E4; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
-            .card-img { aspect-ratio: 3 / 4; background: #F3F1EC; position: relative; display: block; }
+            .main-section { padding: 2rem 1.25rem 3.5rem; }
+            .section-title { font-family: var(--brand-font-display, Georgia, serif); font-size: 1.5rem; font-weight: 500; margin: 0 0 1.25rem; }
+            .grid { display: grid; grid-template-columns: repeat(var(--brand-grid-cols, 3), minmax(0, 1fr)); gap: var(--brand-gap, 1.35rem); }
+            @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+            .card { background: var(--brand-surface, #FFF); border: 1px solid var(--brand-border, #E7E2DA); border-radius: var(--brand-radius-card, 8px); overflow: hidden; display: flex; flex-direction: column; }
+            .card-img { aspect-ratio: 4 / 5; background: var(--brand-surface-subtle, #F3EFE8); position: relative; display: block; overflow: hidden; }
             .card-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-            .no-img { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 220px; color: #78716C; }
-            .badge { position: absolute; top: 0.6rem; left: 0.6rem; padding: 0.22rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
-            .badge-ok { background: #DCFCE7; color: #166534; }
-            .badge-out { background: #FEE2E2; color: #991B1B; }
-            .card-body { padding: 0.9rem; display: flex; flex-direction: column; flex: 1; gap: 0.3rem; }
-            .cat { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #78716C; }
-            .title { font-weight: 700; font-size: 1rem; color: #18181B; text-decoration: none; }
-            .price { font-weight: 800; font-size: 1.08rem; }
-            .empty-box { background: #FFF; border: 1px dashed #D6D3D1; border-radius: 10px; padding: 2.5rem; text-align: center; color: #78716C; }
-            .detail-wrap { padding: 1.75rem 1rem 3rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1.75rem; align-items: start; }
-            .detail-main-img { aspect-ratio: 3 / 4; background: #F3F1EC; border-radius: 12px; overflow: hidden; border: 1px solid #E7E5E4; }
+            .no-img { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 220px; color: var(--brand-text-muted, #78716C); font-family: var(--brand-font-display, serif); font-style: italic; }
+            .badge { position: absolute; top: 0.65rem; left: 0.65rem; padding: 0.24rem 0.65rem; border-radius: var(--brand-radius-pill, 999px); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+            .badge-ok { background: rgba(182, 145, 88, 0.92); color: #FFF; }
+            .badge-green { background: rgba(22, 163, 74, 0.92); color: #FFF; }
+            .badge-out { background: rgba(24, 24, 27, 0.85); color: #FAF8F5; }
+            .filter-bar select option { background: var(--brand-surface, #FFF); color: var(--brand-text, #18181B); }
+            .card-body { padding: var(--brand-pad, 1.1rem); display: flex; flex-direction: column; flex: 1; gap: 0.35rem; }
+            .cat { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--brand-accent, #B69158); font-weight: 700; }
+            .title { font-family: var(--brand-font-display, Georgia, serif); font-weight: 600; font-size: 1.08rem; color: var(--brand-text, #18181B); text-decoration: none; }
+            .price { font-weight: 700; font-size: 1.04rem; }
+            .empty-box { background: var(--brand-surface, #FFF); border: 1px dashed var(--brand-border, #D6D3D1); border-radius: var(--brand-radius-card, 8px); padding: 2.5rem; text-align: center; color: var(--brand-text-muted, #57534E); }
+            .detail-wrap { padding: 2rem 1.25rem 3.5rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 2rem; align-items: start; }
+            .detail-main-img { aspect-ratio: 4 / 5; background: var(--brand-surface-subtle, #F3EFE8); border-radius: var(--brand-radius-card, 10px); overflow: hidden; border: 1px solid var(--brand-border, #E7E2DA); }
             .detail-main-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-            .thumbs { display: flex; gap: 0.5rem; overflow-x: auto; margin-top: 0.65rem; }
-            .thumbs img { width: 68px; height: 86px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid #D6D3D1; }
-            .detail-panel { background: #FFF; border: 1px solid #E7E5E4; border-radius: 12px; padding: 1.4rem; }
+            .thumbs { display: flex; gap: 0.55rem; overflow-x: auto; margin-top: 0.7rem; }
+            .thumbs img { width: 68px; height: 86px; object-fit: cover; border-radius: var(--brand-radius-btn, 6px); cursor: pointer; border: 1.5px solid var(--brand-border, #D6D3D1); }
+            .detail-panel { background: var(--brand-surface, #FFF); border: 1px solid var(--brand-border, #E7E2DA); border-radius: var(--brand-radius-card, 10px); padding: 1.65rem; }
             .chips { display: flex; gap: 0.45rem; flex-wrap: wrap; margin-top: 0.4rem; }
-            .chip { background: #FAF9F6; border: 1px solid #D6D3D1; border-radius: 7px; padding: 0.45rem 0.8rem; font-weight: 600; cursor: pointer; }
-            .btn-wa-big { display: block; width: 100%; background: #16A34A; color: #FFF; text-align: center; text-decoration: none; padding: 0.95rem; border-radius: 9px; font-weight: 700; font-size: 1rem; margin-top: 1.25rem; }
-            .wa-preview { background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 0.85rem; margin-top: 0.9rem; font-size: 0.84rem; color: #166534; }
+            .chip { background: var(--brand-bg, #FAF8F5); color: var(--brand-text, #18181B); border: 1px solid var(--brand-border, #E7E2DA); border-radius: var(--brand-radius-pill, 999px); padding: 0.48rem 0.9rem; font-weight: 600; cursor: pointer; }
+            .btn-wa-big { display: block; width: 100%; background: #16A34A; color: #FFF; text-align: center; text-decoration: none; padding: 0.95rem; border-radius: var(--brand-radius-btn, 8px); font-weight: 700; font-size: 1rem; margin-top: 1.25rem; }
+            .wa-preview { background: var(--brand-surface-subtle, #F3EFE8); border: 1px solid var(--brand-border, #E7E2DA); border-radius: var(--brand-radius-btn, 8px); padding: 0.9rem; margin-top: 0.9rem; font-size: 0.84rem; color: var(--brand-text-muted, #57534E); }
         </style>
         """;
+    }
 
     private static Dictionary<string, string> ParseQueryString(string query)
     {

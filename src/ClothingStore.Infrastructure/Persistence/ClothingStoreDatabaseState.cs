@@ -17,6 +17,7 @@ public sealed class ClothingStoreDatabaseState
     public List<Product> Products { get; set; } = [];
     public List<StockMovement> StockMovements { get; set; } = [];
     public StoreSettings StoreSettings { get; set; } = new();
+    public List<PlanActivationCode> PlanActivationCodes { get; set; } = [];
 
     public static ClothingStoreDatabaseState CreateInitialSeed(IPasswordHasher passwordHasher)
     {
@@ -65,7 +66,9 @@ public sealed class ClothingStoreDatabaseState
             storeDescription: "Catálogo digital oficial da loja.",
             logoStoragePath: null,
             logoPublicUrl: null,
-            defaultLowStockThreshold: 3);
+            defaultLowStockThreshold: 3,
+            customSlug: "minha-loja",
+            onlineBaseUrl: "https://lojas.minhaloja.com");
 
         return state;
     }

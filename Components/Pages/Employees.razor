@@ -28,22 +28,21 @@
 {
     <section class="adm-card" style="border-left: 4px solid var(--adm-primary);">
         <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">Novo Funcionário</h2>
+        <div style="margin-bottom: 1rem; padding: 0.75rem 0.9rem; background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 8px; font-size: 0.84rem; color: var(--adm-muted);">
+            🔒 <strong>Privacidade de Senhas:</strong> Administradores cadastram apenas o <strong>usuário</strong> e o <strong>Gmail</strong> do funcionário. O próprio funcionário receberá um código por e-mail para definir ou alterar sua senha.
+        </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
             <div>
                 <label class="adm-label">Nome Completo *</label>
                 <input type="text" class="adm-input" @bind="_newEmployee.FullName" placeholder="Digite o nome completo" />
             </div>
             <div>
-                <label class="adm-label">Login de Acesso (sem precisar de @@)</label>
-                <input type="text" class="adm-input" @bind="_newEmployee.Username" placeholder="Se vazio, gera pelo nome" />
+                <label class="adm-label">Usuário *</label>
+                <input type="text" class="adm-input" @bind="_newEmployee.Username" placeholder="Ex.: maria.vendas" />
             </div>
             <div>
-                <label class="adm-label">E-mail (Opcional)</label>
-                <input type="text" class="adm-input" @bind="_newEmployee.Email" placeholder="Opcional" />
-            </div>
-            <div>
-                <label class="adm-label">Senha Inicial *</label>
-                <input type="password" class="adm-input" @bind="_newEmployee.InitialPassword" placeholder="Digite a senha" />
+                <label class="adm-label">Gmail / E-mail *</label>
+                <input type="email" class="adm-input" @bind="_newEmployee.Email" placeholder="Ex.: maria@gmail.com" />
             </div>
             <div>
                 <label class="adm-label">Nível de Acesso</label>
@@ -100,7 +99,13 @@
                     <td data-label="Funcionário">
                         <div>
                             <div style="font-weight: 800;">@emp.FullName</div>
-                            <div style="font-size: 0.82rem; color: var(--adm-muted);">Login: <strong>@emp.Email</strong></div>
+                            <div style="font-size: 0.82rem; color: var(--adm-muted);">
+                                Usuário: <strong>@emp.EffectiveUsername</strong>
+                                @if (!string.IsNullOrWhiteSpace(emp.Email) && emp.Email.Contains('@'))
+                                {
+                                    <span> &bull; Gmail: <strong>@emp.Email</strong></span>
+                                }
+                            </div>
                         </div>
                     </td>
                     <td data-label="Cargo">@(emp.JobTitle ?? "-")</td>
@@ -198,7 +203,7 @@
             _showNewEmployeeForm = false;
             _newEmployee = new CreateEmployeeRequest { RoleName = "Employee", CanManageStock = true };
             await LoadEmployeesAsync();
-            _success = $"Funcionário '{created.FullName}' cadastrado com sucesso!";
+            _success = $"Funcionário '{created.FullName}' cadastrado! Código enviado ao Gmail '{created.Email}' para ele definir a própria senha.";
         }
         catch (Exception ex)
         {

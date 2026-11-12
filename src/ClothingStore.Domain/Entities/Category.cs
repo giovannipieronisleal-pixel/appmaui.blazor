@@ -58,6 +58,10 @@ public sealed class Category
         clean = Regex.Replace(clean, @"[^a-z0-9\s-]", "");
         clean = Regex.Replace(clean, @"\s+", "-");
         clean = Regex.Replace(clean, @"-+", "-").Trim('-');
+        if (clean.Length > 80)
+        {
+            clean = clean[..80].TrimEnd('-');
+        }
         return string.IsNullOrWhiteSpace(clean) ? Guid.NewGuid().ToString("N")[..8] : clean;
     }
 }

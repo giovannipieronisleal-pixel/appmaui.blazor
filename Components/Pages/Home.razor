@@ -1,6 +1,9 @@
-﻿@page "/"
+@page "/"
 @inject MauiAdminGateway Gateway
 @inject NavigationManager Navigation
+@inject ClothingStore.Application.Services.CatalogService CatalogService
+@inject StoreBrandStateService BrandState
+@implements IDisposable
 
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
     <div>
@@ -72,6 +75,49 @@
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
+        <!-- Visibilidade do Site Público & Plano -->
+        @if (_publicStore is not null)
+        {
+            <section class="adm-card" style="border-left: 4px solid @(_publicStore.IsSiteActive ? "var(--adm-success)" : "var(--adm-danger)");">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.85rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                            <span class="pill-badge @(_publicStore.IsSiteActive ? "pill-green" : "pill-red")">
+                                @(_publicStore.IsSiteActive ? "🟢 Site Público Visível" : "🔴 Site Público Oculto / Pausado")
+                            </span>
+                            <span class="pill-badge @(BrandState.IsPremiumPlan ? "pill-gold" : BrandState.IsIntermediatePlan ? "pill-green" : "pill-slate")">
+                                @BrandState.EffectivePlanTier
+                            </span>
+                        </div>
+                        <p style="margin: 0; font-size: 0.86rem; color: var(--adm-muted);">
+                            @if (_publicStore.IsSiteActive)
+                            {
+                                <span>A vitrine <strong>@_publicStore.StoreName</strong> está aberta para clientes navegarem e pedirem no WhatsApp.</span>
+                            }
+                            else
+                            {
+                                <span>Os clientes veem uma página de loja temporariamente pausada. Reative quando quiser liberar o catálogo.</span>
+                            }
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="/loja/@_publicStore.StoreSlug" class="adm-btn adm-btn-outline">
+                            🌐 Ver como Cliente
+                        </a>
+                        @if (Gateway.IsAdmin)
+                        {
+                            <a href="/planos" class="adm-btn adm-btn-outline">
+                                💎 Planos
+                            </a>
+                            <a href="/configuracoes-loja" class="adm-btn adm-btn-primary">
+                                🌍 Gerenciar Visibilidade
+                            </a>
+                        }
+                    </div>
+                </div>
+            </section>
+        }
+
         <!-- Alertas de Estoque Baixo e Sem Estoque -->
         <section class="adm-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
@@ -200,11 +246,31 @@
 
 @code {
     private DashboardSummaryDto? _summary;
+    private PublicStoreSettingsDto? _publicStore;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadDashboardAsync();
+        Gateway.AuthStateChanged += OnAuthStateChanged;
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadDashboardAsync();
+        }
+    }
+
+    private async void OnAuthStateChanged()
+    {
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadDashboardAsync();
+        }
+        else
+        {
+            _summary = null;
+            _publicStore = null;
+            _error = null;
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadDashboardAsync()
@@ -213,10 +279,20 @@
         try
         {
             _summary = await Gateway.GetDashboardSummaryAsync();
+            _publicStore = await CatalogService.GetPublicStoreSettingsAsync();
+            if (_publicStore is not null)
+            {
+                BrandState.ApplyFromPublicSettings(_publicStore);
+            }
         }
         catch (Exception ex)
         {
             _error = ex.Message;
         }
+    }
+
+    public void Dispose()
+    {
+        Gateway.AuthStateChanged -= OnAuthStateChanged;
     }
 }

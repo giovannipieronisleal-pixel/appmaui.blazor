@@ -1,0 +1,568 @@
+@page "/planos"
+@implements IDisposable
+@inject MauiAdminGateway Gateway
+@inject StoreBrandStateService BrandState
+@inject ClothingStore.Application.Services.CatalogService CatalogService
+@inject NavigationManager Navigation
+
+<PageTitle>Planos &amp; Versões do Site</PageTitle>
+
+@if (!Gateway.IsAuthenticated)
+{
+    <Login />
+}
+else if (_loading)
+{
+    <div class="adm-card">
+        <p style="margin: 0; color: var(--adm-muted);">Carregando planos e versões disponíveis...</p>
+    </div>
+}
+else if (_settings is null)
+{
+    <div class="adm-alert adm-alert-error">@(_error ?? "Não foi possível carregar os dados dos planos.")</div>
+}
+else
+{
+    <div class="adm-page-header">
+        <div>
+            <h1 class="adm-page-title">Planos &amp; Versões do Site</h1>
+            <p class="adm-page-subtitle">
+                Compare os planos da sua vitrine, ative um Gift Card ou troque entre as 5 versões pré-prontas pensadas para o público.
+            </p>
+        </div>
+
+        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+            <a href="/loja/@_settings.StoreSlug" class="adm-btn adm-btn-outline">
+                🌐 Ver Site Público
+            </a>
+            @if (Gateway.IsAdmin)
+            {
+                <a href="/configuracoes-loja" class="adm-btn adm-btn-primary">
+                    ⚙️ Configurações &amp; Estúdio
+                </a>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="adm-alert adm-alert-error">@_error</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <div class="adm-alert adm-alert-success">@_successMessage</div>
+    }
+
+    <!-- Status Atual do Plano -->
+    <section class="adm-card" style="margin-bottom: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+                <div style="display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap;">
+                    <span class="pill-badge @(BrandState.IsPremiumPlan ? "pill-gold" : BrandState.IsIntermediatePlan ? "pill-green" : "pill-slate")">
+                        @GetPlanBadgeLabel()
+                    </span>
+                    <span class="pill-badge @(_settings.IsSiteActive ? "pill-green" : "pill-red")">
+                        @(_settings.IsSiteActive ? "🟢 Site Visível para o Público" : "🔴 Site Pausado / Oculto")
+                    </span>
+                </div>
+                <p style="margin: 0; font-size: 0.9rem; color: var(--adm-muted);">
+                    @GetPlanSummaryText()
+                </p>
+            </div>
+
+            <div style="text-align: right; font-size: 0.84rem; color: var(--adm-muted);">
+                @if (_settings.PlanExpiresAt.HasValue)
+                {
+                    <div>
+                        Validade: <strong style="color: var(--adm-text);">@_settings.PlanExpiresAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong>
+                    </div>
+                }
+                else
+                {
+                    <div>Validade: <strong style="color: var(--adm-text);">Sem expiração</strong></div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_settings.ActiveGiftCardCode))
+                {
+                    <div style="margin-top: 0.2rem;">
+                        Último Gift Card: <strong style="color: var(--adm-text);">@_settings.ActiveGiftCardCode</strong>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparativo dos 3 Planos (clique em qualquer card para contratar/vender o plano) -->
+    <section class="plans-grid" style="margin-bottom: 1.4rem;">
+        <!-- Básico -->
+        <article class="plan-card plan-card-clickable @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "plan-active" : string.Empty)"
+                 role="button"
+                 tabindex="0"
+                 @onclick='() => GoToPlanCheckout(StoreDesignPresets.PlanBasic)'>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                <span class="pill-badge pill-slate">Básico</span>
+                @if (!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan)
+                {
+                    <span class="pill-badge pill-green">Plano Atual</span>
+                }
+            </div>
+            <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Básico</h2>
+            <div class="plan-price">@_settings.BasicPlanMonthlyPrice.ToString("C") <small>/mês</small></div>
+            <p style="margin: 0; font-size: 0.85rem; color: var(--adm-muted);">
+                Visual oficial padrão pensado para leitura simples e compra direta pelo WhatsApp.
+            </p>
+            <ul class="plan-feature-list">
+                <li><strong>1 versão oficial fixa:</strong> Minimalista Luxo</li>
+                <li>Não configurável (visual pronto e equilibrado)</li>
+                <li>Catálogo simples com busca, categorias e estoque real</li>
+                <li>QR Code e botão direto de compra no WhatsApp</li>
+            </ul>
+            <a href="/contratar-plano/@StoreDesignPresets.PlanBasic"
+               class="adm-btn @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "adm-btn-outline" : "adm-btn-primary")"
+               style="margin-top: 0.35rem; text-align: center;"
+               @onclick:stopPropagation="true">
+                @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "Renovar Plano Básico →" : "Contratar Plano Básico →")
+            </a>
+        </article>
+
+        <!-- Intermediário (Meia Versão) -->
+        <article class="plan-card plan-card-clickable plan-popular @(BrandState.IsIntermediatePlan ? "plan-active" : string.Empty)"
+                 role="button"
+                 tabindex="0"
+                 @onclick='() => GoToPlanCheckout(StoreDesignPresets.PlanIntermediate)'>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                <span class="pill-badge pill-green">Meia Versão</span>
+                @if (BrandState.IsIntermediatePlan)
+                {
+                    <span class="pill-badge pill-gold">Plano Atual</span>
+                }
+                else
+                {
+                    <span class="pill-badge pill-slate">5 Versões Prontas</span>
+                }
+            </div>
+            <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Intermediário</h2>
+            <div class="plan-price">@_settings.IntermediaryPlanMonthlyPrice.ToString("C") <small>/mês</small></div>
+            <p style="margin: 0; font-size: 0.85rem; color: var(--adm-muted);">
+                Troque o visual da sua loja entre <strong>5 versões pré-prontas</strong> para combinar com seu público, sem precisar configurar nada.
+            </p>
+            <ul class="plan-feature-list">
+                <li><strong>5 versões de site pré-prontas</strong> (escolha abaixo)</li>
+                <li><strong>Não configurável:</strong> layouts fixos calibrados para o público</li>
+                <li>Troca instantânea com 1 clique sem mexer em código</li>
+                <li>Ideal para destacar a identidade da coleção sem complexidade</li>
+            </ul>
+            <a href="/contratar-plano/@StoreDesignPresets.PlanIntermediate"
+               class="adm-btn @(BrandState.IsIntermediatePlan ? "adm-btn-outline" : "adm-btn-primary")"
+               style="margin-top: 0.35rem; text-align: center;"
+               @onclick:stopPropagation="true">
+                @(BrandState.IsIntermediatePlan ? "Renovar Meia Versão →" : "Contratar Meia Versão →")
+            </a>
+        </article>
+
+        <!-- Premium -->
+        <article class="plan-card plan-card-clickable @(BrandState.IsPremiumPlan ? "plan-active" : string.Empty)"
+                 role="button"
+                 tabindex="0"
+                 @onclick='() => GoToPlanCheckout(StoreDesignPresets.PlanPremium)'>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                <span class="pill-badge pill-gold">✦ Moldável</span>
+                @if (BrandState.IsPremiumPlan)
+                {
+                    <span class="pill-badge pill-green">Plano Atual</span>
+                }
+            </div>
+            <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Premium Sob Medida</h2>
+            <div class="plan-price">@_settings.PremiumPlanMonthlyPrice.ToString("C") <small>/mês</small></div>
+            <p style="margin: 0; font-size: 0.85rem; color: var(--adm-muted);">
+                Liberdade total para moldar cada cor, tipografia, borda, espaçamento e banner no Estúdio Visual.
+            </p>
+            <ul class="plan-feature-list">
+                <li><strong>Todas as 5 versões pré-prontas</strong> como base inicial</li>
+                <li>Estúdio Visual completo: paleta livre, fontes e cantos</li>
+                <li>Texto de destaque, faixa promocional e grade customizáveis</li>
+                <li>Pré-visualização em tempo real antes de publicar ao público</li>
+            </ul>
+            <div style="display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.35rem;">
+                @if (Gateway.IsAdmin && BrandState.IsPremiumPlan)
+                {
+                    <a href="/configuracoes-loja"
+                       class="adm-btn adm-btn-accent"
+                       style="text-align: center;"
+                       @onclick:stopPropagation="true">
+                        ✦ Abrir Estúdio Sob Medida
+                    </a>
+                }
+                <a href="/contratar-plano/@StoreDesignPresets.PlanPremium"
+                   class="adm-btn @(BrandState.IsPremiumPlan ? "adm-btn-outline" : "adm-btn-accent")"
+                   style="text-align: center;"
+                   @onclick:stopPropagation="true">
+                    @(BrandState.IsPremiumPlan ? "Renovar Plano Premium →" : "Contratar Premium Sob Medida →")
+                </a>
+            </div>
+        </article>
+    </section>
+
+    <!-- As 5 Versões Pré-Prontas de Site -->
+    <section class="adm-card" style="margin-bottom: 1.4rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
+            <div>
+                <h2 style="margin: 0 0 0.25rem 0; font-size: 1.15rem; font-weight: 800;">
+                    5 Versões de Site Pré-Prontas (Meia Versão)
+                </h2>
+                <p style="margin: 0; font-size: 0.87rem; color: var(--adm-muted); max-width: 720px;">
+                    @if (BrandState.IsIntermediatePlan)
+                    {
+                        <span>
+                            Seu plano <strong>Intermediário (Meia Versão)</strong> libera todas as 5 versões pré-prontas abaixo.
+                            Escolha uma delas e clique em aplicar — neste plano os temas não são configuráveis manualmente.
+                        </span>
+                    }
+                    else if (BrandState.IsPremiumPlan)
+                    {
+                        <span>
+                            No plano <strong>Premium</strong> você também pode aplicar qualquer uma das 5 versões prontas aqui com 1 clique ou ajustá-la depois no Estúdio Visual.
+                        </span>
+                    }
+                    else
+                    {
+                        <span>
+                            No <strong>Plano Básico</strong> a loja usa a versão fixa <strong>Minimalista Luxo</strong>. Ative um Gift Card do Plano Intermediário ou Premium abaixo para desbloquear todas as 5 versões.
+                        </span>
+                    }
+                </p>
+            </div>
+
+            @if (Gateway.IsAdmin && (BrandState.IsIntermediatePlan || BrandState.IsPremiumPlan))
+            {
+                <button type="button"
+                        class="adm-btn adm-btn-primary"
+                        disabled="@_savingPreset"
+                        @onclick="ApplySelectedVersionAsync">
+                    @(_savingPreset ? "Aplicando versão..." : "✓ Aplicar Versão Escolhida no Site")
+                </button>
+            }
+        </div>
+
+        <div class="version-showcase-grid">
+            @foreach (var preset in StoreDesignPresets.All)
+            {
+                var isLockedForBasic = !BrandState.IsIntermediatePlan &&
+                                       !BrandState.IsPremiumPlan &&
+                                       !string.Equals(preset.Key, "minimalista-luxo", StringComparison.OrdinalIgnoreCase);
+                var isSelected = string.Equals(_selectedPresetKey, preset.Key, StringComparison.OrdinalIgnoreCase);
+                var isActiveLive = string.Equals(_activePresetKey, preset.Key, StringComparison.OrdinalIgnoreCase);
+
+                <button type="button"
+                        class="version-showcase-card @(isSelected ? "active" : string.Empty)"
+                        disabled="@(!Gateway.IsAdmin || isLockedForBasic || _savingPreset)"
+                        @onclick="() => SelectPreset(preset.Key)">
+                    <div class="version-mini-bar" style="background: @preset.Design.BackgroundColor;">
+                        <div style="height: 16px; background: @preset.Design.PrimaryColor; display: flex; align-items: center; justify-content: space-between; padding: 0 0.5rem;">
+                            <span style="width: 36px; height: 4px; border-radius: 2px; background: @preset.Design.PrimaryTextColor; opacity: 0.9;"></span>
+                            <span style="width: 14px; height: 4px; border-radius: 2px; background: @preset.Design.AccentColor;"></span>
+                        </div>
+                        <div style="flex: 1; padding: 0.4rem 0.55rem; display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;">
+                            <div style="display: flex; flex-direction: column; gap: 0.22rem;">
+                                <span style="width: 72px; height: 5px; border-radius: 2px; background: @preset.Design.TextColor; opacity: 0.85;"></span>
+                                <span style="width: 48px; height: 4px; border-radius: 2px; background: @preset.Design.MutedTextColor; opacity: 0.55;"></span>
+                            </div>
+                            <span style="padding: 0.16rem 0.45rem; border-radius: 4px; background: @preset.Design.SurfaceColor; border: 1px solid @preset.Design.BorderColor; font-size: 0.65rem; font-weight: 700; color: @preset.Design.TextColor;">
+                                Ver Look
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+                        <strong style="font-size: 0.96rem;">@preset.Name</strong>
+                        @if (isActiveLive)
+                        {
+                            <span class="pill-badge pill-green">Em uso no site</span>
+                        }
+                        else if (isLockedForBasic)
+                        {
+                            <span class="pill-badge pill-slate">🔒 Meia Versão+</span>
+                        }
+                        else if (isSelected)
+                        {
+                            <span class="pill-badge pill-gold">Selecionada</span>
+                        }
+                    </div>
+
+                    <div style="font-size: 0.82rem; color: var(--adm-muted); line-height: 1.4;">
+                        @preset.Tagline
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(preset.AudienceHint))
+                    {
+                        <div style="font-size: 0.77rem; color: var(--adm-text); opacity: 0.86;">
+                            👥 @preset.AudienceHint
+                        </div>
+                    }
+                </button>
+            }
+        </div>
+    </section>
+
+    <!-- Resgate de Gift Card & Upgrade via Pix -->
+    <section class="adm-card">
+        <h2 style="margin: 0 0 0.35rem 0; font-size: 1.12rem; font-weight: 800;">
+            Ativar Plano ou Upgrade com Gift Card
+        </h2>
+        <p style="margin: 0 0 1rem 0; font-size: 0.86rem; color: var(--adm-muted);">
+            Solicite seu código de ativação (<code>LUXO-BASC-...</code>, <code>LUXO-INTR-...</code> ou <code>LUXO-PREM-...</code>) via Pix
+            <strong style="color: var(--adm-text);">@_settings.PicpayPixKey</strong> e resgate aqui na hora.
+        </p>
+
+        @if (!Gateway.IsAdmin)
+        {
+            <div class="adm-alert adm-alert-error" style="margin: 0;">
+                Apenas o administrador da loja pode trocar o plano ou alterar a versão do site.
+            </div>
+        }
+        else
+        {
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+                <div style="flex: 1; min-width: 240px;">
+                    <label class="adm-label" for="plan-giftcard-input">Código do Gift Card</label>
+                    <input id="plan-giftcard-input"
+                           class="adm-input"
+                           placeholder="Ex.: LUXO-INTR-30D-ABCD1234"
+                           @bind="_giftCardCode" />
+                </div>
+                <button type="button"
+                        class="adm-btn adm-btn-accent"
+                        disabled="@(_redeemingCode || string.IsNullOrWhiteSpace(_giftCardCode))"
+                        @onclick="RedeemGiftCardAsync">
+                    @(_redeemingCode ? "Validando código..." : "🎟️ Ativar Gift Card")
+                </button>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private AdminStoreSettingsDto? _settings;
+    private bool _loading = true;
+    private bool _savingPreset;
+    private bool _redeemingCode;
+    private string _selectedPresetKey = "minimalista-luxo";
+    private string _activePresetKey = "minimalista-luxo";
+    private string _giftCardCode = string.Empty;
+    private string? _error;
+    private string? _successMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Gateway.AuthStateChanged += OnAuthStateChanged;
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async void OnAuthStateChanged()
+    {
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _settings = null;
+            _loading = false;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            if (Gateway.IsAdmin)
+            {
+                _settings = await Gateway.GetStoreSettingsAsync();
+                BrandState.ApplyFromAdminSettings(_settings);
+            }
+            else
+            {
+                var pub = await CatalogService.GetPublicStoreSettingsAsync();
+                _settings = new AdminStoreSettingsDto(
+                    Guid.Empty,
+                    pub.StoreName,
+                    pub.StoreSlug,
+                    pub.WhatsappNumber,
+                    pub.StoreDescription,
+                    null,
+                    pub.LogoPublicUrl,
+                    3,
+                    pub.UpdatedAt,
+                    pub.OnlineBaseUrl,
+                    pub.AutoSyncOnlineOnSave,
+                    pub.LastOnlineSyncAt,
+                    pub.IsSiteActive,
+                    pub.DeactivationReason,
+                    pub.LastActivityAt,
+                    pub.StoreName,
+                    pub.PlanTier,
+                    49.90m,
+                    129.90m,
+                    "picpay.me/sua-conta",
+                    pub.Design,
+                    pub.PlanActivatedAt,
+                    null,
+                    null,
+                    89.90m);
+                BrandState.ApplyFromPublicSettings(pub);
+            }
+
+            var currentPreset = _settings.Design?.PresetKey;
+            _activePresetKey = StoreDesignPresets.ResolveByPresetKey(currentPreset).PresetKey;
+            _selectedPresetKey = _activePresetKey;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void GoToPlanCheckout(string planTier)
+    {
+        Navigation.NavigateTo($"/contratar-plano/{planTier}");
+    }
+
+    private void SelectPreset(string presetKey)
+    {
+        _selectedPresetKey = presetKey;
+        _successMessage = null;
+        _error = null;
+    }
+
+    private async Task ApplySelectedVersionAsync()
+    {
+        if (_settings is null || !Gateway.IsAdmin)
+            return;
+
+        if (!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan)
+        {
+            _error = "Para usar as outras versões pré-prontas, ative um Gift Card do Plano Intermediário (Meia Versão) ou Premium.";
+            return;
+        }
+
+        _savingPreset = true;
+        _error = null;
+        _successMessage = null;
+
+        try
+        {
+            var chosenPreset = StoreDesignPresets.All.FirstOrDefault(p =>
+                string.Equals(p.Key, _selectedPresetKey, StringComparison.OrdinalIgnoreCase))
+                ?? StoreDesignPresets.All[0];
+
+            var req = BuildUpdateRequest(_settings, chosenPreset.Design.Clone());
+            var updated = await Gateway.UpdateStoreSettingsAsync(req);
+
+            _settings = updated;
+            BrandState.ApplyFromAdminSettings(updated);
+            _activePresetKey = StoreDesignPresets.ResolveByPresetKey(updated.Design?.PresetKey).PresetKey;
+            _selectedPresetKey = _activePresetKey;
+            _successMessage = $"Versão '{chosenPreset.Name}' aplicada! Seus clientes já veem essa identidade no site público.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingPreset = false;
+        }
+    }
+
+    private async Task RedeemGiftCardAsync()
+    {
+        if (!Gateway.IsAdmin || string.IsNullOrWhiteSpace(_giftCardCode))
+            return;
+
+        _redeemingCode = true;
+        _error = null;
+        _successMessage = null;
+
+        try
+        {
+            var response = await Gateway.RedeemActivationCodeAsync(new RedeemActivationCodeRequest
+            {
+                Code = _giftCardCode.Trim()
+            });
+
+            _settings = response.UpdatedSettings;
+            BrandState.ApplyFromAdminSettings(response.UpdatedSettings);
+            _activePresetKey = StoreDesignPresets.ResolveByPresetKey(_settings.Design?.PresetKey).PresetKey;
+            _selectedPresetKey = _activePresetKey;
+            _giftCardCode = string.Empty;
+            _successMessage = response.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _redeemingCode = false;
+        }
+    }
+
+    private static UpdateStoreSettingsRequest BuildUpdateRequest(AdminStoreSettingsDto current, StoreDesignDto design) => new()
+    {
+        StoreName = current.StoreName,
+        StoreSlug = current.StoreSlug,
+        WhatsappNumber = current.WhatsappNumber,
+        StoreDescription = current.StoreDescription,
+        LogoPublicUrl = current.LogoPublicUrl,
+        DefaultLowStockThreshold = current.DefaultLowStockThreshold,
+        OnlineBaseUrl = current.OnlineBaseUrl,
+        AutoSyncOnlineOnSave = current.AutoSyncOnlineOnSave,
+        LastOnlineSyncAt = current.LastOnlineSyncAt,
+        IsSiteActive = current.IsSiteActive,
+        DeactivationReason = current.DeactivationReason,
+        LastActivityAt = current.LastActivityAt,
+        PublishedStoreName = current.PublishedStoreName,
+        PlanTier = current.PlanTier,
+        BasicPlanMonthlyPrice = current.BasicPlanMonthlyPrice,
+        IntermediaryPlanMonthlyPrice = current.IntermediaryPlanMonthlyPrice,
+        PremiumPlanMonthlyPrice = current.PremiumPlanMonthlyPrice,
+        PicpayPixKey = current.PicpayPixKey,
+        Design = design
+    };
+
+    private string GetPlanBadgeLabel() =>
+        BrandState.IsPremiumPlan
+            ? "✦ Plano Premium Sob Medida"
+            : BrandState.IsIntermediatePlan
+                ? "◈ Plano Intermediário (Meia Versão)"
+                : "Plano Básico · Minimalista Luxo";
+
+    private string GetPlanSummaryText()
+    {
+        if (BrandState.IsPremiumPlan)
+            return "Você tem acesso completo às 5 versões pré-prontas e ao Estúdio Visual Sob Medida.";
+        if (BrandState.IsIntermediatePlan)
+            return "Você pode alternar livremente entre 5 versões de site pré-prontas, sem configuração complexa.";
+        return "Sua loja opera com o layout fixo Minimalista Luxo, pensado para compras rápidas e diretas.";
+    }
+
+    public void Dispose()
+    {
+        Gateway.AuthStateChanged -= OnAuthStateChanged;
+    }
+}

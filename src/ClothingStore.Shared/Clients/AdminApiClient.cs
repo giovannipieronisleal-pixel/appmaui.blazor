@@ -365,6 +365,21 @@ public sealed class AdminApiClient
         await EnsureSuccessOrThrowAsync(response, ct);
     }
 
+    public async Task<CheckDomainAvailabilityResponse> CheckDomainAvailabilityAsync(string domain, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/cloud/check-domain", new CheckDomainAvailabilityRequest { Domain = domain }, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<CheckDomainAvailabilityResponse>(cancellationToken: ct))!;
+    }
+
+    // Ativação de Plano via Código Gift Card
+    public async Task<RedeemActivationCodeResponse> RedeemActivationCodeAsync(RedeemActivationCodeRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/settings/redeem-code", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<RedeemActivationCodeResponse>(cancellationToken: ct))!;
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)
     {
         if (response.IsSuccessStatusCode)

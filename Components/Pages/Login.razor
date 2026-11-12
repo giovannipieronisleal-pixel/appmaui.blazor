@@ -4,9 +4,9 @@
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
 
-<div class="adm-card" style="padding: 2.2rem; box-shadow: 0 20px 45px rgba(0,0,0,0.35); max-width: 490px; margin: 0 auto; border-radius: 16px;">
+<div class="adm-card" style="padding: 1.85rem 1.6rem; box-shadow: 0 20px 45px rgba(0,0,0,0.35); max-width: 490px; margin: 0 auto; border-radius: 16px;">
     <!-- Cabeçalho -->
-    <div style="text-align: center; margin-bottom: 1.5rem;">
+    <div style="text-align: center; margin-bottom: 1.25rem;">
         <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--adm-accent);">
             @_storeName &bull; Sistema Oficial
         </div>
@@ -19,6 +19,16 @@
             </h1>
             <p style="font-size: 0.86rem; color: var(--adm-muted); margin: 0;">
                 Sua conta está protegida. Digite o código de 6 dígitos gerado pelo app autenticador.
+            </p>
+        }
+        else if (_activeTab == "forgot")
+        {
+            <div style="font-size: 2.3rem; margin: 0.5rem 0 0.2rem;">📧</div>
+            <h1 style="font-size: 1.55rem; font-weight: 800; margin: 0.25rem 0; color: var(--adm-text);">
+                Alterar Senha via Gmail
+            </h1>
+            <p style="font-size: 0.86rem; color: var(--adm-muted); margin: 0;">
+                Apenas você pode definir ou alterar sua senha com o código enviado ao seu Gmail cadastrado.
             </p>
         }
         else if (_activeTab == "register")
@@ -91,6 +101,7 @@
                        style="font-size: 1.6rem; text-align: center; letter-spacing: 0.35em; font-weight: 800; font-family: monospace;"
                        maxlength="9"
                        @bind="_twoFactorCode"
+                       @onkeydown="Handle2FaKeyDown"
                        placeholder="000000"
                        autocomplete="one-time-code" />
                 <span style="font-size: 0.75rem; color: var(--adm-muted); text-align: center; display: block; margin-top: 0.35rem;">
@@ -119,26 +130,99 @@
             </button>
         </div>
     }
-    <!-- TELA 2: FORMULÁRIO DE CADASTRO (JANELA INICIAL PADRÃO) -->
+    else if (_activeTab == "forgot")
+    {
+        @* TELA 2B: REDEFINIÇÃO DE SENHA EXCLUSIVA VIA GMAIL *@
+        <div style="display: flex; flex-direction: column; gap: 0.95rem;">
+            <div>
+                <label class="adm-label">Seu Usuário ou Gmail *</label>
+                <div style="display: flex; gap: 0.45rem;">
+                    <input type="text"
+                           class="adm-input"
+                           @bind="_forgotLoginOrEmail"
+                           placeholder="Ex.: seu.usuario ou seu.email@gmail.com" />
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="white-space: nowrap; font-weight: 700; border-color: var(--adm-accent);"
+                            disabled="@_isBusy"
+                            @onclick="HandleSendForgotCodeAsync">
+                        @(_isBusy ? "Enviando..." : "📧 Enviar Código")
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <label class="adm-label">Código Recebido no Gmail (6 dígitos) *</label>
+                <input type="text"
+                       class="adm-input"
+                       @bind="_forgotCode"
+                       placeholder="Ex.: 123456"
+                       maxlength="10" />
+            </div>
+
+            <div>
+                <label class="adm-label">Nova Senha (mínimo 4 caracteres) *</label>
+                <input type="password"
+                       class="adm-input"
+                       @bind="_forgotNewPassword"
+                       placeholder="Digite sua nova senha" />
+            </div>
+
+            <div>
+                <label class="adm-label">Confirmar Nova Senha *</label>
+                <input type="password"
+                       class="adm-input"
+                       @bind="_forgotConfirmPassword"
+                       placeholder="Repita a nova senha" />
+            </div>
+
+            <button type="button"
+                    class="adm-btn adm-btn-primary"
+                    style="width: 100%; padding: 0.85rem; font-weight: 700;"
+                    disabled="@_isBusy"
+                    @onclick="HandleConfirmForgotResetAsync">
+                @(_isBusy ? "Atualizando..." : "🔑 Confirmar Código e Alterar Senha")
+            </button>
+
+            <button type="button"
+                    class="adm-btn adm-btn-outline"
+                    style="width: 100%; padding: 0.65rem;"
+                    @onclick='() => SwitchTab("login")'>
+                ← Voltar para o Login
+            </button>
+        </div>
+    }
     else if (_activeTab == "register")
     {
+        @* TELA 2: FORMULÁRIO DE CADASTRO (JANELA INICIAL PADRÃO) *@
         <div style="display: flex; flex-direction: column; gap: 0.95rem;">
             <div>
                 <label class="adm-label">Seu Nome Completo *</label>
                 <input type="text"
                        class="adm-input"
                        @bind="_regFullName"
-                       placeholder="Ex.: Flávia Santos" />
+                       @onkeydown="HandleRegisterKeyDown"
+                       placeholder="Ex.: Marina Costa" />
             </div>
 
             <div>
-                <label class="adm-label">Seu Usuário ou E-mail *</label>
+                <label class="adm-label">Seu Nome de Usuário *</label>
                 <input type="text"
                        class="adm-input"
+                       @bind="_regUsername"
+                       @onkeydown="HandleRegisterKeyDown"
+                       placeholder="Ex.: marina" />
+            </div>
+
+            <div>
+                <label class="adm-label">Seu Gmail / E-mail *</label>
+                <input type="email"
+                       class="adm-input"
                        @bind="_regEmail"
-                       placeholder="Ex.: flavia ou flavia@gmail.com" />
+                       @onkeydown="HandleRegisterKeyDown"
+                       placeholder="Ex.: seu.email@gmail.com" />
                 <span style="font-size: 0.75rem; color: var(--adm-muted);">
-                    Você poderá usar tanto o usuário quanto o e-mail para fazer login.
+                    Obrigatório para que somente você possa alterar sua senha pelo e-mail.
                 </span>
             </div>
 
@@ -147,6 +231,7 @@
                 <input type="password"
                        class="adm-input"
                        @bind="_regPassword"
+                       @onkeydown="HandleRegisterKeyDown"
                        placeholder="Crie uma senha de acesso" />
             </div>
 
@@ -155,6 +240,7 @@
                 <input type="password"
                        class="adm-input"
                        @bind="_regConfirmPassword"
+                       @onkeydown="HandleRegisterKeyDown"
                        placeholder="Repita a mesma senha" />
             </div>
 
@@ -183,16 +269,30 @@
             </div>
         </div>
     }
-    <!-- TELA 3: FORMULÁRIO DE LOGIN -->
     else
     {
-        <div style="display: flex; flex-direction: column; gap: 1rem;">
+        @* TELA 3: FORMULÁRIO DE LOGIN *@
+        <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+            <!-- Cartãozinho de Dica com Acesso Rápido -->
+            <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); border-radius: var(--brand-radius-card); padding: 0.65rem 0.85rem; font-size: 0.82rem; color: var(--adm-text); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                <div>
+                    🔑 <strong>Admin Padrão:</strong> <code>admin</code> / <code>admin</code>
+                </div>
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        style="padding: 0.2rem 0.6rem; font-size: 0.76rem; border-color: var(--adm-accent); white-space: nowrap;"
+                        @onclick="FillAdminCredentials">
+                    Preencher
+                </button>
+            </div>
+
             <div>
                 <label class="adm-label">Usuário ou E-mail *</label>
                 <input type="text"
                        class="adm-input"
                        autocomplete="username"
                        @bind="_login"
+                       @onkeydown="HandleLoginKeyDown"
                        placeholder="admin, seu-usuario ou seu@email.com" />
             </div>
 
@@ -203,6 +303,7 @@
                            class="adm-input"
                            autocomplete="current-password"
                            @bind="_password"
+                           @onkeydown="HandleLoginKeyDown"
                            placeholder="Digite sua senha" />
                     <button type="button"
                             class="adm-btn adm-btn-outline"
@@ -225,6 +326,13 @@
                     disabled="@_isBusy"
                     @onclick="HandleLoginAsync">
                 @(_isBusy ? "Entrando..." : "Entrar no Sistema")
+            </button>
+
+            <button type="button"
+                    class="adm-btn adm-btn-outline"
+                    style="width: 100%; padding: 0.6rem; font-size: 0.86rem;"
+                    @onclick='() => SwitchTab("forgot")'>
+                📧 Esqueci minha senha / Alterar pelo Gmail
             </button>
 
             <!-- Botão para ir para a aba de Criar Conta -->
@@ -253,7 +361,7 @@
 @if (_showInitialSetupModal)
 {
     <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.78); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 1rem; backdrop-filter: blur(4px);">
-        <div class="adm-card" style="width: 100%; max-width: 520px; padding: 1.85rem; box-shadow: 0 25px 60px rgba(0,0,0,0.6); border: 2px solid var(--adm-accent); border-radius: 16px; animation: modalPop 0.25s ease-out;">
+        <div class="adm-card" style="width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 1.85rem; box-shadow: 0 25px 60px rgba(0,0,0,0.6); border: 2px solid var(--adm-accent); border-radius: 16px; animation: modalPop 0.25s ease-out;">
             <div style="text-align: center; margin-bottom: 1.25rem;">
                 <div style="font-size: 2.5rem; margin-bottom: 0.25rem;">🎉</div>
                 <h2 style="font-size: 1.45rem; font-weight: 800; margin: 0; color: var(--adm-text);">
@@ -275,7 +383,9 @@
                     <input type="text"
                            class="adm-input"
                            @bind="_initStoreName"
-                           placeholder="Ex.: Flavia Roupas" />
+                           @bind:event="oninput"
+                           @bind:after="SyncInitStoreDomain"
+                           placeholder="Ex.: Minha Loja de Roupas" />
                 </div>
 
                 <div>
@@ -291,10 +401,64 @@
                     <input type="text"
                            class="adm-input"
                            @bind="_initStoreWhatsapp"
-                           placeholder="Ex.: 21975219710" />
+                           placeholder="Ex.: 11999990000" />
                     <span style="font-size: 0.75rem; color: var(--adm-muted);">
                         Pode digitar apenas DDD + número. O código do Brasil (+55) é adicionado automaticamente.
                     </span>
+                </div>
+
+                <!-- Campo de Domínio / Site Oficial no Google Cloud -->
+                <div>
+                    <label class="adm-label">Domínio Desejado para o Site no Google Cloud *</label>
+                    <div style="display: flex; gap: 0.4rem;">
+                        <input type="text"
+                               class="adm-input"
+                               @bind="_initStoreDomain"
+                               placeholder="Ex.: lojas.minhaloja.com" />
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="white-space: nowrap; padding: 0 0.85rem; font-size: 0.82rem; border-color: var(--adm-accent); font-weight: 700;"
+                                disabled="@_isCheckingDomain"
+                                @onclick="CheckDomainInSetupAsync">
+                            @(_isCheckingDomain ? "Consultando..." : "🔍 Verificar")
+                        </button>
+                    </div>
+
+                    @if (_domainCheckResult is not null)
+                    {
+                        <div style="margin-top: 0.5rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_domainCheckResult.IsAvailable ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
+                            <div style="font-weight: 700;">
+                                @(_domainCheckResult.IsAvailable ? "✓ " + _domainCheckResult.Message : "✕ " + _domainCheckResult.Message)
+                            </div>
+                            <div style="font-size: 0.76rem; margin-top: 0.25rem; opacity: 0.95;">
+                                @if (_domainCheckResult.IsAvailable)
+                                {
+                                    <div>Endereço que será ativado: <strong>@_domainCheckResult.NormalizedUrl</strong></div>
+                                }
+                                else if (_domainCheckResult.Suggestions.Count > 0)
+                                {
+                                    <div style="margin-bottom: 0.2rem;">Sugestões livres no Google Cloud (toque para escolher):</div>
+                                    <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                                        @foreach (var s in _domainCheckResult.Suggestions)
+                                        {
+                                            <button type="button"
+                                                    class="pill-badge pill-blue"
+                                                    style="border: none; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.75rem;"
+                                                    @onclick="() => SelectDomainSuggestion(s)">
+                                                @s
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <span style="font-size: 0.75rem; color: var(--adm-muted);">
+                            Informe o domínio próprio (ex: <code>minhaloja.com.br</code>) ou nome desejado para testar no Google Cloud.
+                        </span>
+                    }
                 </div>
 
                 <div style="margin-top: 0.5rem;">
@@ -341,15 +505,25 @@
 
     // Campos de Cadastro
     private string _regFullName = string.Empty;
+    private string _regUsername = string.Empty;
     private string _regEmail = string.Empty;
     private string _regPassword = string.Empty;
     private string _regConfirmPassword = string.Empty;
 
+    // Redefinição de senha via Gmail
+    private string _forgotLoginOrEmail = string.Empty;
+    private string _forgotCode = string.Empty;
+    private string _forgotNewPassword = string.Empty;
+    private string _forgotConfirmPassword = string.Empty;
+
     // Pop-up Inicial da Loja (Onboarding)
     private bool _showInitialSetupModal;
-    private string _initStoreName = "Flavia Roupas";
+    private string _initStoreName = string.Empty;
     private string _initStoreBio = "Catálogo oficial com novidades e tendências de moda.";
-    private string _initStoreWhatsapp = "21975219710";
+    private string _initStoreWhatsapp = string.Empty;
+    private string _initStoreDomain = string.Empty;
+    private bool _isCheckingDomain;
+    private CheckDomainAvailabilityResponse? _domainCheckResult;
     private string? _setupErrorMessage;
 
     protected override async Task OnInitializedAsync()
@@ -368,6 +542,37 @@
         }
     }
 
+    private void FillAdminCredentials()
+    {
+        _login = "admin";
+        _password = "admin";
+        _errorMessage = null;
+    }
+
+    private async Task HandleLoginKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await HandleLoginAsync();
+        }
+    }
+
+    private async Task HandleRegisterKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await HandleRegisterAsync();
+        }
+    }
+
+    private async Task Handle2FaKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await HandleVerifyTwoFactorAsync();
+        }
+    }
+
     private void SwitchTab(string tab)
     {
         _activeTab = tab;
@@ -382,11 +587,12 @@
         _isBusy = true;
         try
         {
-            var challenge = await Gateway.LoginWithChallengeAsync(new LoginRequest(_login, _password), _rememberMe);
+            var cleanLogin = _login?.Trim() ?? string.Empty;
+            var challenge = await Gateway.LoginWithChallengeAsync(new LoginRequest(cleanLogin, _password), _rememberMe);
             if (challenge.RequiresTwoFactor)
             {
                 _is2FaStep = true;
-                _twoFactorEmail = challenge.TempSessionEmail ?? _login;
+                _twoFactorEmail = challenge.TempSessionEmail ?? cleanLogin;
                 _twoFactorCode = string.Empty;
                 return;
             }
@@ -440,9 +646,15 @@
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_regEmail))
+        if (string.IsNullOrWhiteSpace(_regUsername))
         {
-            _errorMessage = "Informe um usuário ou e-mail de acesso válido.";
+            _errorMessage = "Informe seu nome de usuário (ex.: seu.usuario).";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_regEmail) || !_regEmail.Contains('@', StringComparison.Ordinal))
+        {
+            _errorMessage = "Informe um endereço Gmail/e-mail válido (com @) para proteger sua recuperação de senha.";
             return;
         }
 
@@ -464,7 +676,8 @@
             await Gateway.RegisterUserAccountAsync(new RegisterUserAccountRequest(
                 _regFullName.Trim(),
                 _regEmail.Trim(),
-                _regPassword));
+                _regPassword,
+                Username: _regUsername.Trim()));
 
             // Conta criada com sucesso! Abre o pop-up de configuração inicial da loja
             _showInitialSetupModal = true;
@@ -477,6 +690,120 @@
         {
             _isBusy = false;
         }
+    }
+
+    private async Task HandleSendForgotCodeAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        if (string.IsNullOrWhiteSpace(_forgotLoginOrEmail))
+        {
+            _errorMessage = "Informe seu usuário ou Gmail cadastrado.";
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            var resp = await Gateway.ForgotPasswordAsync(new ForgotPasswordRequest(_forgotLoginOrEmail.Trim()));
+            _successMessage = "📧 " + resp.Message;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task HandleConfirmForgotResetAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_forgotLoginOrEmail) || string.IsNullOrWhiteSpace(_forgotCode))
+        {
+            _errorMessage = "Informe seu usuário/Gmail e o código de 6 dígitos recebido no e-mail.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_forgotNewPassword) || _forgotNewPassword.Length < 4)
+        {
+            _errorMessage = "A nova senha deve ter no mínimo 4 caracteres.";
+            return;
+        }
+
+        if (_forgotNewPassword != _forgotConfirmPassword)
+        {
+            _errorMessage = "As senhas digitadas não conferem.";
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            await Gateway.ResetPasswordAsync(new ResetPasswordRequest(
+                _forgotLoginOrEmail.Trim(),
+                _forgotCode.Trim(),
+                _forgotNewPassword));
+
+            _login = _forgotLoginOrEmail.Trim();
+            _password = string.Empty;
+            _forgotCode = string.Empty;
+            _forgotNewPassword = string.Empty;
+            _forgotConfirmPassword = string.Empty;
+            _activeTab = "login";
+            _successMessage = "✓ Senha alterada com sucesso! Agora entre com sua nova senha.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CheckDomainInSetupAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_initStoreDomain))
+            return;
+
+        _isCheckingDomain = true;
+        _setupErrorMessage = null;
+        try
+        {
+            _domainCheckResult = await Gateway.CheckDomainAvailabilityAsync(_initStoreDomain.Trim());
+            if (_domainCheckResult is not null && !string.IsNullOrWhiteSpace(_domainCheckResult.Domain))
+            {
+                _initStoreDomain = _domainCheckResult.Domain;
+            }
+        }
+        catch (Exception ex)
+        {
+            _setupErrorMessage = $"Erro ao verificar no Google Cloud: {ex.Message}";
+        }
+        finally
+        {
+            _isCheckingDomain = false;
+        }
+    }
+
+    private void SyncInitStoreDomain()
+    {
+        if (string.IsNullOrWhiteSpace(_initStoreDomain) || _initStoreDomain.StartsWith("lojas."))
+        {
+            _initStoreDomain = WhatsAppLinkBuilder.GenerateDefaultStoreDomain(_initStoreName);
+        }
+    }
+
+    private async Task SelectDomainSuggestion(string suggestion)
+    {
+        _initStoreDomain = suggestion;
+        await CheckDomainInSetupAsync();
     }
 
     private async Task CompleteInitialStoreSetupAsync()
@@ -500,16 +827,25 @@
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_initStoreDomain))
+        {
+            _setupErrorMessage = "Informe o domínio desejado para o site no Google Cloud.";
+            return;
+        }
+
         _isBusy = true;
         try
         {
+            var targetDomainUrl = _domainCheckResult?.NormalizedUrl ??
+                $"https://{_initStoreDomain.Trim().Replace("https://", "").Replace("http://", "").TrimEnd('/')}";
+
             var updateRequest = new UpdateStoreSettingsRequest
             {
                 StoreName = _initStoreName.Trim(),
                 StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_initStoreName),
                 WhatsappNumber = _initStoreWhatsapp.Trim(),
                 StoreDescription = _initStoreBio.Trim(),
-                OnlineBaseUrl = "https://flaviaroupasdigital.com",
+                OnlineBaseUrl = targetDomainUrl,
                 AutoSyncOnlineOnSave = true
             };
 

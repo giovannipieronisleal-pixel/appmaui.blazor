@@ -1,0 +1,608 @@
+@using ClothingStore.Shared.DTOs
+@inject NavigationManager Navigation
+
+<section class="adm-card studio-panel">
+    <div class="studio-header">
+        <div>
+            <span class="studio-eyebrow">
+                @(IsPremium ? "Versão Mais Cara • Design Moldável" : IsIntermediate ? "Meia Versão • 5 Modelos Pré-Prontos" : "Planos de Design do Site")
+            </span>
+            <h2 class="adm-section-title studio-title">
+                @(IsIntermediate ? "5 Versões Pré-Prontas de Vitrine" : "Estúdio Visual Sob Medida")
+            </h2>
+            <p class="studio-subtitle">
+                @if (IsIntermediate)
+                {
+                    <span>Escolha entre 5 identidades visuais prontas para o seu público — simples, rápido e sem configuração manual.</span>
+                }
+                else
+                {
+                    <span>Molde cada detalhe visual do seu catálogo público e do painel administrativo exatamente como sua marca deseja.</span>
+                }
+            </p>
+        </div>
+
+        <span class="pill-badge @(IsPremium ? "pill-gold" : IsIntermediate ? "pill-green" : "pill-slate")">
+            @(IsPremium ? "✦ Plano Premium Ativo" : IsIntermediate ? "◈ Meia Versão (5 Temas)" : "🔒 Básico · Tema Fixo")
+        </span>
+    </div>
+
+    @if (!IsPremium && !IsIntermediate)
+    {
+        <div class="studio-locked-banner">
+            <div class="studio-locked-grid">
+                <div>
+                    <div class="studio-tier-comparison">
+                        <div class="studio-tier-box studio-tier-box-clickable"
+                             role="button"
+                             tabindex="0"
+                             @onclick='() => GoToPlanCheckout(StoreDesignPresets.PlanBasic)'>
+                            <div>
+                                <span class="studio-tier-badge">Seu Plano Atual &bull; Básico</span>
+                                <div class="studio-tier-price">@BasicPrice.ToString("C")<span>/mês</span></div>
+                                <p class="studio-tier-desc">
+                                    Utiliza o tema editorial fixo <strong>Minimalista Luxo</strong> com tipografia serifada e paleta alabastro/ouro champagne (não configurável).
+                                </p>
+                            </div>
+                            <span class="studio-tier-cta">Renovar Básico →</span>
+                        </div>
+
+                        <div class="studio-tier-box studio-tier-box-clickable"
+                             style="border-color: rgba(16, 185, 129, 0.45);"
+                             role="button"
+                             tabindex="0"
+                             @onclick='() => GoToPlanCheckout(StoreDesignPresets.PlanIntermediate)'>
+                            <div>
+                                <span class="studio-tier-badge" style="color: var(--adm-success);">Meia Versão &bull; 5 Temas</span>
+                                <div class="studio-tier-price">@IntermediaryPrice.ToString("C")<span>/mês</span></div>
+                                <ul class="studio-feature-list">
+                                    <li>Troque entre <strong>5 versões pré-prontas</strong> para o seu público em 1 clique</li>
+                                    <li>Visual não configurável (pronto para vender sem complexidade)</li>
+                                </ul>
+                            </div>
+                            <span class="studio-tier-cta" style="color: var(--adm-success);">Contratar Meia Versão →</span>
+                        </div>
+
+                        <div class="studio-tier-box studio-tier-box-premium studio-tier-box-clickable"
+                             role="button"
+                             tabindex="0"
+                             @onclick='() => GoToPlanCheckout(StoreDesignPresets.PlanPremium)'>
+                            <div>
+                                <span class="studio-tier-badge">Versão Premium &bull; Moldável</span>
+                                <div class="studio-tier-price">@PremiumPrice.ToString("C")<span>/mês</span></div>
+                                <ul class="studio-feature-list">
+                                    <li>Paleta de cores, fontes e cantos 100% personalizáveis</li>
+                                    <li>Inclui todas as 5 curadorias prontas como ponto de partida</li>
+                                    <li>Layout de vitrine configurável e capa editorial sob medida</li>
+                                </ul>
+                            </div>
+                            <span class="studio-tier-cta">Contratar Premium Sob Medida →</span>
+                        </div>
+                    </div>
+
+                    <div class="studio-locked-actions">
+                        <span class="studio-locked-hint">
+                            🎁 Possui um <strong>Gift Card (Intermediário ou Premium)</strong>? Resgate acima ou na aba <a href="/planos" style="font-weight: 700; color: var(--adm-accent);">Planos</a> para liberar imediatamente.
+                        </span>
+                    </div>
+                </div>
+
+                <div class="studio-mini-stage" style="@StoreDesignCssHelper.BuildInlineStyle(StoreDesignDto.CreateMinimalistaLuxo())">
+                    <div class="mini-header">
+                        <span class="mini-brand">@StoreName</span>
+                        <span class="mini-pill">Minimalista Luxo</span>
+                    </div>
+                    <div class="mini-hero">
+                        <span class="mini-eyebrow">Tema Padrão Ativo</span>
+                        <div class="mini-headline">@StoreName</div>
+                        <p class="mini-copy">Vitrine limpa, elegante e pronta para encantar no Plano Básico.</p>
+                    </div>
+                    <div class="mini-cards">
+                        <div class="mini-card">
+                            <div class="mini-img"></div>
+                            <span class="mini-cat">Alfaiataria</span>
+                            <strong class="mini-name">Blazer Seda Natural</strong>
+                            <span class="mini-price">R$ 590,00</span>
+                        </div>
+                        <div class="mini-card">
+                            <div class="mini-img"></div>
+                            <span class="mini-cat">Vestidos</span>
+                            <strong class="mini-name">Midi Linho Alabastro</strong>
+                            <span class="mini-price">R$ 440,00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (IsIntermediate)
+    {
+        <div class="studio-grid">
+            <div class="studio-controls">
+                <div class="studio-group">
+                    <div class="studio-group-label">Escolha 1 das 5 Versões Pré-Prontas</div>
+                    <p style="margin: 0 0 0.75rem; font-size: 0.84rem; color: var(--adm-muted); line-height: 1.45;">
+                        No plano <strong>Intermediário (Meia Versão)</strong> os temas são pré-prontos e <strong>não configuráveis</strong>, otimizados para leitura simples dos clientes.
+                    </p>
+                    <div class="studio-preset-grid">
+                        @foreach (var preset in StoreDesignPresets.All)
+                        {
+                            var active = string.Equals(Design.PresetKey, preset.Key, StringComparison.OrdinalIgnoreCase);
+                            <button type="button"
+                                    class="studio-preset-card @(active ? "active" : "")"
+                                    @onclick="() => ApplyPresetAsync(preset)">
+                                <div class="studio-preset-top">
+                                    <strong>@preset.Name</strong>
+                                    <span class="studio-dots" aria-hidden="true">
+                                        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="@preset.Design.BackgroundColor" stroke="#999" stroke-width="1" /></svg>
+                                        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="@preset.Design.PrimaryColor" /></svg>
+                                        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="@preset.Design.AccentColor" /></svg>
+                                    </span>
+                                </div>
+                                <span class="studio-preset-tag">@preset.Tagline</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <div style="padding: 0.85rem; border-radius: 8px; border: 1px dashed var(--adm-accent); background: var(--adm-surface-subtle); font-size: 0.82rem; color: var(--adm-muted); display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                    <span>🔒 Edição manual de cores, tipografia, bordas e textos da capa é exclusiva do <strong>Plano Premium (@PremiumPrice.ToString("C")/mês)</strong>.</span>
+                    <button type="button"
+                            class="adm-btn adm-btn-accent"
+                            style="padding: 0.45rem 0.85rem; font-size: 0.8rem;"
+                            @onclick='() => GoToPlanCheckout(StoreDesignPresets.PlanPremium)'>
+                        Contratar Premium →
+                    </button>
+                </div>
+
+                <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+                    <button type="button"
+                            class="adm-btn adm-btn-success"
+                            style="flex: 1; font-weight: 700;"
+                            disabled="@IsSaving"
+                            @onclick="OnSaveDesignRequested">
+                        @(IsSaving ? "Salvando versão..." : "✓ Aplicar Versão Pré-Pronta no Site")
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <div class="studio-mini-stage" style="@StoreDesignCssHelper.BuildInlineStyle(StoreDesignPresets.ResolveByPresetKey(Design.PresetKey))">
+                    <div class="mini-header">
+                        <span class="mini-brand">@StoreName</span>
+                        <span class="mini-pill">WhatsApp</span>
+                    </div>
+                    <div class="mini-hero">
+                        <span class="mini-eyebrow">@StoreDesignPresets.ResolveByPresetKey(Design.PresetKey).PresetKey</span>
+                        <div class="mini-headline">@StoreName</div>
+                        <p class="mini-copy">@(string.IsNullOrWhiteSpace(StoreDescription) ? "Vitrine pré-pronta calibrada para seus clientes." : StoreDescription)</p>
+                        <span class="mini-cta">Explorar Coleção</span>
+                    </div>
+                    <div class="mini-cards">
+                        <div class="mini-card">
+                            <div class="mini-img"></div>
+                            <span class="mini-cat">Alfaiataria</span>
+                            <strong class="mini-name">Blazer Linho</strong>
+                            <span class="mini-price">R$ 590</span>
+                        </div>
+                        <div class="mini-card">
+                            <div class="mini-img"></div>
+                            <span class="mini-cat">Vestidos</span>
+                            <strong class="mini-name">Vestido Seda</strong>
+                            <span class="mini-price">R$ 460</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="studio-grid">
+            <div class="studio-controls">
+                <!-- 1. Curadorias Prontas -->
+                <div class="studio-group">
+                    <div class="studio-group-label">1. Curadoria de Base (1 clique)</div>
+                    <div class="studio-preset-grid">
+                        @foreach (var preset in StoreDesignPresets.All)
+                        {
+                            var active = string.Equals(Design.PresetKey, preset.Key, StringComparison.OrdinalIgnoreCase);
+                            <button type="button"
+                                    class="studio-preset-card @(active ? "active" : "")"
+                                    @onclick="() => ApplyPresetAsync(preset)">
+                                <div class="studio-preset-top">
+                                    <strong>@preset.Name</strong>
+                                    <span class="studio-dots" aria-hidden="true">
+                                        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="@preset.Design.BackgroundColor" stroke="#999" stroke-width="1" /></svg>
+                                        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="@preset.Design.PrimaryColor" /></svg>
+                                        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="@preset.Design.AccentColor" /></svg>
+                                    </span>
+                                </div>
+                                <span>@preset.Tagline</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <!-- 2. Cores Sob Medida -->
+                <div class="studio-group">
+                    <div class="studio-group-label">2. Paleta Cromática Moldável</div>
+                    <div class="studio-color-grid">
+                        <label class="studio-color-item">
+                            <span>Fundo da Vitrine</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.BackgroundColor" @onchange="e => UpdateColor(v => Design.BackgroundColor = v, e)" />
+                                <code>@Design.BackgroundColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Cartões &amp; Caixas</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.SurfaceColor" @onchange="e => UpdateColor(v => Design.SurfaceColor = v, e)" />
+                                <code>@Design.SurfaceColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Superfície Sutil</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.SurfaceSubtleColor" @onchange="e => UpdateColor(v => Design.SurfaceSubtleColor = v, e)" />
+                                <code>@Design.SurfaceSubtleColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Cor Principal (Botões)</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.PrimaryColor" @onchange="e => UpdateColor(v => Design.PrimaryColor = v, e)" />
+                                <code>@Design.PrimaryColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Texto do Botão Principal</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.PrimaryTextColor" @onchange="e => UpdateColor(v => Design.PrimaryTextColor = v, e)" />
+                                <code>@Design.PrimaryTextColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Detalhe / Acento Luxo</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.AccentColor" @onchange="e => UpdateColor(v => Design.AccentColor = v, e)" />
+                                <code>@Design.AccentColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Texto Principal</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.TextColor" @onchange="e => UpdateColor(v => Design.TextColor = v, e)" />
+                                <code>@Design.TextColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Texto Secundário</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.MutedTextColor" @onchange="e => UpdateColor(v => Design.MutedTextColor = v, e)" />
+                                <code>@Design.MutedTextColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Menu Lateral &amp; Banner</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.SidebarColor" @onchange="e => UpdateColor(v => Design.SidebarColor = v, e)" />
+                                <code>@Design.SidebarColor</code>
+                            </div>
+                        </label>
+                        <label class="studio-color-item">
+                            <span>Linhas &amp; Bordas</span>
+                            <div class="studio-color-row">
+                                <input type="color" value="@Design.BorderColor" @onchange="e => UpdateColor(v => Design.BorderColor = v, e)" />
+                                <code>@Design.BorderColor</code>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 3. Tipografia & Forma -->
+                <div class="studio-group">
+                    <div class="studio-group-label">3. Tipografia, Cantos &amp; Vitrine</div>
+                    <div class="studio-two-col">
+                        <div>
+                            <label class="adm-label" for="studio-display-font">Fonte dos Títulos</label>
+                            <select id="studio-display-font" class="adm-select" value="@Design.DisplayFont" @onchange="OnDisplayFontChanged">
+                                @foreach (var font in StoreDesignPresets.DisplayFonts)
+                                {
+                                    <option value="@font">@font</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="adm-label" for="studio-body-font">Fonte dos Textos</label>
+                            <select id="studio-body-font" class="adm-select" value="@Design.BodyFont" @onchange="OnBodyFontChanged">
+                                @foreach (var font in StoreDesignPresets.BodyFonts)
+                                {
+                                    <option value="@font">@font</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="adm-label" for="studio-radius">Formato de Cantos</label>
+                            <select id="studio-radius" class="adm-select" value="@Design.CornerRadiusMode" @onchange="OnRadiusChanged">
+                                <option value="SHARP">Reto Editorial (Vogue)</option>
+                                <option value="ROUND_FOUR">Suave Luxo (Equilibrado)</option>
+                                <option value="ROUND_TWELVE">Arredondado Atelier</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="adm-label" for="studio-density">Respiro / Densidade</label>
+                            <select id="studio-density" class="adm-select" value="@Design.DensityMode" @onchange="OnDensityChanged">
+                                <option value="compact">Compacto (Mais itens)</option>
+                                <option value="balanced">Equilibrado</option>
+                                <option value="airy">Arejado (Editorial Galeria)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="adm-label" for="studio-hero">Composição da Capa (Hero)</label>
+                            <select id="studio-hero" class="adm-select" value="@Design.HeroLayout" @onchange="OnHeroLayoutChanged">
+                                <option value="split">Split Editorial (2 Colunas + Concierge)</option>
+                                <option value="centered">Minimal Center (Centralizado)</option>
+                                <option value="banner">Banner Imersivo (Contraste Escuro)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="adm-label" for="studio-cols">Colunas da Vitrine</label>
+                            <select id="studio-cols" class="adm-select" value="@Design.GridColumns" @onchange="OnGridColsChanged">
+                                <option value="2">2 Colunas (Destaque Grande)</option>
+                                <option value="3">3 Colunas (Padrão Editorial)</option>
+                                <option value="4">4 Colunas (Grade Ampla)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Narrativa Editorial -->
+                <div class="studio-group">
+                    <div class="studio-group-label">4. Chamada Editorial da Capa</div>
+                    <div class="studio-two-col">
+                        <div>
+                            <label class="adm-label" for="studio-eyebrow">Selo / Coleção (Acima do Título)</label>
+                            <input id="studio-eyebrow"
+                                   class="adm-input"
+                                   value="@Design.HeroEyebrow"
+                                   @oninput="OnEyebrowInput"
+                                   placeholder="Ex.: Coleção Inverno 2026" />
+                        </div>
+
+                        <div>
+                            <label class="adm-label" for="studio-headline">Título de Destaque (Opcional)</label>
+                            <input id="studio-headline"
+                                   class="adm-input"
+                                   value="@Design.HeroHeadline"
+                                   @oninput="OnHeadlineInput"
+                                   placeholder="Usa o nome da loja se vazio" />
+                        </div>
+                    </div>
+
+                    <label class="studio-check">
+                        <input type="checkbox" checked="@Design.ShowLookbookBadge" @onchange="OnShowBadgeChanged" />
+                        <span>Exibir selo de coleção acima do título na capa do site</span>
+                    </label>
+                </div>
+
+                <div class="studio-actions-row">
+                    <button type="button" class="adm-btn adm-btn-outline" @onclick="RestoreMinimalistaAsync">
+                        Restaurar Minimalista Luxo
+                    </button>
+
+                    <button type="button"
+                            class="adm-btn adm-btn-primary"
+                            disabled="@IsSaving"
+                            @onclick="() => OnSaveDesignRequested.InvokeAsync()">
+                        @(IsSaving ? "Salvando Design..." : "✦ Aplicar & Salvar Visual no App e Site")
+                    </button>
+                </div>
+            </div>
+
+            <!-- Coluna Direita: Prévia Ao Vivo -->
+            <div class="studio-preview-col">
+                <div class="studio-preview-caption">
+                    <span>Prévia Ao Vivo (App + Site)</span>
+                    <code>@(Design.GridColumns) col &bull; @Design.CornerRadiusMode</code>
+                </div>
+
+                <div class="studio-mini-stage" style="@StoreDesignCssHelper.BuildInlineStyle(Design)">
+                    <div class="mini-header">
+                        <span class="mini-brand">@StoreName</span>
+                        <span class="mini-pill">WhatsApp</span>
+                    </div>
+
+                    <div class="mini-hero @(Design.HeroLayout == "centered" ? "mini-hero-center" : Design.HeroLayout == "banner" ? "mini-hero-banner" : "")">
+                        @if (Design.ShowLookbookBadge)
+                        {
+                            <span class="mini-eyebrow">
+                                @(string.IsNullOrWhiteSpace(Design.HeroEyebrow) ? "Coleção Oficial" : Design.HeroEyebrow)
+                            </span>
+                        }
+                        <div class="mini-headline">
+                            @(string.IsNullOrWhiteSpace(Design.HeroHeadline) ? StoreName : Design.HeroHeadline)
+                        </div>
+                        <p class="mini-copy">
+                            @(string.IsNullOrWhiteSpace(StoreDescription) ? "Curadoria exclusiva moldada exatamente ao estilo da sua marca." : StoreDescription)
+                        </p>
+                        <span class="mini-cta">Explorar Coleção</span>
+                    </div>
+
+                    <div class="mini-cards" style="@($"grid-template-columns: repeat({Math.Clamp(Design.GridColumns, 2, 4)}, minmax(0, 1fr));")">
+                        <div class="mini-card">
+                            <div class="mini-img"></div>
+                            <span class="mini-cat">Alfaiataria</span>
+                            <strong class="mini-name">Blazer Linho</strong>
+                            <span class="mini-price">R$ 590</span>
+                        </div>
+                        <div class="mini-card">
+                            <div class="mini-img"></div>
+                            <span class="mini-cat">Vestidos</span>
+                            <strong class="mini-name">Vestido Seda</strong>
+                            <span class="mini-price">R$ 460</span>
+                        </div>
+                        @if (Design.GridColumns >= 3)
+                        {
+                            <div class="mini-card">
+                                <div class="mini-img"></div>
+                                <span class="mini-cat">Tricot</span>
+                                <strong class="mini-name">Suéter Cashmere</strong>
+                                <span class="mini-price">R$ 380</span>
+                            </div>
+                        }
+                        @if (Design.GridColumns >= 4)
+                        {
+                            <div class="mini-card">
+                                <div class="mini-img"></div>
+                                <span class="mini-cat">Camisas</span>
+                                <strong class="mini-name">Chemise Puro Linho</strong>
+                                <span class="mini-price">R$ 320</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public string PlanTier { get; set; } = StoreDesignPresets.PlanBasic;
+    [Parameter] public DateTimeOffset? PlanExpiresAt { get; set; }
+    [Parameter] public decimal BasicPrice { get; set; } = 49.90m;
+    [Parameter] public decimal IntermediaryPrice { get; set; } = 89.90m;
+    [Parameter] public decimal PremiumPrice { get; set; } = 129.90m;
+    [Parameter, EditorRequired] public StoreDesignDto Design { get; set; } = StoreDesignDto.CreateMinimalistaLuxo();
+    [Parameter] public string StoreName { get; set; } = "Atelier Digital";
+    [Parameter] public string StoreDescription { get; set; } = string.Empty;
+    [Parameter] public EventCallback<StoreDesignDto> OnDesignChanged { get; set; }
+    [Parameter] public EventCallback OnSaveDesignRequested { get; set; }
+    [Parameter] public bool IsSaving { get; set; }
+
+    private string NormalizedPlanTier => StoreDesignPresets.NormalizePlanTier(PlanTier);
+
+    private bool IsLicenseActive => !PlanExpiresAt.HasValue || DateTimeOffset.UtcNow < PlanExpiresAt.Value;
+
+    private bool IsPremium =>
+        string.Equals(NormalizedPlanTier, StoreDesignPresets.PlanPremium, StringComparison.OrdinalIgnoreCase) &&
+        IsLicenseActive;
+
+    private bool IsIntermediate =>
+        string.Equals(NormalizedPlanTier, StoreDesignPresets.PlanIntermediate, StringComparison.OrdinalIgnoreCase) &&
+        IsLicenseActive;
+
+    private Task NotifyChangedAsync() => OnDesignChanged.InvokeAsync(Design);
+
+    private async Task ApplyPresetAsync(StoreDesignPresetOption preset)
+    {
+        var cloned = preset.Design.Clone();
+        Design.PresetKey = cloned.PresetKey;
+        Design.BackgroundColor = cloned.BackgroundColor;
+        Design.SurfaceColor = cloned.SurfaceColor;
+        Design.SurfaceSubtleColor = cloned.SurfaceSubtleColor;
+        Design.PrimaryColor = cloned.PrimaryColor;
+        Design.PrimaryTextColor = cloned.PrimaryTextColor;
+        Design.AccentColor = cloned.AccentColor;
+        Design.TextColor = cloned.TextColor;
+        Design.MutedTextColor = cloned.MutedTextColor;
+        Design.BorderColor = cloned.BorderColor;
+        Design.SidebarColor = cloned.SidebarColor;
+        Design.DisplayFont = cloned.DisplayFont;
+        Design.BodyFont = cloned.BodyFont;
+        Design.CornerRadiusMode = cloned.CornerRadiusMode;
+        Design.DensityMode = cloned.DensityMode;
+        Design.HeroLayout = cloned.HeroLayout;
+        Design.GridColumns = cloned.GridColumns;
+        Design.ShowLookbookBadge = cloned.ShowLookbookBadge;
+        if (IsIntermediate)
+        {
+            Design.HeroEyebrow = null;
+            Design.HeroHeadline = null;
+        }
+        await NotifyChangedAsync();
+    }
+
+    private Task RestoreMinimalistaAsync()
+    {
+        var minimal = StoreDesignPresets.All[0];
+        Design.HeroEyebrow = null;
+        Design.HeroHeadline = null;
+        return ApplyPresetAsync(minimal);
+    }
+
+    private Task UpdateColor(Action<string> assign, ChangeEventArgs e)
+    {
+        if (e.Value is string hex && !string.IsNullOrWhiteSpace(hex))
+        {
+            assign(hex.ToUpperInvariant());
+            Design.PresetKey = "custom";
+        }
+        return NotifyChangedAsync();
+    }
+
+    private Task OnDisplayFontChanged(ChangeEventArgs e)
+    {
+        if (e.Value is string v) Design.DisplayFont = v;
+        return NotifyChangedAsync();
+    }
+
+    private Task OnBodyFontChanged(ChangeEventArgs e)
+    {
+        if (e.Value is string v) Design.BodyFont = v;
+        return NotifyChangedAsync();
+    }
+
+    private Task OnRadiusChanged(ChangeEventArgs e)
+    {
+        if (e.Value is string v) Design.CornerRadiusMode = v;
+        return NotifyChangedAsync();
+    }
+
+    private Task OnDensityChanged(ChangeEventArgs e)
+    {
+        if (e.Value is string v) Design.DensityMode = v;
+        return NotifyChangedAsync();
+    }
+
+    private Task OnHeroLayoutChanged(ChangeEventArgs e)
+    {
+        if (e.Value is string v) Design.HeroLayout = v;
+        return NotifyChangedAsync();
+    }
+
+    private Task OnGridColsChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var cols)) Design.GridColumns = Math.Clamp(cols, 2, 4);
+        return NotifyChangedAsync();
+    }
+
+    private Task OnEyebrowInput(ChangeEventArgs e)
+    {
+        Design.HeroEyebrow = e.Value?.ToString();
+        return NotifyChangedAsync();
+    }
+
+    private Task OnHeadlineInput(ChangeEventArgs e)
+    {
+        Design.HeroHeadline = e.Value?.ToString();
+        return NotifyChangedAsync();
+    }
+
+    private Task OnShowBadgeChanged(ChangeEventArgs e)
+    {
+        if (e.Value is bool b) Design.ShowLookbookBadge = b;
+        return NotifyChangedAsync();
+    }
+
+    private void GoToPlanCheckout(string planTier)
+    {
+        Navigation.NavigateTo($"/contratar-plano/{planTier}");
+    }
+}

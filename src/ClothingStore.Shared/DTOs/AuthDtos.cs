@@ -9,7 +9,7 @@ public sealed record RegisterInitialAdminRequest(
     [Required(ErrorMessage = "Informe seu nome completo.")]
     string FullName,
 
-    [Required(ErrorMessage = "Informe seu login de acesso.")]
+    [Required(ErrorMessage = "Informe seu Gmail ou e-mail.")]
     string Email,
 
     [Required(ErrorMessage = "Informe uma senha.")]
@@ -19,20 +19,22 @@ public sealed record RegisterInitialAdminRequest(
     [Required(ErrorMessage = "Informe o nome da sua loja.")]
     string StoreName,
 
-    string? WhatsappNumber = null);
+    string? WhatsappNumber = null,
+    string? Username = null);
 
 public sealed record RegisterUserAccountRequest(
     [Required(ErrorMessage = "Informe seu nome completo.")]
     string FullName,
 
-    [Required(ErrorMessage = "Informe seu e-mail ou login.")]
+    [Required(ErrorMessage = "Informe seu Gmail ou e-mail.")]
     string Email,
 
     [Required(ErrorMessage = "Informe uma senha.")]
     [MinLength(4, ErrorMessage = "A senha deve ter no mínimo 4 caracteres.")]
     string Password,
 
-    string? Phone = null);
+    string? Phone = null,
+    string? Username = null);
 
 public sealed record LoginRequest(
     [Required(ErrorMessage = "O login é obrigatório.")]
@@ -97,7 +99,8 @@ public sealed record UpdateUserProfileRequest(
     [Required(ErrorMessage = "Informe o e-mail.")]
     string Email,
 
-    string? Phone = null);
+    string? Phone = null,
+    string? Username = null);
 
 public sealed record SetSecurityPinRequest(
     [Required(ErrorMessage = "Informe sua senha atual.")]
@@ -141,7 +144,9 @@ public sealed record EmployeeProfileDto(
     bool CanManageStock,
     bool IsActive,
     bool HasTwoFactorEnabled = false,
-    bool HasSecurityPin = false)
+    bool HasSecurityPin = false,
+    string? Username = null)
 {
     public bool IsAdmin => string.Equals(RoleName, "Admin", StringComparison.OrdinalIgnoreCase);
+    public string EffectiveUsername => !string.IsNullOrWhiteSpace(Username) ? Username : Email;
 }

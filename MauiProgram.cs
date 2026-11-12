@@ -1,4 +1,4 @@
-﻿using appmaui.blazor.Services;
+using appmaui.blazor.Services;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Application.Services;
 using ClothingStore.Infrastructure.Persistence;
@@ -82,6 +82,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<StockManagementService>();
         builder.Services.AddSingleton<EmployeeAndSettingsService>();
         builder.Services.AddSingleton<ThemeService>();
+        builder.Services.AddSingleton<StoreBrandStateService>();
         builder.Services.AddSingleton<GoogleCloudSyncService>();
         builder.Services.AddSingleton<MauiAdminGateway>();
 

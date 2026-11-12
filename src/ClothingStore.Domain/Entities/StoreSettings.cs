@@ -23,6 +23,203 @@ public sealed class StoreSettings
     public Guid? UpdatedByEmployeeId { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    // Regras de Ciclo de Vida do Site (Mudança de Nome e 3 Semanas de Inatividade)
+    public bool IsSiteActive { get; set; } = true;
+    public string? DeactivationReason { get; set; }
+    public DateTimeOffset LastActivityAt { get; set; } = DateTimeOffset.UtcNow;
+    public string? PublishedStoreName { get; set; }
+
+    public const int MaxInactivityDays = 21; // 3 semanas (21 dias) sem movimentação
+
+    // Planos Comerciais e Estúdio Visual Sob Medida (Versão Premium)
+    public const string PlanTierBasic = "Basico";
+    public const string PlanTierIntermediate = "Intermediario";
+    public const string PlanTierPremium = "Premium";
+
+    public string PlanTier { get; set; } = PlanTierBasic;
+    public decimal BasicPlanMonthlyPrice { get; set; } = 49.90m;
+    public decimal IntermediaryPlanMonthlyPrice { get; set; } = 89.90m;
+    public decimal PremiumPlanMonthlyPrice { get; set; } = 129.90m;
+    public string PicpayPixKey { get; set; } = "picpay.me/sua-conta";
+    public DateTimeOffset? PlanActivatedAt { get; set; }
+    public DateTimeOffset? PlanExpiresAt { get; set; }
+    public string? ActiveGiftCardCode { get; set; }
+    public StoreDesignConfig DesignConfig { get; set; } = StoreDesignConfig.CreateMinimalistaLuxo();
+
+    public static string NormalizePlanTier(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return PlanTierBasic;
+
+        var trimmed = candidate.Trim();
+        if (string.Equals(trimmed, PlanTierPremium, StringComparison.OrdinalIgnoreCase))
+            return PlanTierPremium;
+
+        if (string.Equals(trimmed, PlanTierIntermediate, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "Intermediário", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "MeiaVersao", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "Meia Versão", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "Intermediary", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlanTierIntermediate;
+        }
+
+        return PlanTierBasic;
+    }
+
+    public bool IsIntermediatePlan => string.Equals(PlanTier, PlanTierIntermediate, StringComparison.OrdinalIgnoreCase);
+    public bool IsPremiumPlan => string.Equals(PlanTier, PlanTierPremium, StringComparison.OrdinalIgnoreCase);
+
+    public bool IsLicenseActive(DateTimeOffset? now = null) =>
+        !PlanExpiresAt.HasValue || (now ?? DateTimeOffset.UtcNow) < PlanExpiresAt.Value;
+
+    public bool IsEffectiveIntermediatePlan(DateTimeOffset? now = null) =>
+        IsIntermediatePlan && IsLicenseActive(now);
+
+    public bool IsEffectivePremiumPlan(DateTimeOffset? now = null) =>
+        IsPremiumPlan && IsLicenseActive(now);
+
+    public string GetEffectivePlanTier(DateTimeOffset? now = null)
+    {
+        if (IsEffectivePremiumPlan(now))
+            return PlanTierPremium;
+        if (IsEffectiveIntermediatePlan(now))
+            return PlanTierIntermediate;
+        return PlanTierBasic;
+    }
+
+    public decimal GetActivePlanMonthlyPrice() => GetEffectivePlanTier() switch
+    {
+        PlanTierPremium => PremiumPlanMonthlyPrice,
+        PlanTierIntermediate => IntermediaryPlanMonthlyPrice,
+        _ => BasicPlanMonthlyPrice
+    };
+
+    /// <summary>
+    /// Retorna o design efetivo exibido no catálogo público e no aplicativo:
+    /// - Básico (ou licença expirada): Minimalista Luxo fixo (não configurável).
+    /// - Intermediário (Meia Versão): exatamente uma das 5 versões pré-prontas oficiais (não configurável).
+    /// - Premium: design 100% moldável pelo cliente.
+    /// </summary>
+    public StoreDesignConfig GetEffectivePublicDesign(DateTimeOffset? now = null)
+    {
+        return GetEffectivePlanTier(now) switch
+        {
+            PlanTierPremium => (DesignConfig ?? StoreDesignConfig.CreateMinimalistaLuxo()).CreateNormalizedCopy(),
+            PlanTierIntermediate => StoreDesignConfig.CreatePresetByKey(DesignConfig?.PresetKey),
+            _ => StoreDesignConfig.CreateMinimalistaLuxo()
+        };
+    }
+
+    public void RedeemActivationCode(
+        PlanActivationCode activationCode,
+        Guid? employeeId = null,
+        DateTimeOffset? now = null)
+    {
+        ArgumentNullException.ThrowIfNull(activationCode);
+        var current = now ?? DateTimeOffset.UtcNow;
+
+        if (activationCode.IsRevoked)
+            throw new DomainException("Este código Gift Card foi revogado e não pode mais ser utilizado.");
+
+        if (activationCode.IsRedeemed)
+            throw new DomainException("Este código Gift Card já foi resgatado.");
+
+        if (activationCode.CodeExpiresAt.HasValue && current >= activationCode.CodeExpiresAt.Value)
+            throw new DomainException("Este código Gift Card expirou antes do resgate.");
+
+        var normalizedTier = NormalizePlanTier(activationCode.TargetPlanTier);
+
+        var isSameActiveTier = string.Equals(PlanTier, normalizedTier, StringComparison.OrdinalIgnoreCase)
+            && PlanExpiresAt.HasValue
+            && PlanExpiresAt.Value > current;
+
+        DateTimeOffset? nextExpiry;
+        if (!activationCode.DurationDays.HasValue)
+        {
+            nextExpiry = null; // Vitalício
+        }
+        else if (isSameActiveTier)
+        {
+            nextExpiry = PlanExpiresAt!.Value.AddDays(activationCode.DurationDays.Value);
+        }
+        else
+        {
+            nextExpiry = current.AddDays(activationCode.DurationDays.Value);
+        }
+
+        PlanTier = normalizedTier;
+        PlanActivatedAt = current;
+        PlanExpiresAt = nextExpiry;
+        ActiveGiftCardCode = activationCode.Code;
+        IsSiteActive = true;
+        DeactivationReason = null;
+        PublishedStoreName = StoreName;
+        LastActivityAt = current;
+        UpdatedAt = current;
+        UpdatedByEmployeeId = employeeId;
+
+        activationCode.MarkRedeemed(StoreName, employeeId, nextExpiry, current);
+    }
+
+    public void UpdatePlanAndDesign(
+        string? planTier,
+        decimal? basicPlanMonthlyPrice = null,
+        decimal? premiumPlanMonthlyPrice = null,
+        string? picpayPixKey = null,
+        StoreDesignConfig? designConfig = null,
+        Guid? employeeId = null,
+        decimal? intermediaryPlanMonthlyPrice = null)
+    {
+        if (!string.IsNullOrWhiteSpace(planTier))
+        {
+            PlanTier = NormalizePlanTier(planTier);
+        }
+
+        if (basicPlanMonthlyPrice.HasValue)
+        {
+            if (basicPlanMonthlyPrice.Value < 0m)
+                throw new DomainException("O valor mensal do plano Básico não pode ser negativo.");
+            BasicPlanMonthlyPrice = Math.Round(basicPlanMonthlyPrice.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        if (intermediaryPlanMonthlyPrice.HasValue)
+        {
+            if (intermediaryPlanMonthlyPrice.Value < 0m)
+                throw new DomainException("O valor mensal do plano Intermediário não pode ser negativo.");
+            IntermediaryPlanMonthlyPrice = Math.Round(intermediaryPlanMonthlyPrice.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        if (premiumPlanMonthlyPrice.HasValue)
+        {
+            if (premiumPlanMonthlyPrice.Value < 0m)
+                throw new DomainException("O valor mensal do plano Premium não pode ser negativo.");
+            PremiumPlanMonthlyPrice = Math.Round(premiumPlanMonthlyPrice.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        if (!string.IsNullOrWhiteSpace(picpayPixKey))
+        {
+            PicpayPixKey = picpayPixKey.Trim();
+        }
+
+        if (designConfig is not null)
+        {
+            if (IsEffectiveIntermediatePlan())
+            {
+                // Na Meia Versão, preserva eventuais rascunhos Premium anteriores apenas se precisar?
+                // Melhor: aplica diretamente o preset oficial escolhido dentre os 5 (não configurável).
+                DesignConfig = StoreDesignConfig.CreatePresetByKey(designConfig.PresetKey);
+            }
+            else
+            {
+                DesignConfig = designConfig.CreateNormalizedCopy();
+            }
+        }
+
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     public StoreSettings()
     {
     }
@@ -47,8 +244,8 @@ public sealed class StoreSettings
         string storeName,
         string whatsappNumber,
         string storeDescription,
-        int defaultLowStockThreshold,
-        Guid? employeeId,
+        int defaultLowStockThreshold = 5,
+        Guid? employeeId = null,
         string? customSlug = null,
         string? onlineBaseUrl = null,
         bool autoSyncOnlineOnSave = true,
@@ -57,15 +254,34 @@ public sealed class StoreSettings
         if (string.IsNullOrWhiteSpace(storeName))
             throw new DomainException("O nome da loja é obrigatório.");
 
+        if (storeName.Trim().Length > 100)
+            throw new DomainException("O nome da loja deve conter no máximo 100 caracteres.");
+
         if (string.IsNullOrWhiteSpace(storeDescription))
             throw new DomainException("A descrição da loja é obrigatória.");
+
+        if (storeDescription.Trim().Length > 1000)
+            throw new DomainException("A descrição da loja deve conter no máximo 1000 caracteres.");
 
         if (defaultLowStockThreshold < 0)
             throw new DomainException("O limite padrão de estoque baixo não pode ser negativo.");
 
         var sanitizedNumber = SanitizeWhatsappNumber(whatsappNumber);
+        var trimmedName = storeName.Trim();
 
-        StoreName = storeName.Trim();
+        // REGRA DO USUÁRIO: Toda vez que o site mudar de nome, desativa o site do usuário!
+        if (!string.IsNullOrWhiteSpace(PublishedStoreName) &&
+            !string.Equals(PublishedStoreName, trimmedName, StringComparison.OrdinalIgnoreCase))
+        {
+            IsSiteActive = false;
+            DeactivationReason = $"O site foi desativado automaticamente porque o nome da loja mudou de '{PublishedStoreName}' para '{trimmedName}'. Reative o site no aplicativo para colocá-lo no ar novamente.";
+        }
+        else if (string.IsNullOrWhiteSpace(PublishedStoreName))
+        {
+            PublishedStoreName = trimmedName;
+        }
+
+        StoreName = trimmedName;
         StoreSlug = Category.GenerateSlug(string.IsNullOrWhiteSpace(customSlug) ? StoreName : customSlug);
         WhatsappNumber = sanitizedNumber;
         StoreDescription = storeDescription.Trim();
@@ -78,6 +294,55 @@ public sealed class StoreSettings
         }
         UpdatedByEmployeeId = employeeId;
         UpdatedAt = DateTimeOffset.UtcNow;
+        LastActivityAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Verifica a regra de 3 semanas (21 dias) sem movimentação no app ou site.
+    /// Se o período foi ultrapassado, desativa o site automaticamente.
+    /// </summary>
+    public bool CheckAndEnforceInactivity(DateTimeOffset? now = null)
+    {
+        var current = now ?? DateTimeOffset.UtcNow;
+        if (IsSiteActive && (current - LastActivityAt).TotalDays >= MaxInactivityDays)
+        {
+            IsSiteActive = false;
+            DeactivationReason = "O site foi desativado automaticamente após 3 semanas (21 dias) sem movimentação no aplicativo ou no catálogo.";
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Registra movimentação no aplicativo ou catálogo (vendas, estoque, produtos, login).
+    /// </summary>
+    public void RecordActivity()
+    {
+        LastActivityAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Reativa e publica o site do usuário.
+    /// </summary>
+    public void ActivateSite(Guid? employeeId = null)
+    {
+        IsSiteActive = true;
+        DeactivationReason = null;
+        PublishedStoreName = StoreName;
+        LastActivityAt = DateTimeOffset.UtcNow;
+        UpdatedAt = DateTimeOffset.UtcNow;
+        UpdatedByEmployeeId = employeeId;
+    }
+
+    /// <summary>
+    /// Desativa o site do usuário com um motivo específico.
+    /// </summary>
+    public void DeactivateSite(string reason, Guid? employeeId = null)
+    {
+        IsSiteActive = false;
+        DeactivationReason = reason;
+        UpdatedAt = DateTimeOffset.UtcNow;
+        UpdatedByEmployeeId = employeeId;
     }
 
     public void SetLogo(string? storagePath, string? publicUrl, Guid? employeeId)
@@ -95,8 +360,9 @@ public sealed class StoreSettings
 
         var digitsOnly = Regex.Replace(rawNumber, @"\D", "");
 
-        // Se o usuário informar apenas DDD + Telefone (10 ou 11 dígitos, ex.: 21975219710), adiciona o DDI do Brasil (55) automaticamente
-        if ((digitsOnly.Length == 10 || digitsOnly.Length == 11) && !digitsOnly.StartsWith("55"))
+        // Se o usuário informar apenas DDD + Telefone (10 ou 11 dígitos, ex.: 11999990000 ou 55991234567 do RS),
+        // adiciona o DDI do Brasil (55) automaticamente
+        if (digitsOnly.Length == 10 || digitsOnly.Length == 11)
         {
             digitsOnly = "55" + digitsOnly;
         }
@@ -113,11 +379,30 @@ public sealed class StoreSettings
     /// </summary>
     public string BuildStoreCatalogUrl(string? baseSiteUrl = null)
     {
-        var cleanBase = !string.IsNullOrWhiteSpace(OnlineBaseUrl)
+        var targetBase = !string.IsNullOrWhiteSpace(OnlineBaseUrl)
             ? OnlineBaseUrl.TrimEnd('/')
             : (string.IsNullOrWhiteSpace(baseSiteUrl) ? "http://localhost:5190" : baseSiteUrl.TrimEnd('/'));
+
         var slug = string.IsNullOrWhiteSpace(StoreSlug) ? Category.GenerateSlug(StoreName) : StoreSlug;
-        return $"{cleanBase}/loja/{slug}";
+
+        var uriText = targetBase.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                      targetBase.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? targetBase
+            : $"https://{targetBase}";
+
+        if (Uri.TryCreate(uriText, UriKind.Absolute, out var uri))
+        {
+            var host = uri.Host.ToLowerInvariant();
+            if (host is "localhost" or "127.0.0.1" || host.EndsWith(".run.app", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{targetBase}/loja/{slug}";
+            }
+
+            // Para domínio próprio oficial do lojista (ex.: https://minhalojadigital.com):
+            return targetBase;
+        }
+
+        return $"{targetBase}/loja/{slug}";
     }
 
     /// <summary>
@@ -151,5 +436,211 @@ public sealed class StoreSettings
         }
 
         return $"Olá! Tenho interesse no produto {cleanProduct}. Gostaria de saber mais informações.";
+    }
+}
+
+/// <summary>
+/// Configuração visual moldável do aplicativo e do catálogo público (desbloqueada no Plano Premium).
+/// </summary>
+public sealed partial class StoreDesignConfig
+{
+    public string PresetKey { get; set; } = "minimalista-luxo";
+    public string BackgroundColor { get; set; } = "#FAF8F5";
+    public string SurfaceColor { get; set; } = "#FFFFFF";
+    public string SurfaceSubtleColor { get; set; } = "#F3EFE8";
+    public string PrimaryColor { get; set; } = "#18181B";
+    public string PrimaryTextColor { get; set; } = "#FAF8F5";
+    public string AccentColor { get; set; } = "#B69158";
+    public string TextColor { get; set; } = "#18181B";
+    public string MutedTextColor { get; set; } = "#57534E";
+    public string BorderColor { get; set; } = "#E7E2DA";
+    public string SidebarColor { get; set; } = "#141416";
+    public string DisplayFont { get; set; } = "Playfair Display";
+    public string BodyFont { get; set; } = "Plus Jakarta Sans";
+    public string CornerRadiusMode { get; set; } = "ROUND_FOUR";
+    public string DensityMode { get; set; } = "balanced";
+    public string HeroLayout { get; set; } = "split";
+    public int GridColumns { get; set; } = 3;
+    public bool ShowLookbookBadge { get; set; } = true;
+    public string? HeroEyebrow { get; set; }
+    public string? HeroHeadline { get; set; }
+
+    public static StoreDesignConfig CreateMinimalistaLuxo() => new();
+
+    /// <summary>
+    /// Retorna uma das 5 versões pré-prontas oficiais do sistema (usadas no Plano Intermediário / Meia Versão).
+    /// </summary>
+    public static StoreDesignConfig CreatePresetByKey(string? presetKey)
+    {
+        var key = (presetKey ?? string.Empty).Trim().ToLowerInvariant();
+        return key switch
+        {
+            "editorial-vogue" => new StoreDesignConfig
+            {
+                PresetKey = "editorial-vogue",
+                BackgroundColor = "#F7F5F2",
+                SurfaceColor = "#FFFFFF",
+                SurfaceSubtleColor = "#EFECE6",
+                PrimaryColor = "#0F0F10",
+                PrimaryTextColor = "#FFFFFF",
+                AccentColor = "#9A7B4F",
+                TextColor = "#0F0F10",
+                MutedTextColor = "#525252",
+                BorderColor = "#DEDAD2",
+                SidebarColor = "#0F0F10",
+                DisplayFont = "Bodoni Moda",
+                BodyFont = "Inter",
+                CornerRadiusMode = "SHARP",
+                DensityMode = "airy",
+                HeroLayout = "centered",
+                GridColumns = 3,
+                ShowLookbookBadge = true
+            },
+            "boutique-rose" => new StoreDesignConfig
+            {
+                PresetKey = "boutique-rose",
+                BackgroundColor = "#FDF8F6",
+                SurfaceColor = "#FFFFFF",
+                SurfaceSubtleColor = "#F7ECE8",
+                PrimaryColor = "#3D2329",
+                PrimaryTextColor = "#FDF8F6",
+                AccentColor = "#C4847A",
+                TextColor = "#2E1A1E",
+                MutedTextColor = "#7A5B61",
+                BorderColor = "#EBDAD5",
+                SidebarColor = "#2B181C",
+                DisplayFont = "Cormorant Garamond",
+                BodyFont = "DM Sans",
+                CornerRadiusMode = "ROUND_TWELVE",
+                DensityMode = "airy",
+                HeroLayout = "split",
+                GridColumns = 3,
+                ShowLookbookBadge = true
+            },
+            "urban-sartorial" => new StoreDesignConfig
+            {
+                PresetKey = "urban-sartorial",
+                BackgroundColor = "#F4F4F5",
+                SurfaceColor = "#FFFFFF",
+                SurfaceSubtleColor = "#E4E4E7",
+                PrimaryColor = "#09090B",
+                PrimaryTextColor = "#FAFAFA",
+                AccentColor = "#52525B",
+                TextColor = "#09090B",
+                MutedTextColor = "#52525B",
+                BorderColor = "#D4D4D8",
+                SidebarColor = "#09090B",
+                DisplayFont = "Space Grotesk",
+                BodyFont = "Inter",
+                CornerRadiusMode = "ROUND_FOUR",
+                DensityMode = "compact",
+                HeroLayout = "split",
+                GridColumns = 4,
+                ShowLookbookBadge = true
+            },
+            "noir-noturno" => new StoreDesignConfig
+            {
+                PresetKey = "noir-noturno",
+                BackgroundColor = "#0E0E10",
+                SurfaceColor = "#18181B",
+                SurfaceSubtleColor = "#232327",
+                PrimaryColor = "#E5C99B",
+                PrimaryTextColor = "#111113",
+                AccentColor = "#C8A267",
+                TextColor = "#F5F2EB",
+                MutedTextColor = "#A8A29E",
+                BorderColor = "#2C2C32",
+                SidebarColor = "#09090B",
+                DisplayFont = "Playfair Display",
+                BodyFont = "Plus Jakarta Sans",
+                CornerRadiusMode = "ROUND_FOUR",
+                DensityMode = "balanced",
+                HeroLayout = "banner",
+                GridColumns = 3,
+                ShowLookbookBadge = true
+            },
+            _ => CreateMinimalistaLuxo()
+        };
+    }
+
+    public StoreDesignConfig CreateNormalizedCopy()
+    {
+        return new StoreDesignConfig
+        {
+            PresetKey = NormalizeToken(PresetKey, "minimalista-luxo"),
+            BackgroundColor = NormalizeHex(BackgroundColor, "#FAF8F5"),
+            SurfaceColor = NormalizeHex(SurfaceColor, "#FFFFFF"),
+            SurfaceSubtleColor = NormalizeHex(SurfaceSubtleColor, "#F3EFE8"),
+            PrimaryColor = NormalizeHex(PrimaryColor, "#18181B"),
+            PrimaryTextColor = NormalizeHex(PrimaryTextColor, "#FAF8F5"),
+            AccentColor = NormalizeHex(AccentColor, "#B69158"),
+            TextColor = NormalizeHex(TextColor, "#18181B"),
+            MutedTextColor = NormalizeHex(MutedTextColor, "#57534E"),
+            BorderColor = NormalizeHex(BorderColor, "#E7E2DA"),
+            SidebarColor = NormalizeHex(SidebarColor, "#141416"),
+            DisplayFont = NormalizeFont(DisplayFont, AllowedDisplayFonts, "Playfair Display"),
+            BodyFont = NormalizeFont(BodyFont, AllowedBodyFonts, "Plus Jakarta Sans"),
+            CornerRadiusMode = NormalizeOneOf(CornerRadiusMode, ["SHARP", "ROUND_FOUR", "ROUND_TWELVE"], "ROUND_FOUR"),
+            DensityMode = NormalizeOneOf(DensityMode, ["compact", "balanced", "airy"], "balanced"),
+            HeroLayout = NormalizeOneOf(HeroLayout, ["split", "centered", "banner"], "split"),
+            GridColumns = Math.Clamp(GridColumns, 2, 4),
+            ShowLookbookBadge = ShowLookbookBadge,
+            HeroEyebrow = string.IsNullOrWhiteSpace(HeroEyebrow) ? null : HeroEyebrow.Trim(),
+            HeroHeadline = string.IsNullOrWhiteSpace(HeroHeadline) ? null : HeroHeadline.Trim()
+        };
+    }
+
+    private static readonly string[] AllowedDisplayFonts =
+    [
+        "Playfair Display",
+        "Cormorant Garamond",
+        "Bodoni Moda",
+        "Montserrat",
+        "Space Grotesk"
+    ];
+
+    private static readonly string[] AllowedBodyFonts =
+    [
+        "Plus Jakarta Sans",
+        "Inter",
+        "DM Sans",
+        "Montserrat",
+        "Work Sans"
+    ];
+
+    private static readonly Regex HexColorRegex = MyHexRegex();
+
+    [GeneratedRegex("^#[0-9A-Fa-f]{6}$", RegexOptions.CultureInvariant)]
+    private static partial Regex MyHexRegex();
+
+    private static string NormalizeHex(string? candidate, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return fallback;
+        var trimmed = candidate.Trim();
+        return HexColorRegex.IsMatch(trimmed) ? trimmed.ToUpperInvariant() : fallback;
+    }
+
+    private static string NormalizeFont(string? candidate, string[] allowed, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return fallback;
+        var trimmed = candidate.Trim();
+        return allowed.FirstOrDefault(f => string.Equals(f, trimmed, StringComparison.OrdinalIgnoreCase)) ?? fallback;
+    }
+
+    private static string NormalizeOneOf(string? candidate, string[] allowed, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return fallback;
+        var trimmed = candidate.Trim();
+        return allowed.FirstOrDefault(v => string.Equals(v, trimmed, StringComparison.OrdinalIgnoreCase)) ?? fallback;
+    }
+
+    private static string NormalizeToken(string? candidate, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return fallback;
+        return candidate.Trim().ToLowerInvariant();
     }
 }

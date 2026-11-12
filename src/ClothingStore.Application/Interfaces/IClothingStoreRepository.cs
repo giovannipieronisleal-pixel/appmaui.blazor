@@ -44,8 +44,13 @@ public interface IClothingStoreRepository
         CancellationToken ct = default);
     Task RecordStockMovementAsync(ProductVariant variant, StockMovement movement, CancellationToken ct = default);
 
-    // Store Settings
+    // Store Settings & Activation Gift Cards
     Task<StoreSettings> GetStoreSettingsAsync(CancellationToken ct = default);
     Task UpdateStoreSettingsAsync(StoreSettings settings, CancellationToken ct = default);
+
+    Task<IReadOnlyList<PlanActivationCode>> GetPlanActivationCodesAsync(CancellationToken ct = default);
+    Task<PlanActivationCode?> GetPlanActivationCodeByCodeAsync(string code, CancellationToken ct = default);
+    Task<PlanActivationCode?> GetPlanActivationCodeByIdAsync(Guid id, CancellationToken ct = default);
+    Task SavePlanActivationCodeAsync(PlanActivationCode activationCode, CancellationToken ct = default);
 }
 

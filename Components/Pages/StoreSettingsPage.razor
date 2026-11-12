@@ -4,6 +4,7 @@
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
 @inject ThemeService Theme
+@inject StoreBrandStateService BrandState
 @inject GoogleCloudSyncService CloudSync
 
 @{
@@ -13,7 +14,7 @@
 
     var baseSiteUrl = !string.IsNullOrWhiteSpace(_form.OnlineBaseUrl)
         ? _form.OnlineBaseUrl.TrimEnd('/')
-        : "https://flaviaroupasdigital.com";
+        : WhatsAppLinkBuilder.GenerateDefaultStoreUrl(_form.StoreName);
 
     var storeCatalogUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl(baseSiteUrl, effectiveSlug);
     var qrCodeSvgUri = WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(storeCatalogUrl);
@@ -89,7 +90,7 @@
                            @bind="_form.StoreName"
                            @bind:event="oninput"
                            @bind:after="SyncSlugFromStoreNameIfUnlocked"
-                           placeholder="Ex.: Flavia Roupas" />
+                           placeholder="Ex.: Minha Loja" />
                 </div>
 
                 <div>
@@ -100,17 +101,17 @@
                             <span>Sincronizar com o nome</span>
                         </label>
                     </div>
-                    <input type="text" class="adm-input" @bind="_form.StoreSlug" placeholder="flavia-roupas" />
+                    <input type="text" class="adm-input" @bind="_form.StoreSlug" placeholder="minha-loja" />
                     <span style="font-size: 0.78rem; color: var(--adm-muted);">
-                        Link gerado para os seus clientes: <strong>/loja/@effectiveSlug</strong>
+                        Link oficial do catálogo: <strong style="color: var(--adm-accent);">@storeCatalogUrl</strong>
                     </span>
                 </div>
 
                 <div>
                     <label class="adm-label">Número do WhatsApp (DDD + Celular) *</label>
-                    <input type="text" class="adm-input" @bind="_form.WhatsappNumber" placeholder="Ex.: 21975219710" />
+                    <input type="text" class="adm-input" @bind="_form.WhatsappNumber" placeholder="Ex.: 11999990000" />
                     <span style="font-size: 0.78rem; color: var(--adm-muted);">
-                        Pode digitar apenas o DDD + número (ex.: <strong>21975219710</strong>). O código do Brasil (+55) é inserido automaticamente!
+                        Pode digitar apenas o DDD + número (ex.: <strong>11999990000</strong>). O código do Brasil (+55) é inserido automaticamente!
                     </span>
                 </div>
 
@@ -133,6 +134,54 @@
 
     <!-- Coluna Direita: Link Oficial da Loja + QR Code + Logotipo -->
     <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- Card 2.5: Status do Site do Usuário (Ativo / Desativado por Nome ou Inatividade) -->
+        <section class="adm-card" style="border-left: 4px solid @(_form.IsSiteActive ? "var(--adm-success)" : "var(--adm-danger)");">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--adm-text);">
+                    🌍 Visibilidade do Site para o Público
+                </h2>
+                <span class="pill-badge @(_form.IsSiteActive ? "pill-green" : "pill-red")" style="font-weight: 800;">
+                    @(_form.IsSiteActive ? "🟢 Visível para Clientes" : "🔴 Oculto / Pausado")
+                </span>
+            </div>
+
+            @if (_form.IsSiteActive)
+            {
+                <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0 0 0.75rem; line-height: 1.45;">
+                    Seu catálogo público está <strong>no ar e visível</strong> para qualquer cliente que acessar o link.
+                    <strong>Atenção:</strong> após 21 dias sem movimentação ou ao trocar o nome da loja, ele pausa automaticamente até você confirmar aqui.
+                </p>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--adm-muted); flex-wrap: wrap; gap: 0.5rem;">
+                    <span>Última movimentação: <strong>@(_form.LastActivityAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Hoje")</strong></span>
+                    <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+                        <a href="/loja/@_form.StoreSlug" class="adm-btn adm-btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.76rem;">
+                            👁️ Ver como Cliente
+                        </a>
+                        <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.76rem;" @onclick="DeactivateSiteNowAsync">
+                            Ocultar Site
+                        </button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--adm-danger); border-radius: 8px; padding: 0.85rem; margin-bottom: 0.85rem; color: var(--adm-text);">
+                    <div style="font-weight: 800; color: var(--adm-danger); margin-bottom: 0.25rem;">
+                        ⚠️ Motivo da Desativação:
+                    </div>
+                    <div style="font-size: 0.84rem; line-height: 1.45;">
+                        @(_form.DeactivationReason ?? "O site foi pausado automaticamente.")
+                    </div>
+                </div>
+                <button type="button"
+                        class="adm-btn adm-btn-primary"
+                        style="width: 100%; padding: 0.75rem; font-weight: 800; font-size: 0.95rem;"
+                        @onclick="ActivateSiteNowAsync">
+                    🚀 Reativar e Publicar Meu Site Agora
+                </button>
+            }
+        </section>
+
         <!-- Card 3: Link Oficial do Catálogo da Sua Loja -->
         <section class="adm-card" style="border-left: 4px solid var(--adm-success);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
@@ -146,8 +195,11 @@
                 Este é o link oficial exclusivo da sua loja! Compartilhe com suas clientes ou divulgue nas suas redes sociais:
             </p>
 
-            <div style="background: var(--adm-input-bg); border: 1.5px solid var(--adm-border); border-radius: 8px; padding: 0.85rem 1rem; font-family: monospace; font-size: 0.95rem; font-weight: 700; word-break: break-all; margin-bottom: 0.95rem; color: var(--adm-accent);">
+            <div style="background: var(--adm-input-bg); border: 1.5px solid var(--adm-border); border-radius: 8px; padding: 0.85rem 1rem; font-family: monospace; font-size: 0.95rem; font-weight: 700; word-break: break-all; margin-bottom: 0.45rem; color: var(--adm-accent);">
                 @storeCatalogUrl
+            </div>
+            <div style="font-size: 0.76rem; color: var(--adm-muted); margin-bottom: 0.95rem; line-height: 1.4;">
+                🌐 <em>Link exclusivo para suas redes sociais. Ao clicar em <strong>"Abrir no Navegador"</strong>, seu catálogo abre na hora localmente sem erro de DNS!</em>
             </div>
 
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
@@ -220,14 +272,56 @@
             </summary>
             <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.85rem;">
                 <div>
-                    <label class="adm-label">Endereço Base Personalizado (URL do Servidor / Domínio)</label>
-                    <input type="url"
-                           class="adm-input"
-                           @bind="_form.OnlineBaseUrl"
-                           placeholder="https://flaviaroupasdigital.com" />
-                    <span style="font-size: 0.75rem; color: var(--adm-muted);">
-                        Altere apenas se você tiver um servidor ou domínio próprio configurado.
-                    </span>
+                    <label class="adm-label">Endereço Base / Domínio do Site no Google Cloud</label>
+                    <div style="display: flex; gap: 0.4rem;">
+                        <input type="text"
+                               class="adm-input"
+                               @bind="_domainInput"
+                               placeholder="Ex.: lojas.minhaloja.com ou minha-loja" />
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="white-space: nowrap; padding: 0 0.85rem; font-size: 0.82rem; border-color: var(--adm-accent); font-weight: 700;"
+                                disabled="@_isCheckingDomain"
+                                @onclick="CheckDomainAvailabilityAsync">
+                            @(_isCheckingDomain ? "Consultando..." : "🔍 Verificar Google Cloud")
+                        </button>
+                    </div>
+
+                    @if (_domainCheckResult is not null)
+                    {
+                        <div style="margin-top: 0.5rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_domainCheckResult.IsAvailable ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
+                            <div style="font-weight: 700;">
+                                @(_domainCheckResult.IsAvailable ? "✓ " + _domainCheckResult.Message : "✕ " + _domainCheckResult.Message)
+                            </div>
+                            <div style="font-size: 0.76rem; margin-top: 0.25rem;">
+                                @if (_domainCheckResult.IsAvailable)
+                                {
+                                    <div>URL que será configurada: <strong>@_domainCheckResult.NormalizedUrl</strong></div>
+                                }
+                                else if (_domainCheckResult.Suggestions.Count > 0)
+                                {
+                                    <div style="margin-bottom: 0.2rem;">Sugestões disponíveis no Google Cloud (toque para aplicar):</div>
+                                    <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                                        @foreach (var s in _domainCheckResult.Suggestions)
+                                        {
+                                            <button type="button"
+                                                    class="pill-badge pill-blue"
+                                                    style="border: none; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.75rem;"
+                                                    @onclick="() => SelectDomainSuggestion(s)">
+                                                @s
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <span style="font-size: 0.75rem; color: var(--adm-muted);">
+                            Informe um domínio próprio ou subdomínio para consultar se está disponível no Google Cloud.
+                        </span>
+                    }
                 </div>
 
                 <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer;">
@@ -256,7 +350,87 @@
     </div>
 </div>
 
+<section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid var(--brand-accent, #B69158);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+        <div>
+            <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--brand-accent, #B69158);">
+                Licença &amp; Gift Card
+            </div>
+            <h2 style="font-size: 1.2rem; font-weight: 700; margin: 0.25rem 0 0; color: var(--adm-text);">
+                🎁 Resgatar Código Gift Card do Plano
+            </h2>
+            <p style="font-size: 0.85rem; color: var(--adm-muted); margin: 0.25rem 0 0;">
+                Digite o código Gift Card recebido para ativar ou renovar seu plano <strong>Básico</strong>, <strong>Intermediário (5 Versões)</strong> ou <strong>Premium Moldável</strong>.
+            </p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+            <span class="pill-badge @(BrandState.IsPremiumPlan ? "pill-gold" : BrandState.IsIntermediatePlan ? "pill-green" : "pill-slate")">
+                @(BrandState.IsPremiumPlan ? "✦ Plano Premium Ativo" : BrandState.IsIntermediatePlan ? "◈ Meia Versão (5 Temas)" : "● Plano Básico Minimalista")
+            </span>
+            <span style="font-size: 0.78rem; color: var(--adm-muted);">
+                @if (!_planExpiresAt.HasValue)
+                {
+                    <span>Validade: <strong>Vitalício / Contínuo</strong></span>
+                }
+                else if (DateTimeOffset.UtcNow < _planExpiresAt.Value)
+                {
+                    <span>Válido até: <strong>@_planExpiresAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong></span>
+                }
+                else
+                {
+                    <span style="color: var(--adm-danger);">Licença expirada em @_planExpiresAt.Value.ToLocalTime().ToString("dd/MM/yyyy")</span>
+                }
+            </span>
+            @if (!string.IsNullOrWhiteSpace(_activeGiftCardCode))
+            {
+                <span style="font-size: 0.74rem; color: var(--adm-muted); font-family: monospace;">
+                    Último Gift Card: @_activeGiftCardCode
+                </span>
+            }
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1rem;">
+        <input type="text"
+               class="adm-input"
+               style="flex: 1; min-width: 220px; text-transform: uppercase; font-family: monospace; letter-spacing: 0.08em; font-weight: 700;"
+               @bind="_giftCardCodeInput"
+               placeholder="Ex.: LUXO-INTR-30D-A7K2B9C4 ou LUXO-PREM-..." />
+        <button type="button"
+                class="adm-btn adm-btn-accent"
+                style="white-space: nowrap; font-weight: 700;"
+                disabled="@_isRedeemingGiftCard"
+                @onclick="RedeemGiftCardAsync">
+            @(_isRedeemingGiftCard ? "Ativando..." : "🎁 Ativar Código Gift Card")
+        </button>
+    </div>
+</section>
+
+<DesignStudioPanel PlanTier="@_planTier"
+                   PlanExpiresAt="@_planExpiresAt"
+                   BasicPrice="@_basicPlanPrice"
+                   IntermediaryPrice="@_intermediaryPlanPrice"
+                   PremiumPrice="@_premiumPlanPrice"
+                   Design="@_designDraft"
+                   StoreName="@_form.StoreName"
+                   StoreDescription="@_form.StoreDescription"
+                   IsSaving="@_savingDesign"
+                   OnDesignChanged="HandleDesignDraftChanged"
+                   OnSaveDesignRequested="SaveDesignSettingsAsync" />
+
 @code {
+    private string _planTier = StoreDesignPresets.PlanBasic;
+    private DateTimeOffset? _planExpiresAt;
+    private string? _activeGiftCardCode;
+    private string _giftCardCodeInput = string.Empty;
+    private bool _isRedeemingGiftCard;
+    private decimal _basicPlanPrice = 49.90m;
+    private decimal _intermediaryPlanPrice = 89.90m;
+    private decimal _premiumPlanPrice = 129.90m;
+    private StoreDesignDto _designDraft = StoreDesignDto.CreateMinimalistaLuxo();
+    private bool _savingDesign;
+
     private UpdateStoreSettingsRequest _form = new()
     {
         StoreName = "Minha Loja",
@@ -271,6 +445,9 @@
     private bool _copiedUrl;
     private string? _error;
     private string? _success;
+    private string _domainInput = string.Empty;
+    private bool _isCheckingDomain;
+    private CheckDomainAvailabilityResponse? _domainCheckResult;
 
     protected override async Task OnInitializedAsync()
     {
@@ -290,6 +467,9 @@
         try
         {
             var current = await Gateway.GetStoreSettingsAsync();
+            _domainInput = string.IsNullOrWhiteSpace(current.OnlineBaseUrl)
+                ? WhatsAppLinkBuilder.GenerateDefaultStoreDomain(current.StoreName)
+                : current.OnlineBaseUrl.Replace("https://", "").Replace("http://", "").TrimEnd('/');
             _form = new UpdateStoreSettingsRequest
             {
                 StoreName = current.StoreName,
@@ -298,10 +478,25 @@
                 StoreDescription = current.StoreDescription,
                 LogoPublicUrl = current.LogoPublicUrl,
                 DefaultLowStockThreshold = current.DefaultLowStockThreshold,
-                OnlineBaseUrl = current.OnlineBaseUrl,
+                OnlineBaseUrl = string.IsNullOrWhiteSpace(current.OnlineBaseUrl)
+                    ? WhatsAppLinkBuilder.GenerateDefaultStoreUrl(current.StoreName)
+                    : current.OnlineBaseUrl,
                 AutoSyncOnlineOnSave = current.AutoSyncOnlineOnSave,
-                LastOnlineSyncAt = current.LastOnlineSyncAt
+                LastOnlineSyncAt = current.LastOnlineSyncAt,
+                IsSiteActive = current.IsSiteActive,
+                DeactivationReason = current.DeactivationReason,
+                LastActivityAt = current.LastActivityAt,
+                PublishedStoreName = current.PublishedStoreName,
+                PlanTier = current.PlanTier
             };
+            _planTier = current.PlanTier;
+            _planExpiresAt = current.PlanExpiresAt;
+            _activeGiftCardCode = current.ActiveGiftCardCode;
+            _basicPlanPrice = current.BasicPlanMonthlyPrice;
+            _intermediaryPlanPrice = current.IntermediaryPlanMonthlyPrice;
+            _premiumPlanPrice = current.PremiumPlanMonthlyPrice;
+            _designDraft = (current.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
+            BrandState.ApplyFromAdminSettings(current);
         }
         catch (Exception ex)
         {
@@ -309,11 +504,48 @@
         }
     }
 
+    private async Task CheckDomainAvailabilityAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_domainInput))
+            return;
+
+        _isCheckingDomain = true;
+        _error = null;
+        try
+        {
+            _domainCheckResult = await Gateway.CheckDomainAvailabilityAsync(_domainInput.Trim());
+            if (_domainCheckResult.IsAvailable)
+            {
+                _form.OnlineBaseUrl = _domainCheckResult.NormalizedUrl;
+                _domainInput = _domainCheckResult.Domain;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erro ao consultar o Google Cloud: {ex.Message}";
+        }
+        finally
+        {
+            _isCheckingDomain = false;
+        }
+    }
+
+    private async Task SelectDomainSuggestion(string suggestion)
+    {
+        _domainInput = suggestion;
+        await CheckDomainAvailabilityAsync();
+    }
+
     private void SyncSlugFromStoreNameIfUnlocked()
     {
         if (_autoSyncSlugWithName)
         {
             _form.StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName);
+            if (string.IsNullOrWhiteSpace(_domainInput) || _domainInput.StartsWith("lojas."))
+            {
+                _domainInput = WhatsAppLinkBuilder.GenerateDefaultStoreDomain(_form.StoreName);
+                _form.OnlineBaseUrl = WhatsAppLinkBuilder.GenerateDefaultStoreUrl(_form.StoreName);
+            }
         }
     }
 
@@ -328,6 +560,21 @@
                 _form.StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName);
             }
 
+            if (string.IsNullOrWhiteSpace(_form.OnlineBaseUrl))
+            {
+                _form.OnlineBaseUrl = WhatsAppLinkBuilder.GenerateDefaultStoreUrl(_form.StoreName);
+            }
+
+            _form.PlanTier = _planTier;
+            if (BrandState.IsPremiumPlan)
+            {
+                _form.Design = _designDraft.Clone();
+            }
+            else if (BrandState.IsIntermediatePlan)
+            {
+                _form.Design = StoreDesignPresets.ResolveByPresetKey(_designDraft.PresetKey);
+            }
+
             var updated = await Gateway.UpdateStoreSettingsAsync(_form);
             _form.StoreSlug = updated.StoreSlug;
             _form.WhatsappNumber = updated.WhatsappNumber;
@@ -335,8 +582,27 @@
             _form.OnlineBaseUrl = updated.OnlineBaseUrl;
             _form.AutoSyncOnlineOnSave = updated.AutoSyncOnlineOnSave;
             _form.LastOnlineSyncAt = updated.LastOnlineSyncAt;
+            _form.IsSiteActive = updated.IsSiteActive;
+            _form.DeactivationReason = updated.DeactivationReason;
+            _form.LastActivityAt = updated.LastActivityAt;
+            _form.PublishedStoreName = updated.PublishedStoreName;
+            _planTier = updated.PlanTier;
+            _planExpiresAt = updated.PlanExpiresAt;
+            _activeGiftCardCode = updated.ActiveGiftCardCode;
+            _basicPlanPrice = updated.BasicPlanMonthlyPrice;
+            _intermediaryPlanPrice = updated.IntermediaryPlanMonthlyPrice;
+            _premiumPlanPrice = updated.PremiumPlanMonthlyPrice;
+            _designDraft = (updated.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
+            BrandState.ApplyFromAdminSettings(updated);
 
-            _success = "✓ Configurações da loja salvas com sucesso!";
+            if (!_form.IsSiteActive)
+            {
+                _error = _form.DeactivationReason;
+            }
+            else
+            {
+                _success = "✓ Configurações da loja salvas com sucesso!";
+            }
 
             // Se houver URL de nuvem configurada, tenta sincronizar em background sem travar nem assustar o usuário
             if (!string.IsNullOrWhiteSpace(_form.OnlineBaseUrl))
@@ -356,6 +622,43 @@
         catch (Exception ex)
         {
             _error = ex.Message;
+        }
+    }
+
+    private async Task ActivateSiteNowAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var res = await Gateway.ActivateSiteAsync();
+            _form.IsSiteActive = res.IsSiteActive;
+            _form.DeactivationReason = res.DeactivationReason;
+            _form.LastActivityAt = res.LastActivityAt;
+            _form.PublishedStoreName = res.PublishedStoreName;
+            _success = "✓ Site reativado e publicado com sucesso!";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erro ao reativar site: {ex.Message}";
+        }
+    }
+
+    private async Task DeactivateSiteNowAsync()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var res = await Gateway.DeactivateSiteAsync("Pausado manualmente pelo administrador.");
+            _form.IsSiteActive = res.IsSiteActive;
+            _form.DeactivationReason = res.DeactivationReason;
+            _form.LastActivityAt = res.LastActivityAt;
+            _success = "Site pausado com sucesso.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erro ao pausar site: {ex.Message}";
         }
     }
 
@@ -420,7 +723,7 @@
         try
         {
             LocalWebServerLauncher.Initialize(CatalogService);
-            await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url);
+            await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url, _form.StoreSlug);
         }
         catch (Exception ex)
         {
@@ -467,6 +770,93 @@
         catch (Exception ex)
         {
             _error = ex.Message;
+        }
+    }
+
+    private void HandleDesignDraftChanged(StoreDesignDto draft)
+    {
+        if (BrandState.IsPremiumPlan)
+        {
+            BrandState.PreviewDraft(draft);
+        }
+        else if (BrandState.IsIntermediatePlan)
+        {
+            BrandState.PreviewDraft(StoreDesignPresets.ResolveByPresetKey(draft.PresetKey));
+        }
+    }
+
+    private async Task RedeemGiftCardAsync()
+    {
+        _error = null;
+        _success = null;
+        if (string.IsNullOrWhiteSpace(_giftCardCodeInput))
+        {
+            _error = "Digite o código do Gift Card antes de tentar resgatar.";
+            return;
+        }
+
+        _isRedeemingGiftCard = true;
+        try
+        {
+            var result = await Gateway.RedeemActivationCodeAsync(new RedeemActivationCodeRequest
+            {
+                Code = _giftCardCodeInput.Trim()
+            });
+
+            _giftCardCodeInput = string.Empty;
+            _planTier = result.UpdatedSettings.PlanTier;
+            _planExpiresAt = result.UpdatedSettings.PlanExpiresAt;
+            _activeGiftCardCode = result.UpdatedSettings.ActiveGiftCardCode;
+            _form.PlanTier = _planTier;
+            _form.IsSiteActive = result.UpdatedSettings.IsSiteActive;
+            _designDraft = (result.UpdatedSettings.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
+            BrandState.ApplyFromAdminSettings(result.UpdatedSettings);
+            _success = "🎉 " + result.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isRedeemingGiftCard = false;
+        }
+    }
+
+    private async Task SaveDesignSettingsAsync()
+    {
+        _error = null;
+        _success = null;
+        _savingDesign = true;
+        try
+        {
+            _form.PlanTier = _planTier;
+            _form.Design = BrandState.IsIntermediatePlan
+                ? StoreDesignPresets.ResolveByPresetKey(_designDraft.PresetKey)
+                : _designDraft.Clone();
+
+            var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            _designDraft = (updated.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
+            BrandState.ApplyFromAdminSettings(updated);
+            _success = BrandState.IsIntermediatePlan
+                ? "◈ Versão pré-pronta salva e aplicada no aplicativo e no catálogo!"
+                : "✦ Visual sob medida salvo e aplicado no aplicativo e no catálogo!";
+
+            if (!string.IsNullOrWhiteSpace(_form.OnlineBaseUrl))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await CloudSync.SyncCatalogToCloudAsync(); } catch { }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erro ao salvar visual sob medida: {ex.Message}";
+        }
+        finally
+        {
+            _savingDesign = false;
         }
     }
 

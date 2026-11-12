@@ -36,16 +36,62 @@ public static class WhatsAppLinkBuilder
         clean = Regex.Replace(clean, @"[^a-z0-9\s-]", "");
         clean = Regex.Replace(clean, @"\s+", "-");
         clean = Regex.Replace(clean, @"-+", "-").Trim('-');
+        if (clean.Length > 80)
+        {
+            clean = clean[..80].TrimEnd('-');
+        }
         return string.IsNullOrWhiteSpace(clean) ? "minha-loja" : clean;
     }
 
-    public static string BuildStoreCatalogUrl(string baseSiteUrl, string? storeSlugOrName)
+    /// <summary>
+    /// Gera o domínio padrão do catálogo no formato lojas.nomedaloja.com (ex.: lojas.minhaloja.com).
+    /// </summary>
+    public static string GenerateDefaultStoreDomain(string? storeName)
     {
-        var cleanBase = string.IsNullOrWhiteSpace(baseSiteUrl)
-            ? "http://localhost:5190"
-            : baseSiteUrl.TrimEnd('/');
+        var clean = GenerateStoreSlug(storeName).Replace("-", "");
+        if (string.IsNullOrWhiteSpace(clean))
+            clean = "minhaloja";
+        return $"lojas.{clean}.com";
+    }
+
+    /// <summary>
+    /// Gera a URL pública padrão do catálogo no formato https://lojas.nomedaloja.com
+    /// </summary>
+    public static string GenerateDefaultStoreUrl(string? storeName)
+    {
+        return $"https://{GenerateDefaultStoreDomain(storeName)}";
+    }
+
+    public static string BuildStoreCatalogUrl(string? baseSiteUrl, string? storeSlugOrName)
+    {
+        if (string.IsNullOrWhiteSpace(baseSiteUrl))
+        {
+            return GenerateDefaultStoreUrl(storeSlugOrName);
+        }
+
+        var cleanBase = baseSiteUrl.Trim().TrimEnd('/');
 
         var slug = GenerateStoreSlug(storeSlugOrName);
+
+        var uriText = cleanBase.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                      cleanBase.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? cleanBase
+            : $"https://{cleanBase}";
+
+        if (Uri.TryCreate(uriText, UriKind.Absolute, out var uri))
+        {
+            var host = uri.Host.ToLowerInvariant();
+            // Se for localhost, 127.0.0.1 ou domínio padrão de plataforma em nuvem (.run.app), mantém a rota /loja/{slug}
+            if (host is "localhost" or "127.0.0.1" || host.EndsWith(".run.app", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{cleanBase}/loja/{slug}";
+            }
+
+            // Para domínio próprio oficial do lojista (ex.: https://minhalojadigital.com ou minhaloja.com.br):
+            // O catálogo oficial é o próprio domínio direto da loja, limpo e profissional!
+            return cleanBase;
+        }
+
         return $"{cleanBase}/loja/{slug}";
     }
 

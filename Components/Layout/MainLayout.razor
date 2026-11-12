@@ -1,17 +1,19 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
 @inject ThemeService Theme
+@inject StoreBrandStateService BrandState
 @inject GoogleCloudSyncService CloudSync
 @implements IDisposable
 
 <div class="@Theme.CurrentThemeClass">
+    <StoreDesignStyleInjector Design="@BrandState.EffectiveDesign" />
     @if (!Gateway.IsAuthenticated && !IsPublicCatalogRoute())
     {
-        <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; background: var(--adm-bg);">
-            <div style="width: 100%; max-width: 440px;">
+        <div class="adm-login-wrapper">
+            <div class="adm-login-container">
                 <appmaui.blazor.Components.Pages.Login />
             </div>
         </div>
@@ -39,7 +41,13 @@
             <div class="adm-main">
                 <header class="adm-topbar">
                     <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                        <strong style="font-size: 1rem; color: var(--adm-text);">@_storeName</strong>
+                        <strong class="adm-topbar-title">@_storeName</strong>
+                        <a href="/planos"
+                           style="text-decoration: none;"
+                           title="Ver planos e versões do site"
+                           class="pill-badge @(BrandState.IsPremiumPlan ? "pill-gold" : BrandState.IsIntermediatePlan ? "pill-green" : "pill-slate")">
+                            @(BrandState.IsPremiumPlan ? "✦ Premium Sob Medida" : BrandState.IsIntermediatePlan ? "◈ Meia Versão (5 Temas)" : "Minimalista Luxo")
+                        </a>
                         <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")">
                             @(Gateway.IsAdmin ? "Admin" : "Equipe")
                         </span>
@@ -75,11 +83,11 @@
                             Abrir no Navegador &nearr;
                         </button>
 
-                        <!-- Botão de Perfil / PIN do Usuário & Segurança (2FA) -->
+                        <!-- Botão de Perfil do Usuário & Segurança (2FA) -->
                         <button type="button"
                                 class="adm-btn adm-btn-outline"
                                 style="padding: 0.35rem 0.65rem; min-height: 36px; font-size: 0.8rem; display: flex; align-items: center; gap: 0.45rem; border-color: var(--adm-accent);"
-                                title="Configurações do Usuário: E-mail, Senha, PIN e 2FA"
+                                title="Configurações do Usuário: E-mail, Senha e 2FA"
                                 @onclick="() => _showUserProfileModal = true">
                             <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--adm-accent); color: #fff; font-size: 0.72rem; font-weight: 800;">
                                 @GetUserInitials(Gateway.CurrentEmployee?.FullName)
@@ -87,8 +95,8 @@
                             <span style="max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                                 @(Gateway.CurrentEmployee?.FullName ?? "Meu Perfil")
                             </span>
-                            <span class="pill-badge @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true || Gateway.CurrentEmployee?.HasSecurityPin == true ? "pill-green" : "pill-slate")" style="font-size: 0.68rem; padding: 0.1rem 0.35rem;">
-                                @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true ? "🛡️ 2FA" : (Gateway.CurrentEmployee?.HasSecurityPin == true ? "🔒 PIN" : "⚙️ PIN"))
+                            <span class="pill-badge @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true ? "pill-green" : "pill-slate")" style="font-size: 0.68rem; padding: 0.1rem 0.35rem;">
+                                @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true ? "🛡️ 2FA Ativo" : "⚙️ Perfil")
                             </span>
                         </button>
 
@@ -134,6 +142,7 @@
         Gateway.AuthStateChanged += OnAuthStateChanged;
         Navigation.LocationChanged += OnLocationChanged;
         Theme.OnThemeChanged += OnThemeChanged;
+        BrandState.OnBrandChanged += OnBrandChanged;
         CloudSync.OnSyncStatusChanged += OnSyncStatusChanged;
 
         await Gateway.TryRestoreSessionAsync();
@@ -155,6 +164,7 @@
             _storeName = store.StoreName;
             _storeSlug = store.StoreSlug;
             _onlineBaseUrl = store.OnlineBaseUrl;
+            BrandState.ApplyFromPublicSettings(store);
         }
         catch
         {
@@ -177,6 +187,11 @@
         InvokeAsync(StateHasChanged);
     }
 
+    private void OnBrandChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
     private void OnSyncStatusChanged()
     {
         InvokeAsync(StateHasChanged);
@@ -190,7 +205,7 @@
         try
         {
             LocalWebServerLauncher.Initialize(CatalogService);
-            await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url);
+            await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url, _storeSlug);
         }
         catch
         {
@@ -208,6 +223,7 @@
         Gateway.AuthStateChanged -= OnAuthStateChanged;
         Navigation.LocationChanged -= OnLocationChanged;
         Theme.OnThemeChanged -= OnThemeChanged;
+        BrandState.OnBrandChanged -= OnBrandChanged;
         CloudSync.OnSyncStatusChanged -= OnSyncStatusChanged;
     }
 }

@@ -9,3 +9,11 @@ obj/
 
 # OS-generated files
 .DS_Store
+
+# Private Owner Admin App & Local Data (nunca enviar para o GitHub publico)
+src/ClothingStore.AdminApp/
+*.local.slnx
+*.local.sql
+deploy-google-cloud.local.ps1
+App_Data/
+build.log

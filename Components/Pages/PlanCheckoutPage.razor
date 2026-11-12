@@ -1,0 +1,519 @@
+@page "/contratar-plano"
+@page "/contratar-plano/{PlanTier?}"
+@using ClothingStore.Application.Services
+@implements IDisposable
+@inject MauiAdminGateway Gateway
+@inject StoreBrandStateService BrandState
+@inject CatalogService CatalogService
+@inject NavigationManager Navigation
+
+<PageTitle>Contratar @GetPlanTitle(_selectedTier)</PageTitle>
+
+@if (!Gateway.IsAuthenticated)
+{
+    <Login />
+}
+else if (_loading)
+{
+    <div class="adm-card">
+        <p style="margin: 0; color: var(--adm-muted);">Carregando detalhes do plano selecionado...</p>
+    </div>
+}
+else if (_settings is null)
+{
+    <div class="adm-alert adm-alert-error">@(_error ?? "Não foi possível carregar os dados de contratação.")</div>
+}
+else
+{
+    <div class="adm-page-header">
+        <div>
+            <h1 class="adm-page-title">Contratar @GetPlanTitle(_selectedTier)</h1>
+            <p class="adm-page-subtitle">
+                Revise o pacote escolhido, copie a chave Pix ou finalize o pedido no WhatsApp e ative seu Gift Card na hora.
+            </p>
+        </div>
+
+        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+            <a href="/planos" class="adm-btn adm-btn-outline">
+                ← Voltar para Planos
+            </a>
+            @if (Gateway.IsAdmin)
+            {
+                <a href="/configuracoes-loja" class="adm-btn adm-btn-outline">
+                    ⚙️ Configurações da Loja
+                </a>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="adm-alert adm-alert-error">@_error</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <div class="adm-alert adm-alert-success">@_successMessage</div>
+    }
+
+    <!-- Escolha rápida do Plano -->
+    <section class="adm-card" style="margin-bottom: 1.25rem;">
+        <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--adm-muted); margin-bottom: 0.65rem;">
+            1. Plano Selecionado
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem;">
+            <button type="button"
+                    class="theme-card-option @(_selectedTier == StoreDesignPresets.PlanBasic ? "active" : string.Empty)"
+                    @onclick="() => SelectTier(StoreDesignPresets.PlanBasic)">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
+                    <strong>Plano Básico</strong>
+                    <span class="pill-badge pill-slate">@_settings.BasicPlanMonthlyPrice.ToString("C")/mês</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.35rem;">
+                    Tema fixo Minimalista Luxo pronto para vender.
+                </div>
+            </button>
+
+            <button type="button"
+                    class="theme-card-option @(_selectedTier == StoreDesignPresets.PlanIntermediate ? "active" : string.Empty)"
+                    @onclick="() => SelectTier(StoreDesignPresets.PlanIntermediate)">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
+                    <strong>Meia Versão</strong>
+                    <span class="pill-badge pill-green">@_settings.IntermediaryPlanMonthlyPrice.ToString("C")/mês</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.35rem;">
+                    5 versões pré-prontas de site, sem configuração manual.
+                </div>
+            </button>
+
+            <button type="button"
+                    class="theme-card-option @(_selectedTier == StoreDesignPresets.PlanPremium ? "active" : string.Empty)"
+                    @onclick="() => SelectTier(StoreDesignPresets.PlanPremium)">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
+                    <strong>Premium Sob Medida</strong>
+                    <span class="pill-badge pill-gold">@_settings.PremiumPlanMonthlyPrice.ToString("C")/mês</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.35rem;">
+                    Estúdio Visual completo e 100% moldável.
+                </div>
+            </button>
+        </div>
+    </section>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 1.25rem; align-items: start;">
+        <!-- Coluna 1: Período, Dados do Pedido & Benefícios -->
+        <section class="adm-card" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--adm-muted); margin-bottom: 0.55rem;">
+                    2. Período e Dados da Venda
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button"
+                            class="adm-chip-filter @(_durationMonths == 1 ? "active" : string.Empty)"
+                            @onclick="() => _durationMonths = 1">
+                        Mensal (30 dias)
+                    </button>
+                    <button type="button"
+                            class="adm-chip-filter @(_durationMonths == 3 ? "active" : string.Empty)"
+                            @onclick="() => _durationMonths = 3">
+                        Trimestral (90 dias)
+                    </button>
+                    <button type="button"
+                            class="adm-chip-filter @(_durationMonths == 12 ? "active" : string.Empty)"
+                            @onclick="() => _durationMonths = 12">
+                        Anual (365 dias)
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <label class="adm-label" for="checkout-store-name">Nome da Loja *</label>
+                <input id="checkout-store-name"
+                       class="adm-input"
+                       @bind="_customerStoreName"
+                       placeholder="Ex.: Minha Loja" />
+            </div>
+
+            <div>
+                <label class="adm-label" for="checkout-domain">Domínio Desejado (comprado junto na contratação)</label>
+                <input id="checkout-domain"
+                       class="adm-input"
+                       @bind="_desiredDomain"
+                       placeholder="Ex.: lojas.minhaloja.com ou minhaloja.com.br" />
+                <span style="font-size: 0.77rem; color: var(--adm-muted);">
+                    O domínio oficial será vinculado ao catálogo online junto com a ativação do plano.
+                </span>
+            </div>
+
+            <div>
+                <label class="adm-label" for="checkout-contact-email">Seu Usuário / Gmail de Acesso</label>
+                <input id="checkout-contact-email"
+                       class="adm-input"
+                       @bind="_customerContact"
+                       placeholder="Ex.: seu.usuario ou seu.email@gmail.com" />
+            </div>
+
+            <div style="background: var(--adm-surface-subtle); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.9rem;">
+                <strong style="display: block; margin-bottom: 0.45rem; font-size: 0.92rem;">
+                    O que está incluído no @GetPlanTitle(_selectedTier):
+                </strong>
+                <ul class="plan-feature-list" style="margin: 0;">
+                    @foreach (var item in GetPlanFeatures(_selectedTier))
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+            </div>
+        </section>
+
+        <!-- Coluna 2: Pagamento Pix, Fechamento no WhatsApp & Ativação Gift Card -->
+        <section class="adm-card" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--adm-muted); margin-bottom: 0.35rem;">
+                    3. Finalizar Contratação do Plano
+                </div>
+                <div class="plan-price" style="font-size: 2.1rem;">
+                    @TotalOrderAmount.ToString("C")
+                    <small>/ @DurationLabel</small>
+                </div>
+                <p style="margin: 0.35rem 0 0; font-size: 0.84rem; color: var(--adm-muted);">
+                    Valor base de @MonthlyPrice.ToString("C")/mês multiplicado por @_durationMonths mes(es).
+                </p>
+            </div>
+
+            <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.55rem;">
+                <div style="font-size: 0.82rem; font-weight: 700;">Chave Pix / PicPay para Pagamento</div>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <code style="flex: 1; font-size: 0.92rem; padding: 0.45rem 0.6rem; border-radius: 6px; background: var(--adm-card); border: 1px solid var(--adm-border);">
+                        @_settings.PicpayPixKey
+                    </code>
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="white-space: nowrap;"
+                            @onclick="CopyPixKeyAsync">
+                        @(_copiedPix ? "✓ Pix Copiado!" : "📋 Copiar Pix")
+                    </button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(WhatsAppSaleUrl))
+            {
+                <button type="button"
+                        class="adm-btn adm-btn-success"
+                        style="text-align: center; padding: 0.9rem; font-size: 0.96rem; font-weight: 700;"
+                        @onclick="OpenWhatsAppOrderAsync">
+                    💬 Finalizar Venda / Enviar Pedido no WhatsApp
+                </button>
+            }
+            else
+            {
+                <div class="adm-alert adm-alert-error" style="margin: 0;">
+                    Configure um número de WhatsApp válido nas <a href="/configuracoes-loja" style="font-weight: 700;">Configurações da Loja</a> para gerar o link direto de pagamento/atendimento.
+                </div>
+            }
+
+            <hr style="border: none; border-top: 1px solid var(--adm-border); margin: 0.25rem 0;" />
+
+            <div>
+                <h2 style="margin: 0 0 0.25rem 0; font-size: 1rem; font-weight: 800;">
+                    Já recebeu seu código Gift Card?
+                </h2>
+                <p style="margin: 0 0 0.75rem 0; font-size: 0.83rem; color: var(--adm-muted);">
+                    Digite o código gerado após a confirmação do pagamento para liberar o plano na mesma hora.
+                </p>
+
+                @if (!Gateway.IsAdmin)
+                {
+                    <div class="adm-alert adm-alert-error" style="margin: 0;">
+                        Apenas um administrador da loja pode ativar o código de plano.
+                    </div>
+                }
+                else
+                {
+                    <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                        <input class="adm-input"
+                               style="flex: 1; min-width: 210px; text-transform: uppercase; font-family: monospace; font-weight: 700;"
+                               placeholder="Ex.: LUXO-INTR-30D-..."
+                               @bind="_giftCardCode" />
+                        <button type="button"
+                                class="adm-btn adm-btn-accent"
+                                disabled="@(_redeemingCode || string.IsNullOrWhiteSpace(_giftCardCode))"
+                                @onclick="RedeemGiftCardAsync">
+                            @(_redeemingCode ? "Ativando..." : "🎟️ Ativar Agora")
+                        </button>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? PlanTier { get; set; }
+
+    private AdminStoreSettingsDto? _settings;
+    private bool _loading = true;
+    private bool _copiedPix;
+    private bool _redeemingCode;
+    private string _selectedTier = StoreDesignPresets.PlanIntermediate;
+    private int _durationMonths = 1;
+    private string _customerStoreName = string.Empty;
+    private string _desiredDomain = string.Empty;
+    private string _customerContact = string.Empty;
+    private string _giftCardCode = string.Empty;
+    private string? _error;
+    private string? _successMessage;
+
+    private decimal MonthlyPrice => _settings is null ? 0m : _selectedTier switch
+    {
+        StoreDesignPresets.PlanPremium => _settings.PremiumPlanMonthlyPrice,
+        StoreDesignPresets.PlanIntermediate => _settings.IntermediaryPlanMonthlyPrice,
+        _ => _settings.BasicPlanMonthlyPrice
+    };
+
+    private decimal TotalOrderAmount => MonthlyPrice * _durationMonths;
+
+    private string DurationLabel => _durationMonths switch
+    {
+        3 => "3 meses (90 dias)",
+        12 => "1 ano (365 dias)",
+        _ => "mês (30 dias)"
+    };
+
+    private string? WhatsAppSaleUrl
+    {
+        get
+        {
+            if (_settings is null || string.IsNullOrWhiteSpace(_settings.WhatsappNumber))
+                return null;
+
+            var digits = new string(_settings.WhatsappNumber.Where(char.IsDigit).ToArray());
+            if (digits.Length < 10)
+                return null;
+
+            var store = string.IsNullOrWhiteSpace(_customerStoreName) ? _settings.StoreName : _customerStoreName.Trim();
+            var domainText = string.IsNullOrWhiteSpace(_desiredDomain) ? "a definir" : _desiredDomain.Trim();
+            var contactText = string.IsNullOrWhiteSpace(_customerContact) ? "-" : _customerContact.Trim();
+            var msg =
+                $"Olá! Quero contratar o {GetPlanTitle(_selectedTier)} ({DurationLabel}) — Total: {TotalOrderAmount:C}.\n" +
+                $"Loja: {store}\n" +
+                $"Domínio desejado: {domainText}\n" +
+                $"Usuário/Gmail: {contactText}\n" +
+                $"Chave Pix informada: {_settings.PicpayPixKey}";
+
+            return $"https://wa.me/{digits}?text={Uri.EscapeDataString(msg)}";
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        _selectedTier = NormalizeTier(PlanTier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Gateway.AuthStateChanged += OnAuthStateChanged;
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async void OnAuthStateChanged()
+    {
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _settings = null;
+            _loading = false;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            if (Gateway.IsAdmin)
+            {
+                _settings = await Gateway.GetStoreSettingsAsync();
+                BrandState.ApplyFromAdminSettings(_settings);
+            }
+            else
+            {
+                var pub = await CatalogService.GetPublicStoreSettingsAsync();
+                _settings = new AdminStoreSettingsDto(
+                    Guid.Empty,
+                    pub.StoreName,
+                    pub.StoreSlug,
+                    pub.WhatsappNumber,
+                    pub.StoreDescription,
+                    null,
+                    pub.LogoPublicUrl,
+                    3,
+                    pub.UpdatedAt,
+                    pub.OnlineBaseUrl,
+                    pub.AutoSyncOnlineOnSave,
+                    pub.LastOnlineSyncAt,
+                    pub.IsSiteActive,
+                    pub.DeactivationReason,
+                    pub.LastActivityAt,
+                    pub.StoreName,
+                    pub.PlanTier,
+                    49.90m,
+                    129.90m,
+                    "picpay.me/sua-conta",
+                    pub.Design,
+                    pub.PlanActivatedAt,
+                    null,
+                    null,
+                    89.90m);
+                BrandState.ApplyFromPublicSettings(pub);
+            }
+
+            if (string.IsNullOrWhiteSpace(_customerStoreName))
+                _customerStoreName = _settings.StoreName;
+
+            if (string.IsNullOrWhiteSpace(_desiredDomain))
+                _desiredDomain = string.IsNullOrWhiteSpace(_settings.OnlineBaseUrl)
+                    ? WhatsAppLinkBuilder.GenerateDefaultStoreDomain(_settings.StoreName)
+                    : _settings.OnlineBaseUrl;
+
+            if (string.IsNullOrWhiteSpace(_customerContact) && Gateway.CurrentEmployee is not null)
+                _customerContact = Gateway.CurrentEmployee.Email ?? Gateway.CurrentEmployee.EffectiveUsername;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SelectTier(string tier)
+    {
+        _selectedTier = tier;
+        _error = null;
+        Navigation.NavigateTo($"/contratar-plano/{tier}", replace: true);
+    }
+
+    private async Task CopyPixKeyAsync()
+    {
+        if (_settings is null)
+            return;
+
+        try
+        {
+            await Clipboard.Default.SetTextAsync(_settings.PicpayPixKey);
+            _copiedPix = true;
+            _successMessage = $"Chave Pix '{_settings.PicpayPixKey}' copiada para a área de transferência.";
+        }
+        catch
+        {
+            _successMessage = $"Copie manualmente a chave Pix: {_settings.PicpayPixKey}";
+        }
+    }
+
+    private async Task OpenWhatsAppOrderAsync()
+    {
+        var url = WhatsAppSaleUrl;
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        try
+        {
+            await Launcher.Default.OpenAsync(new Uri(url));
+        }
+        catch (Exception ex)
+        {
+            _error = $"Não foi possível abrir o WhatsApp automaticamente ({ex.Message}). Copie a chave Pix acima e envie o comprovante para concluir a ativação.";
+        }
+    }
+
+    private async Task RedeemGiftCardAsync()
+    {
+        if (!Gateway.IsAdmin || string.IsNullOrWhiteSpace(_giftCardCode))
+            return;
+
+        _redeemingCode = true;
+        _error = null;
+        _successMessage = null;
+        try
+        {
+            var resp = await Gateway.RedeemActivationCodeAsync(new RedeemActivationCodeRequest
+            {
+                Code = _giftCardCode.Trim()
+            });
+            _settings = resp.UpdatedSettings;
+            BrandState.ApplyFromAdminSettings(resp.UpdatedSettings);
+            _giftCardCode = string.Empty;
+            _successMessage = resp.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _redeemingCode = false;
+        }
+    }
+
+    private static string NormalizeTier(string? candidate)
+    {
+        if (string.Equals(candidate, StoreDesignPresets.PlanPremium, StringComparison.OrdinalIgnoreCase))
+            return StoreDesignPresets.PlanPremium;
+        if (string.Equals(candidate, StoreDesignPresets.PlanBasic, StringComparison.OrdinalIgnoreCase))
+            return StoreDesignPresets.PlanBasic;
+        if (string.Equals(candidate, StoreDesignPresets.PlanIntermediate, StringComparison.OrdinalIgnoreCase))
+            return StoreDesignPresets.PlanIntermediate;
+        return StoreDesignPresets.PlanIntermediate;
+    }
+
+    private static string GetPlanTitle(string tier) => tier switch
+    {
+        StoreDesignPresets.PlanPremium => "Plano Premium Sob Medida",
+        StoreDesignPresets.PlanBasic => "Plano Básico",
+        _ => "Plano Intermediário (Meia Versão)"
+    };
+
+    private static IReadOnlyList<string> GetPlanFeatures(string tier) => tier switch
+    {
+        StoreDesignPresets.PlanPremium =>
+        [
+            "Todas as 5 versões pré-prontas incluídas",
+            "Estúdio Visual completo: paleta, tipografia, bordas e espaçamento livres",
+            "Textos editoriais e grade configuráveis em tempo real",
+            "Pré-visualização ao vivo e suporte a domínio próprio na publicação"
+        ],
+        StoreDesignPresets.PlanBasic =>
+        [
+            "Layout oficial fixo Minimalista Luxo pronto para usar",
+            "Não configurável: foco total em simplicidade para o público",
+            "Busca rápida, categorias, estoque atualizado e botão WhatsApp"
+        ],
+        _ =>
+        [
+            "Escolha livre entre 5 versões pré-prontas de vitrine",
+            "Visual calibrado e não configurável (sem complexidade para operar)",
+            "Troca instantânea do tema conforme a coleção da loja"
+        ]
+    };
+
+    public void Dispose()
+    {
+        Gateway.AuthStateChanged -= OnAuthStateChanged;
+    }
+}

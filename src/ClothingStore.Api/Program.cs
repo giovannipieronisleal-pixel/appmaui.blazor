@@ -489,6 +489,16 @@ app.MapDelete("/api/settings/logo", async (
     return Results.Ok(await service.RemoveStoreLogoAsync(employeeId, ct));
 }).RequireAuthorization(RoleNames.PolicyAdminOnly);
 
+app.MapPost("/api/settings/redeem-code", async (
+    RedeemActivationCodeRequest request,
+    ClaimsPrincipal user,
+    EmployeeAndSettingsService service,
+    CancellationToken ct) =>
+{
+    var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
+    return Results.Ok(await service.RedeemActivationCodeAsync(request, employeeId, ct));
+}).RequireAuthorization(RoleNames.PolicyAdminOnly);
+
 // =============================================================================
 // 9. ENDPOINTS DE STATUS E SINCRONIZAÇÃO EM NUVEM (Google Cloud Run / 24h Online)
 // =============================================================================
@@ -499,6 +509,26 @@ app.MapGet("/api/cloud/status", () => Results.Ok(new
     service = "ClothingStore",
     timestamp = DateTimeOffset.UtcNow
 })).AllowAnonymous();
+
+app.MapPost("/api/cloud/check-domain", async (
+    CheckDomainAvailabilityRequest request,
+    IHttpClientFactory httpFactory,
+    IClothingStoreRepository repository,
+    CancellationToken ct) =>
+{
+    var httpClient = httpFactory.CreateClient();
+    var result = await ClothingStore.Shared.Helpers.GoogleCloudDomainChecker.EvaluateDomainAsync(
+        request.Domain,
+        httpClient,
+        async domain =>
+        {
+            var settings = await repository.GetStoreSettingsAsync(ct);
+            return string.Equals(settings.OnlineBaseUrl, $"https://{domain}", StringComparison.OrdinalIgnoreCase);
+        },
+        ct);
+
+    return Results.Ok(result);
+}).AllowAnonymous();
 
 app.MapPost("/api/cloud/sync-state", async (
     CloudCatalogSyncPayload payload,

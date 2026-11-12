@@ -14,6 +14,7 @@ public sealed class User
     public static readonly TimeSpan DefaultLockoutDuration = TimeSpan.FromMinutes(15);
 
     public Guid Id { get; set; } = Guid.NewGuid();
+    public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public Guid RoleId { get; set; }
@@ -36,21 +37,47 @@ public sealed class User
     {
     }
 
-    public User(string email, string passwordHash, Guid roleId)
+    public User(string email, string passwordHash, Guid roleId, string? username = null)
     {
         SetEmail(email);
+        SetUsername(!string.IsNullOrWhiteSpace(username) ? username : DeriveDefaultUsername(Email));
         SetPasswordHash(passwordHash);
         RoleId = roleId;
         IsActive = true;
         CreatedAt = DateTimeOffset.UtcNow;
     }
 
+    public bool HasEmailAddress => !string.IsNullOrWhiteSpace(Email) && Email.Contains('@', StringComparison.Ordinal);
+
+    public void SetUsername(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            throw new DomainException("Informe um nome de usuário válido.");
+
+        var normalized = username.Trim().ToLowerInvariant();
+        if (normalized.Length > 80)
+            throw new DomainException("O nome de usuário deve conter no máximo 80 caracteres.");
+
+        Username = normalized;
+    }
+
     public void SetEmail(string emailOrLogin)
     {
         if (string.IsNullOrWhiteSpace(emailOrLogin))
-            throw new DomainException("Informe um login ou usuário válido.");
+            throw new DomainException("Informe um e-mail ou usuário válido.");
 
         Email = emailOrLogin.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(Username))
+        {
+            Username = DeriveDefaultUsername(Email);
+        }
+    }
+
+    public static string DeriveDefaultUsername(string emailOrLogin)
+    {
+        var normalized = (emailOrLogin ?? string.Empty).Trim().ToLowerInvariant();
+        var atIdx = normalized.IndexOf('@');
+        return atIdx > 0 ? normalized[..atIdx] : normalized;
     }
 
     public void SetPasswordHash(string passwordHash)

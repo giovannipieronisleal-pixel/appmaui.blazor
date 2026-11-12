@@ -1,4 +1,4 @@
-﻿@using ClothingStore.Application.Services
+@using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
@@ -22,7 +22,7 @@
 
     @if (Gateway.IsAdmin)
     {
-        <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94A3B8; padding: 1rem 0.85rem 0.25rem;">
+        <div class="adm-nav-section-label">
             Administração
         </div>
 
@@ -32,12 +32,17 @@
         </NavLink>
 
         <NavLink class="adm-nav-item" href="/configuracoes-loja">
-            <span class="adm-nav-icon">⚙️</span>
-            <span>Loja</span>
+            <span class="adm-nav-icon">🎨</span>
+            <span>Loja &amp; Visual</span>
+        </NavLink>
+
+        <NavLink class="adm-nav-item" href="/planos">
+            <span class="adm-nav-icon">💎</span>
+            <span>Planos</span>
         </NavLink>
     }
 
-    <div class="adm-nav-section-label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94A3B8; padding: 1rem 0.85rem 0.25rem;">
+    <div class="adm-nav-section-label">
         Catálogo Público
     </div>
 

@@ -44,8 +44,14 @@ public sealed class AuthService
         if (string.IsNullOrWhiteSpace(request.FullName))
             throw new DomainException("Informe seu nome completo.");
 
+        if (request.FullName.Trim().Length > 100)
+            throw new DomainException("O nome completo deve conter no máximo 100 caracteres.");
+
         if (string.IsNullOrWhiteSpace(request.Email))
             throw new DomainException("Informe um e-mail ou login de acesso válido.");
+
+        if (request.Email.Trim().Length > 254)
+            throw new DomainException("O e-mail ou login deve conter no máximo 254 caracteres.");
 
         ValidatePasswordStrength(request.Password);
 
@@ -55,8 +61,18 @@ public sealed class AuthService
             throw new DomainException("Este e-mail/login já está cadastrado no sistema.");
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Username))
+        {
+            var existingUsername = await _repository.GetUserByEmailAsync(request.Username, ct);
+            if (existingUsername is not null)
+            {
+                throw new DomainException("Este nome de usuário já está cadastrado no sistema.");
+            }
+        }
+
         var existingEmployees = await _repository.GetEmployeesAsync(ct);
-        var isFirstAccount = existingEmployees.Count == 0;
+        var isFirstAccount = existingEmployees.Count == 0 ||
+            existingEmployees.All(e => e.User != null && string.Equals(e.User.Email, "admin", StringComparison.OrdinalIgnoreCase));
         var roleName = isFirstAccount ? RoleNames.Admin : RoleNames.Employee;
 
         var role = await _repository.GetRoleByNameAsync(roleName, ct)
@@ -64,7 +80,7 @@ public sealed class AuthService
             ?? throw new DomainException("Perfil de acesso não encontrado.");
 
         var passwordHash = _passwordHasher.HashPassword(request.Password);
-        var user = new User(request.Email, passwordHash, role.Id)
+        var user = new User(request.Email, passwordHash, role.Id, request.Username)
         {
             Role = role,
             LastLoginAt = DateTimeOffset.UtcNow
@@ -76,7 +92,7 @@ public sealed class AuthService
             isFirstAccount ? "Proprietário(a) / Administrador(a)" : "Equipe",
             request.Phone?.Trim(),
             canManageProducts: isFirstAccount,
-            canManageStock: true)
+            canManageStock: isFirstAccount)
         {
             User = user
         };
@@ -112,7 +128,7 @@ public sealed class AuthService
             ?? throw new DomainException("Perfil de Administrador não encontrado.");
 
         var passwordHash = _passwordHasher.HashPassword(request.Password);
-        var user = new User(request.Email, passwordHash, adminRole.Id)
+        var user = new User(request.Email, passwordHash, adminRole.Id, request.Username)
         {
             Role = adminRole,
             LastLoginAt = DateTimeOffset.UtcNow
@@ -272,10 +288,29 @@ public sealed class AuthService
         var user = await _repository.GetUserByIdAsync(userId, ct)
             ?? throw new DomainException("Usuário não encontrado.");
 
+        var existingWithEmail = await _repository.GetUserByEmailAsync(request.Email, ct);
+        if (existingWithEmail is not null && existingWithEmail.Id != userId)
+        {
+            throw new DomainException("Este e-mail/login já está cadastrado no sistema por outro usuário.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Username))
+        {
+            var existingWithUsername = await _repository.GetUserByEmailAsync(request.Username, ct);
+            if (existingWithUsername is not null && existingWithUsername.Id != userId)
+            {
+                throw new DomainException("Este nome de usuário já está em uso por outro usuário.");
+            }
+        }
+
         var employee = await _repository.GetEmployeeByUserIdAsync(userId, ct)
             ?? throw new DomainException("Funcionário não encontrado.");
 
         user.SetEmail(request.Email);
+        if (!string.IsNullOrWhiteSpace(request.Username))
+        {
+            user.SetUsername(request.Username);
+        }
         employee.FullName = request.FullName.Trim();
         employee.Phone = request.Phone?.Trim();
         employee.UpdatedAt = DateTimeOffset.UtcNow;
@@ -296,7 +331,7 @@ public sealed class AuthService
         if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
             throw new DomainException("A senha atual informada está incorreta.");
 
-        if (string.IsNullOrWhiteSpace(request.Pin) || request.Pin.Length != 4 || !request.Pin.All(char.IsDigit))
+        if (string.IsNullOrWhiteSpace(request.Pin) || request.Pin.Length != 4 || !request.Pin.All(c => c >= '0' && c <= '9'))
             throw new DomainException("O PIN de segurança deve conter exatamente 4 números.");
 
         var pinHash = _passwordHasher.HashPassword(request.Pin);
@@ -334,9 +369,11 @@ public sealed class AuthService
         var user = await _repository.GetUserByIdAsync(userId, ct)
             ?? throw new DomainException("Usuário não encontrado.");
 
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var issuer = string.IsNullOrWhiteSpace(settings?.StoreName) ? "ClothingStore" : settings.StoreName;
         var secret = TwoFactorHelper.GenerateBase32Secret(10);
         var backupCodes = TwoFactorHelper.GenerateBackupCodes(4);
-        var otpUri = TwoFactorHelper.BuildOtpAuthUri(secret, user.Email, "Flavia Roupas");
+        var otpUri = TwoFactorHelper.BuildOtpAuthUri(secret, user.Email, issuer);
 
         return new TwoFactorSetupDto(secret, otpUri, backupCodes);
     }
@@ -478,6 +515,11 @@ public sealed class AuthService
             return new ForgotPasswordResponse(genericSafeResponse);
         }
 
+        if (!user.HasEmailAddress)
+        {
+            throw new DomainException("Esta conta ainda não possui um Gmail/e-mail cadastrado. Atualize seu Gmail em Meu Perfil para poder alterar sua senha por e-mail.");
+        }
+
         var rawCode = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
         var tokenHash = _passwordHasher.HashToken(rawCode);
         user.GeneratePasswordResetToken(tokenHash, TimeSpan.FromMinutes(30));
@@ -558,6 +600,9 @@ public sealed class AuthService
     {
         if (string.IsNullOrWhiteSpace(password) || password.Length < 4)
             throw new DomainException("A senha deve conter no mínimo 4 caracteres.");
+
+        if (password.Length > 128)
+            throw new DomainException("A senha deve conter no máximo 128 caracteres.");
     }
 
     public static EmployeeProfileDto MapToProfileDto(Employee employee, User user, string roleName) =>
@@ -573,5 +618,6 @@ public sealed class AuthService
             employee.HasStockManagementPermission(roleName),
             employee.IsActive && user.IsActive,
             user.TwoFactorEnabled,
-            !string.IsNullOrWhiteSpace(user.SecurityPinHash));
+            !string.IsNullOrWhiteSpace(user.SecurityPinHash),
+            string.IsNullOrWhiteSpace(user.Username) ? User.DeriveDefaultUsername(user.Email) : user.Username);
 }

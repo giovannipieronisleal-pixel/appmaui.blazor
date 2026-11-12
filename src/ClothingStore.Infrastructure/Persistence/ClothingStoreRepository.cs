@@ -53,16 +53,35 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
                     _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
                     return loaded;
                 }
+
+                BackupCorruptFile();
             }
         }
         catch
         {
+            BackupCorruptFile();
         }
 
         var seeded = ClothingStoreDatabaseState.CreateInitialSeed(_passwordHasher);
         HydrateNavigationProperties(seeded);
         PersistToDisk(seeded);
         return seeded;
+    }
+
+    private void BackupCorruptFile()
+    {
+        try
+        {
+            if (File.Exists(_storageFilePath))
+            {
+                var backupPath = $"{_storageFilePath}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+                File.Copy(_storageFilePath, backupPath, true);
+            }
+        }
+        catch
+        {
+            // Cópia de segurança em melhor esforço
+        }
     }
 
     private static void HydrateNavigationProperties(ClothingStoreDatabaseState state)
@@ -73,6 +92,10 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
             if (rolesById.TryGetValue(user.RoleId, out var role))
             {
                 user.Role = role;
+            }
+            if (string.IsNullOrWhiteSpace(user.Username) && !string.IsNullOrWhiteSpace(user.Email))
+            {
+                user.Username = User.DeriveDefaultUsername(user.Email);
             }
         }
 
@@ -196,7 +219,8 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
             RefreshFromDiskIfModified();
             var normalized = email.Trim().ToLowerInvariant();
             var found = _state.Users.FirstOrDefault(u =>
-                string.Equals(u.Email, normalized, StringComparison.OrdinalIgnoreCase));
+                string.Equals(u.Email, normalized, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(u.Username, normalized, StringComparison.OrdinalIgnoreCase));
 
             if (found is not null)
                 return found;
@@ -611,6 +635,75 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         try
         {
             _state.StoreSettings = settings;
+            PersistToDisk(_state);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<PlanActivationCode>> GetPlanActivationCodesAsync(CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            return _state.PlanActivationCodes
+                .OrderByDescending(c => c.CreatedAt)
+                .ToList();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<PlanActivationCode?> GetPlanActivationCodeByCodeAsync(string code, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            var normalized = (code ?? string.Empty).Trim().ToUpperInvariant();
+            return _state.PlanActivationCodes.FirstOrDefault(c =>
+                string.Equals(c.Code, normalized, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<PlanActivationCode?> GetPlanActivationCodeByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            return _state.PlanActivationCodes.FirstOrDefault(c => c.Id == id);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task SavePlanActivationCodeAsync(PlanActivationCode activationCode, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            var idx = _state.PlanActivationCodes.FindIndex(c => c.Id == activationCode.Id);
+            if (idx >= 0)
+            {
+                _state.PlanActivationCodes[idx] = activationCode;
+            }
+            else
+            {
+                _state.PlanActivationCodes.Add(activationCode);
+            }
             PersistToDisk(_state);
         }
         finally

@@ -93,6 +93,8 @@ public sealed class ProductVariant
             case StockMovementType.In:
                 if (quantity <= 0)
                     throw new DomainException("A quantidade de entrada deve ser maior que zero.");
+                if (quantity > 1_000_000 || int.MaxValue - previousQuantity < quantity)
+                    throw new DomainException("A quantidade de entrada não pode exceder 1.000.000 unidades.");
                 quantityChanged = quantity;
                 newQuantity = previousQuantity + quantity;
                 break;
@@ -109,6 +111,8 @@ public sealed class ProductVariant
             case StockMovementType.Adjustment:
                 if (quantity < 0)
                     throw new DomainException("O novo saldo de estoque em um ajuste não pode ser negativo.");
+                if (quantity > 1_000_000)
+                    throw new DomainException("O novo saldo de estoque em um ajuste não pode exceder 1.000.000 unidades.");
                 quantityChanged = quantity - previousQuantity;
                 if (quantityChanged == 0)
                     throw new DomainException("O ajuste informado não altera a quantidade atual em estoque.");

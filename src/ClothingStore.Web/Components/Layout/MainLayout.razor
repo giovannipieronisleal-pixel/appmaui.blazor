@@ -1,106 +1,110 @@
 @inherits LayoutComponentBase
-@inject CatalogDataGateway CatalogGateway
-@inject NavigationManager Navigation
-@implements IDisposable
+@inject CatalogDataGateway CatalogDataGateway
 
-<div class="site-wrapper">
-    <header class="site-header">
-        <div class="container header-inner">
-            <a href="/loja/@_store.StoreSlug" class="brand-link">
-                @if (!string.IsNullOrWhiteSpace(_store.LogoPublicUrl))
+<StoreDesignStyleInjector Design="@_store?.Design" />
+
+<div class="lux-shell">
+    <header class="lux-header">
+        <div class="lux-container lux-header-inner">
+            <a href="/" class="lux-brand-link">
+                @if (!string.IsNullOrWhiteSpace(_store?.LogoPublicUrl))
                 {
-                    <img src="@_store.LogoPublicUrl" alt="@_store.StoreName" class="brand-logo" />
+                    <img src="@_store.LogoPublicUrl" alt="@_store.StoreName" class="lux-brand-logo" />
                 }
-                <span class="brand-name">@_store.StoreName</span>
+                else
+                {
+                    <span class="lux-brand-mark">@BrandInitial</span>
+                }
+
+                <span>
+                    <span class="lux-brand-title">@(_store?.StoreName ?? "Atelier Digital")</span>
+                    <span class="lux-brand-sub">@BrandSubtitle</span>
+                </span>
             </a>
 
-            <nav class="nav-links">
-                <a href="/loja/@_store.StoreSlug" class="nav-link">Início</a>
-                <a href="/loja/@_store.StoreSlug/catalogo" class="nav-link">Catálogo Completo</a>
-                @foreach (var cat in _categories.Take(4))
+            <nav class="lux-nav" aria-label="Navegação principal">
+                <NavLink href="/" Match="NavLinkMatch.All" class="lux-nav-link">Início</NavLink>
+                <NavLink href="/catalogo" class="lux-nav-link">Ver Roupas</NavLink>
+
+                @if (_store is { IsSiteActive: true } && !string.IsNullOrWhiteSpace(_store.WhatsappNumber))
                 {
-                    <a href="/loja/@_store.StoreSlug/catalogo?categoria=@cat.Slug" class="nav-link">@cat.Name</a>
-                }
-            </nav>
-
-            <div>
-                <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
-                   target="_blank"
-                   rel="noopener noreferrer"
-                   class="btn btn-whatsapp">
-                    <span>Atendimento WhatsApp</span>
-                </a>
-            </div>
-        </div>
-    </header>
-
-    <main>
-        @Body
-    </main>
-
-    <footer class="site-footer">
-        <div class="container">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 2rem; flex-wrap: wrap;">
-                <div style="max-width: 480px;">
-                    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
-                        @if (!string.IsNullOrWhiteSpace(_store.LogoPublicUrl))
-                        {
-                            <img src="@_store.LogoPublicUrl" alt="@_store.StoreName" class="brand-logo" />
-                        }
-                        <strong class="brand-name">@_store.StoreName</strong>
-                    </div>
-                    <p style="color: var(--text-secondary); font-size: 0.95rem;">
-                        @_store.StoreDescription
-                    </p>
-                </div>
-
-                <div>
-                    <div class="filter-group-title">Catálogo Digital</div>
-                    <p style="color: var(--text-secondary); font-size: 0.9rem; max-width: 340px; margin-bottom: 0.75rem;">
-                        Consulte disponibilidade de cores e tamanhos em tempo real e faça seu pedido diretamente pelo nosso WhatsApp.
-                    </p>
                     <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
                        target="_blank"
                        rel="noopener noreferrer"
-                       class="btn btn-outline">
-                        WhatsApp: +@_store.WhatsappNumber
+                       class="lux-btn lux-btn-whatsapp lux-btn-sm">
+                        💬 Comprar no WhatsApp
                     </a>
-                </div>
-            </div>
+                }
+            </nav>
+        </div>
+    </header>
 
-            <div style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color); font-size: 0.82rem; color: var(--text-muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
-                <span>&copy; @DateTime.Now.Year @_store.StoreName — Catálogo Digital Exclusivo (Sem checkout online).</span>
-                <span>Sincronizado em tempo real com o estoque da loja.</span>
+    <main class="lux-main">
+        <div class="lux-container">
+            @Body
+        </div>
+    </main>
+
+    <footer class="lux-footer">
+        <div class="lux-container lux-footer-inner">
+            <div>
+                <strong>@(_store?.StoreName ?? "Loja Online")</strong> — @(_store?.StoreDescription ?? "Moda selecionada com atendimento direto.")
+            </div>
+            <div>
+                @if (_store is not null && !string.IsNullOrWhiteSpace(_store.WhatsappNumber))
+                {
+                    <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       style="font-weight: 600; color: var(--brand-accent);">
+                        💬 Atendimento rápido pelo WhatsApp
+                    </a>
+                }
             </div>
         </div>
     </footer>
+
+    @if (_store is { IsSiteActive: true } && !string.IsNullOrWhiteSpace(_store.WhatsappNumber))
+    {
+        <div class="lux-mobile-wa-bar">
+            <a href="/catalogo" class="lux-btn lux-btn-outline lux-btn-sm" style="flex: 1;">
+                Ver Roupas
+            </a>
+            <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="lux-btn lux-btn-whatsapp lux-btn-sm"
+               style="flex: 1.4;">
+                💬 Pedir no WhatsApp
+            </a>
+        </div>
+    }
 </div>
 
 @code {
-    private PublicStoreSettingsDto _store = new("Minha Loja", "minha-loja", "5511900000000", "Catálogo digital oficial da loja.", null, DateTimeOffset.UtcNow);
-    private IReadOnlyList<CategoryDto> _categories = [];
+    private PublicStoreSettingsDto? _store;
+
+    private string BrandInitial =>
+        string.IsNullOrWhiteSpace(_store?.StoreName)
+            ? "L"
+            : _store.StoreName.Trim()[..1].ToUpperInvariant();
+
+    private string BrandSubtitle => _store?.PlanTier switch
+    {
+        StoreDesignPresets.PlanPremium => "Loja Oficial • Sob Medida",
+        StoreDesignPresets.PlanIntermediate => "Loja Oficial • Coleção Selecionada",
+        _ => "Catálogo Online Oficial"
+    };
 
     protected override async Task OnInitializedAsync()
     {
-        Navigation.LocationChanged += OnLocationChanged;
-        await RefreshStoreHeaderAsync();
-    }
-
-    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
-    {
-        await RefreshStoreHeaderAsync();
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task RefreshStoreHeaderAsync()
-    {
-        _store = await CatalogGateway.GetStoreInfoAsync();
-        _categories = await CatalogGateway.GetCategoriesAsync();
-    }
-
-    public void Dispose()
-    {
-        Navigation.LocationChanged -= OnLocationChanged;
+        try
+        {
+            _store = await CatalogDataGateway.GetStoreInfoAsync();
+        }
+        catch
+        {
+            _store = null;
+        }
     }
 }
-

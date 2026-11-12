@@ -42,7 +42,7 @@ public sealed class SupabasePostgresClient
         if (!IsEnabled)
             return;
 
-        var payload = new
+        var extendedPayload = new
         {
             id = settings.Id,
             store_name = settings.StoreName,
@@ -54,11 +54,35 @@ public sealed class SupabasePostgresClient
             online_base_url = settings.OnlineBaseUrl,
             auto_sync_online_on_save = settings.AutoSyncOnlineOnSave,
             last_online_sync_at = settings.LastOnlineSyncAt,
+            plan_tier = settings.PlanTier,
+            basic_plan_monthly_price = settings.BasicPlanMonthlyPrice,
+            premium_plan_monthly_price = settings.PremiumPlanMonthlyPrice,
+            picpay_pix_key = settings.PicpayPixKey,
+            design_config = settings.DesignConfig,
             updated_by_employee_id = settings.UpdatedByEmployeeId,
             updated_at = settings.UpdatedAt
         };
 
-        await SendPostgRestUpsertAsync("store_settings", payload, ct);
+        var ok = await SendPostgRestUpsertAsync("store_settings", extendedPayload, ct);
+        if (!ok)
+        {
+            var legacyPayload = new
+            {
+                id = settings.Id,
+                store_name = settings.StoreName,
+                whatsapp_number = settings.WhatsappNumber,
+                store_description = settings.StoreDescription,
+                logo_storage_path = settings.LogoStoragePath,
+                logo_public_url = settings.LogoPublicUrl,
+                default_low_stock_threshold = settings.DefaultLowStockThreshold,
+                online_base_url = settings.OnlineBaseUrl,
+                auto_sync_online_on_save = settings.AutoSyncOnlineOnSave,
+                last_online_sync_at = settings.LastOnlineSyncAt,
+                updated_by_employee_id = settings.UpdatedByEmployeeId,
+                updated_at = settings.UpdatedAt
+            };
+            await SendPostgRestUpsertAsync("store_settings", legacyPayload, ct);
+        }
     }
 
     public async Task UpsertProductAsync(Product product, CancellationToken ct = default)
@@ -156,7 +180,7 @@ public sealed class SupabasePostgresClient
         await SendPostgRestUpsertAsync("stock_movements", payload, ct);
     }
 
-    private async Task SendPostgRestUpsertAsync<T>(string tableName, T payload, CancellationToken ct)
+    private async Task<bool> SendPostgRestUpsertAsync<T>(string tableName, T payload, CancellationToken ct)
     {
         try
         {
@@ -167,11 +191,13 @@ public sealed class SupabasePostgresClient
             request.Headers.Add("Prefer", "resolution=merge-duplicates");
             request.Content = JsonContent.Create(payload, options: SnakeCaseJsonOptions);
 
-            await _httpClient.SendAsync(request, ct);
+            var response = await _httpClient.SendAsync(request, ct);
+            return response.IsSuccessStatusCode;
         }
         catch
         {
             // Mantém resiliência caso a rede oscile temporariamente
+            return false;
         }
     }
 }

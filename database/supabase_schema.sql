@@ -141,8 +141,35 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
     online_base_url text NULL,
     auto_sync_online_on_save boolean NOT NULL DEFAULT true,
     last_online_sync_at timestamptz NULL,
+    plan_tier varchar(20) NOT NULL DEFAULT 'Basico',
+    basic_plan_monthly_price numeric(10,2) NOT NULL DEFAULT 49.90,
+    intermediary_plan_monthly_price numeric(10,2) NOT NULL DEFAULT 89.90,
+    premium_plan_monthly_price numeric(10,2) NOT NULL DEFAULT 129.90,
+    picpay_pix_key varchar(140) NOT NULL DEFAULT 'picpay.me/sua-conta',
+    plan_activated_at timestamptz NULL,
+    plan_expires_at timestamptz NULL,
+    active_gift_card_code varchar(64) NULL,
+    design_config jsonb NOT NULL DEFAULT '{}'::jsonb,
     updated_by_employee_id uuid NULL REFERENCES public.employees(id) ON DELETE SET NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 10. PLAN_ACTIVATION_CODES (Códigos / Gift Cards de ativação de versão e validade de plano)
+CREATE TABLE IF NOT EXISTS public.plan_activation_codes (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    code varchar(64) NOT NULL UNIQUE,
+    target_plan_tier varchar(20) NOT NULL DEFAULT 'Premium',
+    duration_days int NULL,
+    target_store_name varchar(140) NULL,
+    notes text NULL,
+    created_by_employee_id uuid NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    code_expires_at timestamptz NULL,
+    is_revoked boolean NOT NULL DEFAULT false,
+    redeemed_at timestamptz NULL,
+    redeemed_by_store_name varchar(140) NULL,
+    redeemed_by_employee_id uuid NULL,
+    applied_plan_expires_at timestamptz NULL
 );
 
 -- =============================================================================

@@ -1,34 +1,74 @@
 @page "/catalogo"
 @page "/loja/{StoreSlug}/catalogo"
-@inject CatalogDataGateway CatalogGateway
-@inject NavigationManager Navigation
+@inject CatalogDataGateway CatalogDataGateway
 
-<PageTitle>Catálogo de Roupas — @_store.StoreName</PageTitle>
+<PageTitle>Catálogo — @(_store?.StoreName ?? "Atelier Digital")</PageTitle>
 
-<div class="container">
-    <div style="padding: 2rem 0 0.5rem; border-bottom: 1px solid var(--border-color);">
-        <h1 style="font-size: 1.85rem; font-weight: 700;">Catálogo de Roupas</h1>
-        <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 0.25rem;">
-            Filtre por categoria, tamanho, cor ou pesquise pelo nome da peça.
+@if (_store is { IsSiteActive: false })
+{
+    <section class="lux-empty-card">
+        <span class="lux-hero-eyebrow">Loja em Atualização</span>
+        <h1 class="lux-hero-title">@_store.StoreName</h1>
+        <p class="lux-hero-subtitle" style="margin-left: auto; margin-right: auto;">
+            @(_store.DeactivationReason ?? "Este catálogo está sendo atualizado com novidades.")
         </p>
+        @if (!string.IsNullOrWhiteSpace(_store.WhatsappNumber))
+        {
+            <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="lux-btn lux-btn-whatsapp">
+                💬 Falar com a Loja no WhatsApp
+            </a>
+        }
+    </section>
+}
+else
+{
+    <div class="lux-section-head">
+        <div>
+            <span class="lux-section-kicker">Escolha Fácil</span>
+            <h1 class="lux-section-title">@(_store?.StoreName ?? "Todas as Roupas")</h1>
+        </div>
+        <span class="lux-product-sizes" style="font-size: 0.9rem; font-weight: 600;">@_products.Count peça(s) encontrada(s)</span>
     </div>
 
-    <div class="catalog-layout">
-        <!-- Painel de Filtros -->
-        <aside class="filter-panel">
-            <div>
-                <div class="filter-group-title">Pesquisar Peça</div>
-                <input type="text"
-                       class="form-input"
-                       placeholder="Pesquisar pelo nome da peça..."
-                       @bind="_searchText"
+    @if (_filters.Categories.Count > 0)
+    {
+        <div class="lux-category-rail" style="margin-bottom: 1.5rem;" aria-label="Categorias rápidas">
+            <button type="button"
+                    class="lux-category-pill @(string.IsNullOrWhiteSpace(_selectedCategorySlug) ? "active" : "")"
+                    @onclick="() => SelectCategoryAsync(null)">
+                Todas
+            </button>
+            @foreach (var cat in _filters.Categories)
+            {
+                var isSelected = string.Equals(_selectedCategorySlug, cat.Slug, StringComparison.OrdinalIgnoreCase);
+                <button type="button"
+                        class="lux-category-pill @(isSelected ? "active" : "")"
+                        @onclick="() => SelectCategoryAsync(cat.Slug)">
+                    <span>@cat.Name</span>
+                    <span class="lux-category-count">@cat.ProductCount</span>
+                </button>
+            }
+        </div>
+    }
+
+    <div class="lux-catalog-layout">
+        <aside class="lux-filter-panel" aria-label="Filtros do catálogo">
+            <div class="lux-filter-group">
+                <label class="lux-filter-label" for="cat-search">Buscar peça</label>
+                <input id="cat-search"
+                       class="lux-input"
+                       placeholder="Ex.: Linho, Blazer, Vestido..."
+                       @bind="_search"
                        @bind:event="oninput"
                        @bind:after="ApplyFiltersAsync" />
             </div>
 
-            <div>
-                <div class="filter-group-title">Categoria</div>
-                <select class="form-select" @bind="_selectedCategorySlug" @bind:after="OnCategorySelectChangedAsync">
+            <div class="lux-filter-group">
+                <label class="lux-filter-label" for="cat-category">Categoria</label>
+                <select id="cat-category" class="lux-select" @bind="_selectedCategorySlug" @bind:after="ApplyFiltersAsync">
                     <option value="">Todas as categorias</option>
                     @foreach (var cat in _filters.Categories)
                     {
@@ -37,130 +77,71 @@
                 </select>
             </div>
 
-            <div>
-                <div class="filter-group-title">Tamanho</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 0.45rem;">
-                    @foreach (var size in _filters.Sizes)
+            <div class="lux-filter-group">
+                <label class="lux-filter-label" for="cat-color">Cor</label>
+                <select id="cat-color" class="lux-select" @bind="_selectedColor" @bind:after="ApplyFiltersAsync">
+                    <option value="">Todas as cores</option>
+                    @foreach (var col in _filters.Colors)
                     {
-                        var isSelected = string.Equals(_selectedSize, size, StringComparison.OrdinalIgnoreCase);
-                        <button type="button"
-                                class="selector-btn @(isSelected ? "active" : "")"
-                                style="padding: 0.4rem 0.75rem; font-size: 0.82rem;"
-                                @onclick="() => ToggleSizeFilterAsync(size)">
-                            @size
-                        </button>
+                        <option value="@col.Color">@col.Color</option>
                     }
-                </div>
+                </select>
             </div>
 
-            <div>
-                <div class="filter-group-title">Cor</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 0.45rem;">
-                    @foreach (var colorOpt in _filters.Colors)
+            <div class="lux-filter-group">
+                <label class="lux-filter-label" for="cat-size">Tamanho</label>
+                <select id="cat-size" class="lux-select" @bind="_selectedSize" @bind:after="ApplyFiltersAsync">
+                    <option value="">Todos os tamanhos</option>
+                    @foreach (var sz in _filters.Sizes)
                     {
-                        var isSelected = string.Equals(_selectedColor, colorOpt.Color, StringComparison.OrdinalIgnoreCase);
-                        <button type="button"
-                                class="selector-btn @(isSelected ? "active" : "")"
-                                style="padding: 0.4rem 0.7rem; font-size: 0.82rem;"
-                                @onclick="() => ToggleColorFilterAsync(colorOpt.Color)">
-                            <span class="color-dot" style="background-color: @colorOpt.ColorHex;"></span>
-                            <span>@colorOpt.Color</span>
-                        </button>
+                        <option value="@sz">@sz</option>
                     }
-                </div>
+                </select>
             </div>
 
-            <div>
-                <label style="display: flex; align-items: center; gap: 0.55rem; font-size: 0.9rem; cursor: pointer;">
+            <div class="lux-filter-group">
+                <label class="lux-check-row">
                     <input type="checkbox" @bind="_onlyInStock" @bind:after="ApplyFiltersAsync" />
-                    <span>Apenas produtos em estoque</span>
+                    <span>Mostrar só peças disponíveis agora</span>
                 </label>
             </div>
 
-            <button type="button" class="btn btn-outline" style="width: 100%;" @onclick="ClearFiltersAsync">
-                Limpar Filtros
-            </button>
+            <div class="lux-hero-actions">
+                <button type="button" class="lux-btn lux-btn-outline lux-btn-sm" style="width: 100%;" @onclick="ClearFiltersAsync">
+                    Limpar Filtros
+                </button>
+            </div>
         </aside>
 
-        <!-- Grade de Produtos -->
-        <section>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-                <span style="font-size: 0.92rem; color: var(--text-secondary);">
-                    Exibindo <strong>@_products.Count</strong> peça(s) encontrada(s)
-                </span>
-            </div>
-
-            @if (_products.Count == 0)
+        <div>
+            @if (_loading)
             {
-                <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3rem; text-align: center;">
-                    <h3 style="margin-bottom: 0.5rem;">Nenhum produto encontrado com esses filtros</h3>
-                    <p style="color: var(--text-secondary); margin-bottom: 1.25rem;">
-                        Tente remover alguns filtros de cor ou tamanho para visualizar mais opções do catálogo.
-                    </p>
-                    <button type="button" class="btn btn-dark" @onclick="ClearFiltersAsync">Ver todas as peças</button>
+                <div class="lux-empty-card">
+                    <p>Atualizando seleção de peças...</p>
+                </div>
+            }
+            else if (_products.Count == 0)
+            {
+                <div class="lux-empty-card">
+                    <h3>Nenhuma peça encontrada</h3>
+                    <p class="lux-hero-subtitle">Ajuste os filtros ao lado para visualizar outras peças da coleção.</p>
+                    <button type="button" class="lux-btn lux-btn-outline" @onclick="ClearFiltersAsync">
+                        Restaurar Catálogo
+                    </button>
                 </div>
             }
             else
             {
-                <div class="product-grid">
+                <div class="lux-product-grid">
                     @foreach (var product in _products)
                     {
-                        <article class="product-card">
-                            <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-image-wrap">
-                                @if (!string.IsNullOrWhiteSpace(product.PrimaryImageUrl))
-                                {
-                                    <img src="@product.PrimaryImageUrl" alt="@product.Name" class="product-image" loading="lazy" />
-                                }
-                                else
-                                {
-                                    <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">
-                                        Sem fotografia
-                                    </div>
-                                }
-
-                                @if (product.HasAvailableStock)
-                                {
-                                    <span class="stock-badge badge-in-stock">Em estoque</span>
-                                }
-                                else
-                                {
-                                    <span class="stock-badge badge-out-of-stock">Indisponível</span>
-                                }
-                            </a>
-
-                            <div class="product-card-body">
-                                <span class="product-category">@product.CategoryName</span>
-                                <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="product-title">@product.Name</a>
-                                <div class="product-price">@product.BasePrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
-
-                                <div class="product-meta-row">
-                                    <div class="color-dots">
-                                        @foreach (var c in product.AvailableColors)
-                                        {
-                                            <span class="color-dot" style="background-color: @c.ColorHex;" title="@c.Color"></span>
-                                        }
-                                    </div>
-                                    <div class="size-chips">
-                                        @foreach (var s in product.AvailableSizes)
-                                        {
-                                            <span class="size-chip-mini">@s</span>
-                                        }
-                                    </div>
-                                </div>
-
-                                <div style="margin-top: 0.75rem;">
-                                    <a href="/loja/@_store.StoreSlug/produto/@product.Slug" class="btn btn-dark" style="width: 100%; font-size: 0.88rem; padding: 0.55rem 0.9rem;">
-                                        Selecionar Cor e Tamanho
-                                    </a>
-                                </div>
-                            </div>
-                        </article>
+                        <ProductCard Product="@product" StoreSlug="@EffectiveStoreSlug" />
                     }
                 </div>
             }
-        </section>
+        </div>
     </div>
-</div>
+}
 
 @code {
     [Parameter]
@@ -169,70 +150,79 @@
     [SupplyParameterFromQuery(Name = "categoria")]
     public string? QueryCategorySlug { get; set; }
 
-    private PublicStoreSettingsDto _store = new("Minha Loja", "minha-loja", "5511900000000", "", null, DateTimeOffset.UtcNow);
+    [SupplyParameterFromQuery(Name = "category")]
+    public string? QueryCategoryAlt { get; set; }
+
+    [SupplyParameterFromQuery(Name = "busca")]
+    public string? QuerySearch { get; set; }
+
+    private PublicStoreSettingsDto? _store;
     private CatalogFiltersDto _filters = new([], [], []);
     private IReadOnlyList<CatalogProductCardDto> _products = [];
+    private bool _loading = true;
 
-    private string? _searchText;
+    private string? _search;
     private string? _selectedCategorySlug;
-    private string? _lastQueryCategorySlug = "__UNINITIALIZED__";
     private string? _selectedColor;
     private string? _selectedSize;
     private bool _onlyInStock;
 
+    private string? EffectiveStoreSlug =>
+        !string.IsNullOrWhiteSpace(StoreSlug) ? StoreSlug : _store?.StoreSlug;
+
     protected override async Task OnParametersSetAsync()
     {
-        _store = await CatalogGateway.GetStoreInfoAsync();
-        _filters = await CatalogGateway.GetFiltersAsync();
+        _selectedCategorySlug ??= !string.IsNullOrWhiteSpace(QueryCategorySlug)
+            ? QueryCategorySlug
+            : QueryCategoryAlt;
+        _search ??= QuerySearch;
 
-        var normalizedQueryCategory = string.IsNullOrWhiteSpace(QueryCategorySlug) ? null : QueryCategorySlug.Trim();
-        if (!string.Equals(_lastQueryCategorySlug, normalizedQueryCategory, StringComparison.OrdinalIgnoreCase))
+        _store = await CatalogDataGateway.GetStoreInfoAsync();
+        if (_store?.IsSiteActive == false)
         {
-            _lastQueryCategorySlug = normalizedQueryCategory;
-            _selectedCategorySlug = normalizedQueryCategory;
+            _loading = false;
+            return;
         }
 
-        await ApplyFiltersAsync();
+        _filters = await CatalogDataGateway.GetFiltersAsync();
+        await LoadProductsAsync();
     }
 
-    private async Task OnCategorySelectChangedAsync()
-    {
-        _lastQueryCategorySlug = string.IsNullOrWhiteSpace(_selectedCategorySlug) ? null : _selectedCategorySlug;
-        await ApplyFiltersAsync();
-    }
+    private Task ApplyFiltersAsync() => LoadProductsAsync();
 
-    private async Task ToggleSizeFilterAsync(string size)
+    private Task SelectCategoryAsync(string? categorySlug)
     {
-        _selectedSize = string.Equals(_selectedSize, size, StringComparison.OrdinalIgnoreCase) ? null : size;
-        await ApplyFiltersAsync();
-    }
-
-    private async Task ToggleColorFilterAsync(string color)
-    {
-        _selectedColor = string.Equals(_selectedColor, color, StringComparison.OrdinalIgnoreCase) ? null : color;
-        await ApplyFiltersAsync();
-    }
-
-    private async Task ApplyFiltersAsync()
-    {
-        var query = new CatalogQueryFilter(
-            Search: _searchText,
-            CategorySlug: _selectedCategorySlug,
-            Color: _selectedColor,
-            Size: _selectedSize,
-            OnlyInStock: _onlyInStock);
-
-        _products = await CatalogGateway.GetProductsAsync(query);
+        _selectedCategorySlug = categorySlug;
+        return LoadProductsAsync();
     }
 
     private async Task ClearFiltersAsync()
     {
-        _searchText = null;
+        _search = null;
         _selectedCategorySlug = null;
         _selectedColor = null;
         _selectedSize = null;
         _onlyInStock = false;
-        await ApplyFiltersAsync();
+        await LoadProductsAsync();
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _loading = true;
+        try
+        {
+            var filter = new CatalogQueryFilter(
+                Search: string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+                CategorySlug: string.IsNullOrWhiteSpace(_selectedCategorySlug) ? null : _selectedCategorySlug.Trim(),
+                Color: string.IsNullOrWhiteSpace(_selectedColor) ? null : _selectedColor.Trim(),
+                Size: string.IsNullOrWhiteSpace(_selectedSize) ? null : _selectedSize.Trim(),
+                OnlyInStock: _onlyInStock);
+
+            _products = await CatalogDataGateway.GetProductsAsync(filter);
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 }
-

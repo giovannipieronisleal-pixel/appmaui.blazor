@@ -139,13 +139,15 @@ public sealed class CreateEmployeeRequest
     public string? Username { get; set; }
 
     /// <summary>
-    /// E-mail (Opcional).
+    /// E-mail (Gmail do funcionário para que ele defina/altere a própria senha).
     /// </summary>
     public string? Email { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "A senha inicial é obrigatória.")]
-    [MinLength(4, ErrorMessage = "A senha deve ter no mínimo 4 caracteres.")]
-    public string InitialPassword { get; set; } = string.Empty;
+    /// <summary>
+    /// Campo legado/opcional apenas para compatibilidade interna de testes;
+    /// administradores não criam nem visualizam senhas dos funcionários na interface.
+    /// </summary>
+    public string? InitialPassword { get; set; }
 
     public string RoleName { get; set; } = "Employee";
     public string? JobTitle { get; set; }
@@ -197,6 +199,18 @@ public sealed class UpdateStoreSettingsRequest
     public bool AutoSyncOnlineOnSave { get; set; } = true;
 
     public DateTimeOffset? LastOnlineSyncAt { get; set; }
+
+    public bool IsSiteActive { get; set; } = true;
+    public string? DeactivationReason { get; set; }
+    public DateTimeOffset? LastActivityAt { get; set; }
+    public string? PublishedStoreName { get; set; }
+
+    public string? PlanTier { get; set; }
+    public decimal? BasicPlanMonthlyPrice { get; set; }
+    public decimal? IntermediaryPlanMonthlyPrice { get; set; }
+    public decimal? PremiumPlanMonthlyPrice { get; set; }
+    public string? PicpayPixKey { get; set; }
+    public StoreDesignDto? Design { get; set; }
 }
 
 public sealed record AdminStoreSettingsDto(
@@ -211,7 +225,20 @@ public sealed record AdminStoreSettingsDto(
     DateTimeOffset UpdatedAt,
     string? OnlineBaseUrl = null,
     bool AutoSyncOnlineOnSave = true,
-    DateTimeOffset? LastOnlineSyncAt = null);
+    DateTimeOffset? LastOnlineSyncAt = null,
+    bool IsSiteActive = true,
+    string? DeactivationReason = null,
+    DateTimeOffset? LastActivityAt = null,
+    string? PublishedStoreName = null,
+    string PlanTier = "Basico",
+    decimal BasicPlanMonthlyPrice = 49.90m,
+    decimal PremiumPlanMonthlyPrice = 129.90m,
+    string PicpayPixKey = "picpay.me/sua-conta",
+    StoreDesignDto? Design = null,
+    DateTimeOffset? PlanActivatedAt = null,
+    DateTimeOffset? PlanExpiresAt = null,
+    string? ActiveGiftCardCode = null,
+    decimal IntermediaryPlanMonthlyPrice = 89.90m);
 
 public sealed class CloudCatalogSyncPayload
 {
@@ -220,4 +247,33 @@ public sealed class CloudCatalogSyncPayload
     public List<SaveProductRequest> Products { get; set; } = [];
     public string? RawDatabaseJson { get; set; }
 }
+
+public sealed class CheckDomainAvailabilityRequest
+{
+    [Required(ErrorMessage = "Informe o domínio desejado.")]
+    public string Domain { get; set; } = string.Empty;
+}
+
+public sealed record CheckDomainAvailabilityResponse(
+    string Domain,
+    bool IsAvailable,
+    string Status,
+    string Message,
+    string NormalizedUrl,
+    IReadOnlyList<string> Suggestions
+);
+
+public sealed class RedeemActivationCodeRequest
+{
+    [Required(ErrorMessage = "Informe o código do Gift Card.")]
+    public string Code { get; set; } = string.Empty;
+}
+
+public sealed record RedeemActivationCodeResponse(
+    string Code,
+    string ActivatedPlanTier,
+    int? DurationDays,
+    DateTimeOffset? PlanExpiresAt,
+    string Message,
+    AdminStoreSettingsDto UpdatedSettings);
 

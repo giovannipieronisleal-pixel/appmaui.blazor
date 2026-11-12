@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Domain.Entities;
 using ClothingStore.Domain.Enums;
@@ -15,15 +16,18 @@ public sealed class EmployeeAndSettingsService
     private readonly IClothingStoreRepository _repository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IImageStorageService _imageStorage;
+    private readonly IEmailService? _emailService;
 
     public EmployeeAndSettingsService(
         IClothingStoreRepository repository,
         IPasswordHasher passwordHasher,
-        IImageStorageService imageStorage)
+        IImageStorageService imageStorage,
+        IEmailService? emailService = null)
     {
         _repository = repository;
         _passwordHasher = passwordHasher;
         _imageStorage = imageStorage;
+        _emailService = emailService;
     }
 
     public async Task<IReadOnlyList<EmployeeProfileDto>> GetEmployeesAsync(CancellationToken ct = default)
@@ -46,7 +50,15 @@ public sealed class EmployeeAndSettingsService
 
     public async Task<EmployeeProfileDto> CreateEmployeeAsync(CreateEmployeeRequest request, CancellationToken ct = default)
     {
-        AuthService.ValidatePasswordStrength(request.InitialPassword);
+        var hasLegacyPassword = !string.IsNullOrWhiteSpace(request.InitialPassword);
+        if (hasLegacyPassword)
+        {
+            AuthService.ValidatePasswordStrength(request.InitialPassword);
+        }
+        else if (string.IsNullOrWhiteSpace(request.Email) || !request.Email.Contains('@', StringComparison.Ordinal))
+        {
+            throw new DomainException("Informe o Gmail/e-mail do funcionário para que apenas ele crie a própria senha por e-mail.");
+        }
 
         var roleName = string.Equals(request.RoleName, RoleNames.Admin, StringComparison.OrdinalIgnoreCase)
             ? RoleNames.Admin
@@ -55,20 +67,20 @@ public sealed class EmployeeAndSettingsService
         var role = await _repository.GetRoleByNameAsync(roleName, ct)
             ?? throw new DomainException($"Perfil '{roleName}' não encontrado.");
 
-        // O e-mail não é obrigatório: usa o Login (Username), ou o E-mail (se informado), ou gera automaticamente a partir do Nome
-        var loginIdentifier = !string.IsNullOrWhiteSpace(request.Username)
-            ? request.Username.Trim().ToLowerInvariant()
-            : !string.IsNullOrWhiteSpace(request.Email)
-                ? request.Email.Trim().ToLowerInvariant()
-                : Category.GenerateSlug(request.FullName).Replace('-', '.');
+        var explicitEmail = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
+        var explicitUsername = string.IsNullOrWhiteSpace(request.Username) ? null : request.Username.Trim().ToLowerInvariant();
+
+        // Mantém compatibilidade com cadastro sem e-mail apenas quando chamado por fluxo legado com senha inicial
+        var loginIdentifier = explicitEmail
+            ?? explicitUsername
+            ?? Category.GenerateSlug(request.FullName).Replace('-', '.');
 
         if (string.IsNullOrWhiteSpace(loginIdentifier))
         {
             loginIdentifier = $"func.{Guid.NewGuid().ToString("N")[..6]}";
         }
 
-        // Caso o login gerado automaticamente já exista e o usuário não digitou um login específico, adiciona sufixo numérico
-        if (string.IsNullOrWhiteSpace(request.Username) && string.IsNullOrWhiteSpace(request.Email))
+        if (explicitEmail is null && explicitUsername is null)
         {
             var baseLogin = loginIdentifier;
             int suffix = 2;
@@ -78,12 +90,37 @@ public sealed class EmployeeAndSettingsService
                 suffix++;
             }
         }
+        else
+        {
+            if (explicitEmail is not null && await _repository.GetUserByEmailAsync(explicitEmail, ct) is not null)
+            {
+                throw new DomainException("Este Gmail/e-mail já está cadastrado para outro usuário.");
+            }
 
-        var passwordHash = _passwordHasher.HashPassword(request.InitialPassword);
-        var user = new User(loginIdentifier, passwordHash, role.Id)
+            if (explicitUsername is not null && await _repository.GetUserByEmailAsync(explicitUsername, ct) is not null)
+            {
+                throw new DomainException("Este nome de usuário já está cadastrado no sistema.");
+            }
+        }
+
+        var effectiveUsername = explicitUsername ?? User.DeriveDefaultUsername(loginIdentifier);
+        var secretToHash = hasLegacyPassword
+            ? request.InitialPassword!
+            : Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+        var passwordHash = _passwordHasher.HashPassword(secretToHash);
+        var user = new User(loginIdentifier, passwordHash, role.Id, effectiveUsername)
         {
             Role = role
         };
+
+        string? firstAccessSetupCode = null;
+        if (!hasLegacyPassword)
+        {
+            firstAccessSetupCode = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+            var tokenHash = _passwordHasher.HashToken(firstAccessSetupCode);
+            user.GeneratePasswordResetToken(tokenHash, TimeSpan.FromHours(24));
+        }
 
         var employee = new Employee(
             user.Id,
@@ -97,6 +134,17 @@ public sealed class EmployeeAndSettingsService
         };
 
         await _repository.AddEmployeeWithUserAsync(user, employee, ct);
+
+        if (firstAccessSetupCode is not null && _emailService is not null)
+        {
+            await _emailService.SendSecurityCodeEmailAsync(
+                user.Email,
+                "Código para você definir sua senha de acesso",
+                firstAccessSetupCode,
+                validityMinutes: 1440,
+                ct);
+        }
+
         return AuthService.MapToProfileDto(employee, user, role.Name);
     }
 
@@ -189,6 +237,23 @@ public sealed class EmployeeAndSettingsService
             }
         }
 
+        if (request.PlanTier is not null ||
+            request.BasicPlanMonthlyPrice.HasValue ||
+            request.IntermediaryPlanMonthlyPrice.HasValue ||
+            request.PremiumPlanMonthlyPrice.HasValue ||
+            request.PicpayPixKey is not null ||
+            request.Design is not null)
+        {
+            settings.UpdatePlanAndDesign(
+                request.PlanTier,
+                request.BasicPlanMonthlyPrice,
+                request.PremiumPlanMonthlyPrice,
+                request.PicpayPixKey,
+                request.Design is not null ? StoreDesignMapper.ToDomain(request.Design) : null,
+                employeeId,
+                request.IntermediaryPlanMonthlyPrice);
+        }
+
         await _repository.UpdateStoreSettingsAsync(settings, ct);
         return MapToAdminSettingsDto(settings);
     }
@@ -237,7 +302,68 @@ public sealed class EmployeeAndSettingsService
         return MapToAdminSettingsDto(settings);
     }
 
-    private static AdminStoreSettingsDto MapToAdminSettingsDto(StoreSettings s) =>
+    public async Task<AdminStoreSettingsDto> ActivateStoreSiteAsync(Guid? employeeId, CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.ActivateSite(employeeId);
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        return MapToAdminSettingsDto(settings);
+    }
+
+    public async Task<AdminStoreSettingsDto> DeactivateStoreSiteAsync(Guid? employeeId, string reason, CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.DeactivateSite(reason, employeeId);
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        return MapToAdminSettingsDto(settings);
+    }
+
+    public async Task<RedeemActivationCodeResponse> RedeemActivationCodeAsync(
+        RedeemActivationCodeRequest request,
+        Guid? employeeId = null,
+        CancellationToken ct = default)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Code))
+            throw new DomainException("Digite o código do Gift Card para resgatar seu plano.");
+
+        var normalizedCode = request.Code.Trim().ToUpperInvariant();
+        var code = await _repository.GetPlanActivationCodeByCodeAsync(normalizedCode, ct)
+            ?? throw new DomainException($"Código Gift Card '{normalizedCode}' não encontrado.");
+
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+
+        if (!string.IsNullOrWhiteSpace(code.TargetStoreName) &&
+            !string.Equals(code.TargetStoreName, settings.StoreName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DomainException($"Este Gift Card foi emitido exclusivamente para a loja '{code.TargetStoreName}'.");
+        }
+
+        settings.RedeemActivationCode(code, employeeId);
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        await _repository.SavePlanActivationCodeAsync(code, ct);
+
+        var expiryMessage = settings.PlanExpiresAt.HasValue
+            ? $"válido até {settings.PlanExpiresAt.Value.ToLocalTime():dd/MM/yyyy}"
+            : "com acesso Vitalício";
+
+        var message = settings.GetEffectivePlanTier() switch
+        {
+            StoreSettings.PlanTierPremium => $"Gift Card {code.Code} resgatado! Plano Premium Moldável ativado ({expiryMessage}).",
+            StoreSettings.PlanTierIntermediate => $"Gift Card {code.Code} resgatado! Plano Intermediário (5 versões pré-prontas) ativado ({expiryMessage}).",
+            _ => $"Gift Card {code.Code} resgatado! Plano Básico Minimalista Luxo ativado ({expiryMessage})."
+        };
+
+        var dto = MapToAdminSettingsDto(settings);
+        return new RedeemActivationCodeResponse(
+            code.Code,
+            settings.PlanTier,
+            code.DurationDays,
+            settings.PlanExpiresAt,
+            message,
+            dto);
+    }
+
+    public static AdminStoreSettingsDto MapToAdminSettingsDto(StoreSettings s) =>
         new(
             s.Id,
             s.StoreName,
@@ -250,6 +376,19 @@ public sealed class EmployeeAndSettingsService
             s.UpdatedAt,
             s.OnlineBaseUrl,
             s.AutoSyncOnlineOnSave,
-            s.LastOnlineSyncAt);
+            s.LastOnlineSyncAt,
+            s.IsSiteActive,
+            s.DeactivationReason,
+            s.LastActivityAt,
+            s.PublishedStoreName,
+            s.PlanTier,
+            s.BasicPlanMonthlyPrice,
+            s.PremiumPlanMonthlyPrice,
+            s.PicpayPixKey,
+            StoreDesignMapper.ToDto(s.IsEffectiveIntermediatePlan() ? s.GetEffectivePublicDesign() : s.DesignConfig),
+            s.PlanActivatedAt,
+            s.PlanExpiresAt,
+            s.ActiveGiftCardCode,
+            s.IntermediaryPlanMonthlyPrice);
 }
 
