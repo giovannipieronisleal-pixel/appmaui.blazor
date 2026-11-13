@@ -26,7 +26,7 @@
             Registrar Nova Movimentação de Estoque
         </h2>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; align-items: end;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 1rem; align-items: end;">
             <div>
                 <label class="adm-label">1. Produto</label>
                 <select class="adm-select" @bind="_selectedProductIdString" @bind:after="OnProductSelectionChanged">
@@ -89,8 +89,8 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
         <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Histórico de Movimentações (@_movements.Count)</h2>
 
-        <div style="display: flex; gap: 0.6rem; align-items: center;">
-            <select class="adm-select" style="width: auto;" @bind="_filterProductId" @bind:after="LoadMovementsAsync">
+        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; width: 100%; max-width: 100%;">
+            <select class="adm-select" style="flex: 1 1 200px; min-width: 0; max-width: 100%;" @bind="_filterProductId" @bind:after="LoadMovementsAsync">
                 <option value="">Todos os produtos</option>
                 @foreach (var p in _products)
                 {

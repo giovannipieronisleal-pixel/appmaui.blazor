@@ -36,7 +36,7 @@
     <!-- 1. DADOS CADASTRAIS DO PRODUTO -->
     <section class="adm-card">
         <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">1. Informações do Produto</h2>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem;">
             <div>
                 <label class="adm-label">Nome do Produto</label>
                 <input type="text" class="adm-input" @bind="_editProduct.Name" disabled="@(!Gateway.CanManageProducts)" />
@@ -104,7 +104,7 @@
                 <div style="font-weight: 600; font-size: 0.88rem; margin-bottom: 0.75rem;">
                     @(_editingVariantId.HasValue ? "Editar Variante Selecionada" : "+ Adicionar Nova Variante (Cor e Tamanho)")
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; align-items: end;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 0.75rem; align-items: end;">
                     <div>
                         <label class="adm-label">Cor *</label>
                         <input type="text"
@@ -248,7 +248,7 @@
 
         @if (Gateway.CanManageProducts)
         {
-            <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.75rem; margin-bottom: 1.25rem; align-items: end;">
+            <div class="adm-url-add-row">
                 <div>
                     <label class="adm-label">Ou adicionar fotografia por URL pública</label>
                     <input type="url" class="adm-input" @bind="_newImageUrl" placeholder="https://images.unsplash.com/..." />
@@ -259,7 +259,7 @@
             </div>
         }
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: 1rem;">
             @foreach (var img in _product.Images)
             {
                 <div style="border: 1px solid var(--adm-border); border-radius: 8px; overflow: hidden; background: var(--adm-card-bg);">

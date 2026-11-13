@@ -61,7 +61,7 @@ else
         <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--adm-muted); margin-bottom: 0.65rem;">
             1. Plano Selecionado
         </div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 0.75rem;">
             <button type="button"
                     class="theme-card-option @(_selectedTier == StoreDesignPresets.PlanBasic ? "active" : string.Empty)"
                     @onclick="() => SelectTier(StoreDesignPresets.PlanBasic)">
@@ -100,7 +100,7 @@ else
         </div>
     </section>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 1.25rem; align-items: start;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 1.25rem; align-items: start;">
         <!-- Coluna 1: Período, Dados do Pedido & Benefícios -->
         <section class="adm-card" style="display: flex; flex-direction: column; gap: 1rem;">
             <div>
@@ -232,7 +232,7 @@ else
                 {
                     <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
                         <input class="adm-input"
-                               style="flex: 1; min-width: 210px; text-transform: uppercase; font-family: monospace; font-weight: 700;"
+                               style="flex: 1 1 180px; min-width: 0; text-transform: uppercase; font-family: monospace; font-weight: 700;"
                                placeholder="Ex.: LUXO-INTR-30D-..."
                                @bind="_giftCardCode" />
                         <button type="button"

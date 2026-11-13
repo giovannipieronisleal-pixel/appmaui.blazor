@@ -38,7 +38,7 @@
 {
     <div class="adm-card" style="border-left: 4px solid var(--adm-primary);">
         <h3 style="margin-top: 0; font-size: 1.05rem;">Cadastrar Nova Categoria de Roupas</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; align-items: end;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; align-items: end;">
             <div>
                 <label class="adm-label">Nome da Categoria *</label>
                 <input type="text" class="adm-input" @bind="_newCategory.Name" placeholder="Ex.: Moda Praia, Fitness..." />
@@ -70,7 +70,7 @@
             </a>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem;">
             <div>
                 <label class="adm-label">Nome do Produto *</label>
                 <input type="text" class="adm-input" @bind="_editProductForm.Name" placeholder="Nome da peça" />
@@ -129,7 +129,7 @@
 {
     <div class="adm-card" style="border-left: 4px solid var(--adm-success);">
         <h3 style="margin-top: 0; font-size: 1.05rem;">Cadastrar Novo Produto</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem;">
             <div>
                 <label class="adm-label">Nome do Produto *</label>
                 <input type="text" class="adm-input" @bind="_newProduct.Name" placeholder="Ex.: Jaqueta Jeans Oversized" />
@@ -202,8 +202,8 @@
 }
 
 <!-- Barra de Busca e Filtros -->
-<div class="adm-card" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-    <div style="flex: 1; min-width: 220px;">
+<div class="adm-card" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+    <div style="flex: 1 1 200px; min-width: 0;">
         <input type="text"
                class="adm-input"
                placeholder="Pesquisar por nome do produto, descrição ou código SKU..."
@@ -212,7 +212,7 @@
                @bind:after="LoadProductsAsync" />
     </div>
 
-    <div style="min-width: 200px;">
+    <div style="flex: 1 1 180px; min-width: 0;">
         <select class="adm-select" @bind="_selectedCategoryId" @bind:after="LoadProductsAsync">
             <option value="">Todas as categorias</option>
             @foreach (var cat in _categories)
@@ -222,7 +222,7 @@
         </select>
     </div>
 
-    <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadProductsAsync">Filtrar</button>
+    <button type="button" class="adm-btn adm-btn-outline" style="flex: 0 0 auto;" @onclick="LoadProductsAsync">Filtrar</button>
 </div>
 
 <!-- Tabela de Produtos -->

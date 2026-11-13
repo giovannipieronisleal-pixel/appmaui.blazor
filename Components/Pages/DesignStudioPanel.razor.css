@@ -50,7 +50,7 @@
 
 .studio-tier-comparison {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
     gap: 0.9rem;
 }
 
@@ -170,7 +170,7 @@
 
 .studio-preset-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
     gap: 0.65rem;
 }
 
@@ -215,7 +215,7 @@
 
 .studio-color-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
     gap: 0.65rem;
 }
 
@@ -254,7 +254,7 @@
 
 .studio-two-col {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
     gap: 0.85rem;
 }
 

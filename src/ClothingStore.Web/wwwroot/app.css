@@ -891,8 +891,8 @@ img {
 }
 
 .lux-quick-search .lux-input {
-    flex: 1;
-    min-width: 210px;
+    flex: 1 1 200px;
+    min-width: 0;
 }
 
 .lux-card-cta {
@@ -924,7 +924,7 @@ img {
 
 .lux-trust-strip {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
     gap: 0.9rem;
     margin-top: 2rem;
 }
@@ -959,7 +959,7 @@ img {
     z-index: 45;
     background: var(--brand-surface);
     border-top: 1px solid var(--brand-border);
-    padding: 0.65rem 1rem;
+    padding: 0.65rem 1rem calc(0.65rem + env(safe-area-inset-bottom, 0px));
     gap: 0.6rem;
     align-items: center;
     justify-content: space-between;

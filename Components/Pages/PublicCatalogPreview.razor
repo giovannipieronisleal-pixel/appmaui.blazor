@@ -19,8 +19,8 @@
 @if (Gateway.IsAuthenticated)
 {
     <!-- Barra Superior de Controle (Exibida apenas para usuários autenticados no App) -->
-    <div style="background: #18181B; color: #FFFFFF; padding: 0.75rem 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; border-radius: 10px; margin-bottom: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+    <div class="adm-public-preview-bar" style="background: #18181B; color: #FFFFFF; border-color: rgba(255,255,255,0.12);">
+        <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; flex: 1 1 220px; min-width: 0;">
             @if (_store.IsSiteActive)
             {
                 <span style="background: #16A34A; color: #FFFFFF; font-size: 0.72rem; font-weight: 700; padding: 0.25rem 0.6rem; border-radius: 999px; text-transform: uppercase;">
@@ -34,7 +34,7 @@
                 </span>
             }
 
-            <span style="font-size: 0.84rem; color: #D4D4D8;">
+            <span class="adm-public-preview-url" style="font-size: 0.84rem; color: #D4D4D8;">
                 Como seus clientes veem: <strong style="color: #FFFFFF; font-family: monospace;">@fullStoreUrl</strong>
             </span>
         </div>
@@ -326,7 +326,7 @@
                 &larr; Voltar para o Catálogo (@_store.StoreName)
             </button>
 
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; align-items: start;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1.5rem; align-items: start;">
                 <!-- Galeria de Fotografias -->
                 <div>
                     <div style="aspect-ratio: 4 / 5; background: var(--brand-surface-subtle); border-radius: var(--brand-radius-card); overflow: hidden; border: 1px solid var(--brand-border); margin-bottom: 0.75rem;">

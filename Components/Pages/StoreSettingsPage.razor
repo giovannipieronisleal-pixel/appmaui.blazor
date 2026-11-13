@@ -37,7 +37,7 @@
     <div class="alert-banner alert-success">@_success</div>
 }
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; align-items: start;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 1.25rem; align-items: start;">
     <!-- Coluna Esquerda: Tema do App + Identidade da Loja -->
     <div style="display: flex; flex-direction: column; gap: 1.25rem;">
         <!-- Card 1: Aparência e Tema do Aplicativo (Android) -->
@@ -273,14 +273,15 @@
             <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.85rem;">
                 <div>
                     <label class="adm-label">Endereço Base / Domínio do Site no Google Cloud</label>
-                    <div style="display: flex; gap: 0.4rem;">
+                    <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
                         <input type="text"
                                class="adm-input"
+                               style="flex: 1 1 200px; min-width: 0;"
                                @bind="_domainInput"
                                placeholder="Ex.: lojas.minhaloja.com ou minha-loja" />
                         <button type="button"
                                 class="adm-btn adm-btn-outline"
-                                style="white-space: nowrap; padding: 0 0.85rem; font-size: 0.82rem; border-color: var(--adm-accent); font-weight: 700;"
+                                style="white-space: nowrap; padding: 0 0.85rem; font-size: 0.82rem; border-color: var(--adm-accent); font-weight: 700; flex: 0 1 auto;"
                                 disabled="@_isCheckingDomain"
                                 @onclick="CheckDomainAvailabilityAsync">
                             @(_isCheckingDomain ? "Consultando..." : "🔍 Verificar Google Cloud")

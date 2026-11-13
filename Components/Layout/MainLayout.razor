@@ -20,7 +20,7 @@
     }
     else if (IsPublicCatalogRoute())
     {
-        <main style="padding: 0.75rem; max-width: 1280px; margin: 0 auto;">
+        <main class="adm-public-main">
             @Body
         </main>
     }
@@ -44,7 +44,7 @@
 
             <div class="adm-main">
                 <header class="adm-topbar">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                    <div class="adm-topbar-meta" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                         <strong class="adm-topbar-title">@_storeName</strong>
                         <a href="/planos"
                            style="text-decoration: none;"
@@ -52,36 +52,36 @@
                            class="pill-badge @(BrandState.IsPremiumPlan ? "pill-gold" : BrandState.IsIntermediatePlan ? "pill-green" : "pill-slate")">
                             @(BrandState.IsPremiumPlan ? "✦ Premium Sob Medida" : BrandState.IsIntermediatePlan ? "◈ Meia Versão (5 Temas)" : "Minimalista Luxo")
                         </a>
-                        <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")">
+                        <span class="adm-topbar-hide-sm pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")">
                             @(Gateway.IsAdmin ? "Admin" : "Equipe")
                         </span>
 
                         @if (!string.IsNullOrWhiteSpace(_onlineBaseUrl))
                         {
-                            <span class="pill-badge pill-blue" title="Catálogo 24h Online no Google Cloud">
+                            <span class="adm-topbar-hide-sm pill-badge pill-blue" title="Catálogo 24h Online no Google Cloud">
                                 ☁️ 24h Online
                             </span>
                         }
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                    <div class="adm-topbar-actions" style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
                         <!-- Botão Alternador Rápido de Tema Claro / Escuro -->
                         <button type="button"
                                 class="adm-btn adm-btn-outline"
                                 style="padding: 0.4rem 0.65rem; min-height: 36px; font-size: 0.82rem;"
                                 title="@($"Tema atual: {Theme.ThemeDisplayName}. Toque para alternar.")"
                                 @onclick="Theme.ToggleTheme">
-                            @(Theme.IsDarkMode ? "☀️ Claro" : "🌙 Escuro")
+                            @(Theme.IsDarkMode ? "☀️" : "🌙")<span class="adm-topbar-hide-xs"> @(Theme.IsDarkMode ? "Claro" : "Escuro")</span>
                         </button>
 
                         <a href="/loja/@_storeSlug"
                            class="adm-btn adm-btn-success"
                            style="padding: 0.4rem 0.7rem; min-height: 36px; font-size: 0.8rem;">
-                            🌐 Ver Catálogo
+                            🌐 <span class="adm-topbar-hide-xs">Ver </span>Catálogo
                         </a>
 
                         <button type="button"
-                                class="adm-btn adm-btn-outline"
+                                class="adm-btn adm-btn-outline adm-topbar-hide-sm"
                                 style="padding: 0.4rem 0.7rem; min-height: 36px; font-size: 0.8rem;"
                                 @onclick="OpenBrowserAsync">
                             Abrir no Navegador &nearr;
@@ -96,10 +96,10 @@
                             <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--adm-accent); color: #fff; font-size: 0.72rem; font-weight: 800;">
                                 @GetUserInitials(Gateway.CurrentEmployee?.FullName)
                             </span>
-                            <span style="max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <span class="adm-topbar-hide-xs" style="max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                                 @(Gateway.CurrentEmployee?.FullName ?? "Meu Perfil")
                             </span>
-                            <span class="pill-badge @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true ? "pill-green" : "pill-slate")" style="font-size: 0.68rem; padding: 0.1rem 0.35rem;">
+                            <span class="adm-topbar-hide-xs pill-badge @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true ? "pill-green" : "pill-slate")" style="font-size: 0.68rem; padding: 0.1rem 0.35rem;">
                                 @(Gateway.CurrentEmployee?.HasTwoFactorEnabled == true ? "🛡️ 2FA Ativo" : "⚙️ Perfil")
                             </span>
                         </button>
