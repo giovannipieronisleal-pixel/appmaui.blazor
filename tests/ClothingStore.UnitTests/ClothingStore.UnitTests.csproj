@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\ClothingStore.Application\ClothingStore.Application.csproj" />
     <ProjectReference Include="..\..\src\ClothingStore.Infrastructure\ClothingStore.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\ClothingStore.Shared\ClothingStore.Shared.csproj" />
+    <ProjectReference Include="..\..\src\ClothingStore.Api\ClothingStore.Api.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

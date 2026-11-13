@@ -36,7 +36,7 @@ O **YouLink** conta com três níveis de vitrine selecionáveis no app (`/planos
 | **ClothingStore.Domain** | [ClothingStore.Domain.csproj](src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`, `PlanActivationCode`). |
 | **ClothingStore.Infrastructure** | [ClothingStore.Infrastructure.csproj](src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj) | Repositório transacional (`ClothingStoreRepository`), autenticação JWT/PBKDF2 e armazenamento de imagens. |
 | **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens e helper de links/domínios. |
-| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 45 testes automatizados de domínio, segurança, planos, domínios e stress tests. |
+| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 52 testes automatizados de domínio, segurança, planos, domínios, stress tests e validação Windows x64 / NTFS / API. |
 
 ---
 
@@ -54,17 +54,18 @@ dotnet run --project src/ClothingStore.Web/ClothingStore.Web.csproj
 
 ### 3. Aplicativo YouLink (.NET MAUI)
 ```powershell
-# Windows
-dotnet build appmaui.blazor.csproj -f net10.0-windows10.0.19041.0 -c Release
+# Windows (Executável Self-Contained x64 — não exige .NET pré-instalado no PC do cliente)
+dotnet publish appmaui.blazor.csproj -f net10.0-windows10.0.19041.0 -c Release -p:WindowsPackageType=None -o dist/YouLink-Windows -m:1
 
 # Android (APK)
 dotnet publish appmaui.blazor.csproj -f net10.0-android -c Release -p:AndroidPackageFormat=apk
 ```
 
-### 4. Testes Automatizados
+### 4. Testes Automatizados (incluindo Suíte Windows)
 ```powershell
-dotnet build tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -m:1
-.\tests\ClothingStore.UnitTests\bin\Debug\net10.0\ClothingStore.UnitTests.exe
+dotnet build tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -c Release -m:1
+$env:YOULINK_WIN_PUBLISH_DIR = "dist/YouLink-Windows"
+.\tests\ClothingStore.UnitTests\bin\Release\net10.0\ClothingStore.UnitTests.exe
 ```
 
 ---

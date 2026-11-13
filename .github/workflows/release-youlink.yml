@@ -96,8 +96,13 @@ jobs:
       - name: Instalar workload Windows MAUI
         run: dotnet workload install maui-windows
 
-      - name: Publicar executável Windows Release
+      - name: Publicar executável Windows Release (x64 Self-Contained)
         run: dotnet publish appmaui.blazor.csproj -f net10.0-windows10.0.19041.0 -c Release -p:WindowsPackageType=None -o dist/YouLink-Windows -m:1
+
+      - name: Executar testes automatizados no Windows e validar pacote x64
+        env:
+          YOULINK_WIN_PUBLISH_DIR: dist/YouLink-Windows
+        run: dotnet run --project tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -c Release
 
       - name: Compactar YouLink-Windows-x64.zip
         shell: pwsh

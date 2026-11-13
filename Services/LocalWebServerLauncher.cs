@@ -18,6 +18,7 @@ namespace appmaui.blazor.Services;
 public static class LocalWebServerLauncher
 {
     public const int DefaultPort = 5190;
+    public static int ActivePort { get; private set; } = DefaultPort;
 
     private static CatalogService? _catalogService;
     private static TcpListener? _embeddedListener;
@@ -33,10 +34,10 @@ public static class LocalWebServerLauncher
     {
         await EnsureWebCatalogRunningAsync();
 
-        var localUrl = $"http://localhost:{DefaultPort}";
+        var localUrl = $"http://localhost:{ActivePort}";
         if (!string.IsNullOrWhiteSpace(localStoreSlug))
         {
-            localUrl = $"http://localhost:{DefaultPort}/loja/{localStoreSlug}";
+            localUrl = $"http://localhost:{ActivePort}/loja/{localStoreSlug}";
         }
         else if (_catalogService is not null)
         {
@@ -45,7 +46,7 @@ public static class LocalWebServerLauncher
                 var store = await _catalogService.GetPublicStoreSettingsAsync();
                 if (!string.IsNullOrWhiteSpace(store.StoreSlug))
                 {
-                    localUrl = $"http://localhost:{DefaultPort}/loja/{store.StoreSlug}";
+                    localUrl = $"http://localhost:{ActivePort}/loja/{store.StoreSlug}";
                 }
             }
             catch
@@ -59,7 +60,11 @@ public static class LocalWebServerLauncher
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
             var host = uri.Host.ToLowerInvariant();
-            if (host is not "localhost" and not "127.0.0.1")
+            if ((host is "localhost" or "127.0.0.1") && uri.Port == DefaultPort && ActivePort != DefaultPort)
+            {
+                targetUrl = new UriBuilder(uri) { Port = ActivePort }.Uri.ToString();
+            }
+            else if (host is not "localhost" and not "127.0.0.1")
             {
                 var isOnline = false;
                 try
@@ -98,13 +103,13 @@ public static class LocalWebServerLauncher
 
     public static async Task EnsureWebCatalogRunningAsync()
     {
-        if (await IsPortOpenAsync("127.0.0.1", DefaultPort))
+        if (await IsPortOpenAsync("127.0.0.1", ActivePort))
             return;
 
         await _startLock.WaitAsync();
         try
         {
-            if (await IsPortOpenAsync("127.0.0.1", DefaultPort))
+            if (await IsPortOpenAsync("127.0.0.1", ActivePort))
                 return;
 
             // 1. Inicia o servidor HTTP embutido multiplataforma (funciona no Android, iOS e Windows instantaneamente)
@@ -112,7 +117,7 @@ public static class LocalWebServerLauncher
             {
                 for (int i = 0; i < 10; i++)
                 {
-                    if (await IsPortOpenAsync("127.0.0.1", DefaultPort))
+                    if (await IsPortOpenAsync("127.0.0.1", ActivePort))
                         return;
                     await Task.Delay(50);
                 }
@@ -121,16 +126,18 @@ public static class LocalWebServerLauncher
             // 2. Fallback para o executável ClothingStore.Web no Windows caso o serviço não tenha sido injetado
             if (OperatingSystem.IsWindows())
             {
-                var webProjectDir = @"C:\Dev\appmaui.blazor\src\ClothingStore.Web";
-                var webExePath = Path.Combine(webProjectDir, "bin", "Debug", "net10.0", "ClothingStore.Web.exe");
+                var packagedWebExe = Path.Combine(AppContext.BaseDirectory, "ClothingStore.Web.exe");
+                var webProjectDir = Path.Combine(@"C:\Dev\appmaui.blazor", "src", "ClothingStore.Web");
+                var devWebExe = Path.Combine(webProjectDir, "bin", "Debug", "net10.0", "ClothingStore.Web.exe");
+                var webExePath = File.Exists(packagedWebExe) ? packagedWebExe : devWebExe;
 
                 if (File.Exists(webExePath))
                 {
                     var psi = new ProcessStartInfo
                     {
                         FileName = webExePath,
-                        Arguments = $"--urls=http://localhost:{DefaultPort}",
-                        WorkingDirectory = webProjectDir,
+                        Arguments = $"--urls=http://localhost:{ActivePort}",
+                        WorkingDirectory = Path.GetDirectoryName(webExePath) ?? AppContext.BaseDirectory,
                         UseShellExecute = false,
                         CreateNoWindow = true
                     };
@@ -151,18 +158,15 @@ public static class LocalWebServerLauncher
     {
         try
         {
-            TcpListener listener;
-            try
-            {
-                listener = new TcpListener(IPAddress.Any, DefaultPort);
-                listener.Start();
-            }
-            catch
-            {
-                listener = new TcpListener(IPAddress.Loopback, DefaultPort);
-                listener.Start();
-            }
+            // Usa Loopback primeiro no Windows para não acionar alerta de firewall nem exigir permissão de administrador
+            var listener = TryBindListener(IPAddress.Loopback, DefaultPort)
+                ?? (OperatingSystem.IsWindows() ? null : TryBindListener(IPAddress.Any, DefaultPort))
+                ?? TryBindListener(IPAddress.Loopback, 0);
 
+            if (listener is null)
+                return false;
+
+            ActivePort = ((IPEndPoint)listener.LocalEndpoint).Port;
             _embeddedListener = listener;
             _ = Task.Run(() => AcceptConnectionsLoopAsync(listener));
             return true;
@@ -170,6 +174,20 @@ public static class LocalWebServerLauncher
         catch
         {
             return false;
+        }
+    }
+
+    private static TcpListener? TryBindListener(IPAddress address, int port)
+    {
+        try
+        {
+            var listener = new TcpListener(address, port);
+            listener.Start();
+            return listener;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -241,7 +259,7 @@ public static class LocalWebServerLauncher
         if (_catalogService is null)
             return "<html><body>Catálogo indisponível.</body></html>";
 
-        var uri = new Uri($"http://localhost:{DefaultPort}{(rawTarget.StartsWith('/') ? rawTarget : "/" + rawTarget)}");
+        var uri = new Uri($"http://localhost:{ActivePort}{(rawTarget.StartsWith('/') ? rawTarget : "/" + rawTarget)}");
         var path = uri.AbsolutePath.Trim('/');
         var query = ParseQueryString(uri.Query);
 

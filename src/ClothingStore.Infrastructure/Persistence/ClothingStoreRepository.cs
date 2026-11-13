@@ -13,6 +13,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly string _storageFilePath;
+    private readonly string _fileMutexName;
     private readonly IPasswordHasher _passwordHasher;
     private ClothingStoreDatabaseState _state;
     private DateTime _lastLoadedUtc = DateTime.MinValue;
@@ -29,43 +30,48 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         _storageFilePath = string.IsNullOrWhiteSpace(customStoragePath)
             ? Path.Combine(AppContext.BaseDirectory, "App_Data", "clothingstore_db.json")
             : customStoragePath;
+        _fileMutexName = BuildMutexName(_storageFilePath);
 
         _state = LoadOrInitializeState();
     }
 
     private ClothingStoreDatabaseState LoadOrInitializeState()
     {
-        try
+        return ExecuteWithCrossProcessLock(() =>
         {
-            var directory = Path.GetDirectoryName(_storageFilePath);
-            if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+            try
             {
-                Directory.CreateDirectory(directory);
-            }
-
-            if (File.Exists(_storageFilePath))
-            {
-                var json = File.ReadAllText(_storageFilePath);
-                var loaded = JsonSerializer.Deserialize<ClothingStoreDatabaseState>(json, JsonOptions);
-                if (loaded is not null && loaded.Roles.Count > 0)
+                var directory = Path.GetDirectoryName(_storageFilePath);
+                if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
                 {
-                    HydrateNavigationProperties(loaded);
-                    _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
-                    return loaded;
+                    Directory.CreateDirectory(directory);
                 }
 
+                if (File.Exists(_storageFilePath))
+                {
+                    var json = ReadFileSharedWithRetry(_storageFilePath);
+                    var loaded = JsonSerializer.Deserialize<ClothingStoreDatabaseState>(json, JsonOptions);
+                    if (loaded is not null && loaded.Roles.Count > 0)
+                    {
+                        HydrateNavigationProperties(loaded);
+                        _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
+                        return loaded;
+                    }
+
+                    BackupCorruptFile();
+                }
+            }
+            catch
+            {
                 BackupCorruptFile();
             }
-        }
-        catch
-        {
-            BackupCorruptFile();
-        }
 
-        var seeded = ClothingStoreDatabaseState.CreateInitialSeed(_passwordHasher);
-        HydrateNavigationProperties(seeded);
-        PersistToDisk(seeded);
-        return seeded;
+            var seeded = ClothingStoreDatabaseState.CreateInitialSeed(_passwordHasher);
+            HydrateNavigationProperties(seeded);
+            WriteFileAtomicWithRetry(_storageFilePath, JsonSerializer.Serialize(seeded, JsonOptions));
+            _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
+            return seeded;
+        });
     }
 
     private void BackupCorruptFile()
@@ -142,15 +148,13 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
     {
         try
         {
-            var directory = Path.GetDirectoryName(_storageFilePath);
-            if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+            ExecuteWithCrossProcessLock(() =>
             {
-                Directory.CreateDirectory(directory);
-            }
-
-            var json = JsonSerializer.Serialize(state, JsonOptions);
-            File.WriteAllText(_storageFilePath, json);
-            _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
+                var json = JsonSerializer.Serialize(state, JsonOptions);
+                WriteFileAtomicWithRetry(_storageFilePath, json);
+                _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
+                return true;
+            });
         }
         catch
         {
@@ -161,24 +165,184 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
     {
         try
         {
-            if (File.Exists(_storageFilePath))
+            ExecuteWithCrossProcessLock(() =>
             {
-                var lastWrite = File.GetLastWriteTimeUtc(_storageFilePath);
-                if (lastWrite > _lastLoadedUtc)
+                if (File.Exists(_storageFilePath))
                 {
-                    var json = File.ReadAllText(_storageFilePath);
-                    var loaded = JsonSerializer.Deserialize<ClothingStoreDatabaseState>(json, JsonOptions);
-                    if (loaded is not null && loaded.Roles.Count > 0)
+                    var lastWrite = File.GetLastWriteTimeUtc(_storageFilePath);
+                    if (lastWrite > _lastLoadedUtc)
                     {
-                        HydrateNavigationProperties(loaded);
-                        _state = loaded;
-                        _lastLoadedUtc = lastWrite;
+                        var json = ReadFileSharedWithRetry(_storageFilePath);
+                        var loaded = JsonSerializer.Deserialize<ClothingStoreDatabaseState>(json, JsonOptions);
+                        if (loaded is not null && loaded.Roles.Count > 0)
+                        {
+                            HydrateNavigationProperties(loaded);
+                            _state = loaded;
+                            _lastLoadedUtc = lastWrite;
+                        }
                     }
                 }
+
+                return true;
+            });
+        }
+        catch
+        {
+        }
+    }
+
+    private static string BuildMutexName(string storagePath)
+    {
+        var fullPath = Path.GetFullPath(storagePath);
+        if (OperatingSystem.IsWindows())
+        {
+            fullPath = fullPath.ToLowerInvariant();
+        }
+
+        var hashBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(fullPath));
+        return "Local\\YouLinkDb_" + Convert.ToHexString(hashBytes, 0, 16);
+    }
+
+    private T ExecuteWithCrossProcessLock<T>(Func<T> action)
+    {
+        Mutex? mutex = null;
+        var acquired = false;
+        try
+        {
+            mutex = new Mutex(initiallyOwned: false, _fileMutexName);
+            try
+            {
+                acquired = mutex.WaitOne(TimeSpan.FromSeconds(5));
+            }
+            catch (AbandonedMutexException)
+            {
+                acquired = true;
             }
         }
         catch
         {
+            mutex?.Dispose();
+            mutex = null;
+            acquired = false;
+        }
+
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            if (mutex is not null)
+            {
+                if (acquired)
+                {
+                    try
+                    {
+                        mutex.ReleaseMutex();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                mutex.Dispose();
+            }
+        }
+    }
+
+    private static string ReadFileSharedWithRetry(string path)
+    {
+        const int maxAttempts = 6;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                return reader.ReadToEnd();
+            }
+            catch (FileNotFoundException)
+            {
+                throw;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                throw;
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(15 * attempt);
+            }
+        }
+    }
+
+    private static void WriteFileAtomicWithRetry(string path, string content)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var targetDir = string.IsNullOrWhiteSpace(directory) ? "." : directory;
+        var tempPath = Path.Combine(targetDir, $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+            {
+                writer.Write(content);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+
+            const int maxMoveAttempts = 3;
+            for (var attempt = 1; attempt <= maxMoveAttempts; attempt++)
+            {
+                try
+                {
+                    File.Move(tempPath, path, overwrite: true);
+                    return;
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    if (attempt < maxMoveAttempts)
+                    {
+                        Thread.Sleep(10 * attempt);
+                    }
+                }
+            }
+
+            // Fallback NTFS para quando um leitor externo mantém handle aberto com FileShare.ReadWrite | FileShare.Delete
+            // e impede o MoveFileExW do Windows de substituir o inode em uso.
+            var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+            using var sharedWriteStream = new FileStream(
+                path,
+                FileMode.OpenOrCreate,
+                FileAccess.Write,
+                FileShare.ReadWrite | FileShare.Delete);
+            sharedWriteStream.Position = 0;
+            sharedWriteStream.Write(bytes, 0, bytes.Length);
+            sharedWriteStream.SetLength(bytes.Length);
+            sharedWriteStream.Flush(flushToDisk: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch
+            {
+            }
         }
     }
 
