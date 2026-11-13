@@ -357,6 +357,46 @@
             </a>
         </div>
     }
+
+    <details style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px dashed var(--adm-border); font-size: 0.82rem;">
+        <summary style="cursor: pointer; font-weight: 600; color: var(--adm-muted); user-select: none;">
+            🌐 Conectar ao Servidor Central / YouLink Admin (Opcional)
+        </summary>
+        <div style="margin-top: 0.65rem; display: flex; flex-direction: column; gap: 0.55rem;">
+            <p style="margin: 0; font-size: 0.77rem; color: var(--adm-muted); line-height: 1.4;">
+                Por padrão sua loja funciona 100% offline neste celular. Se você usa um servidor central no PC ou na nuvem para acompanhar contas no <strong>YouLink Admin</strong>, cole o endereço abaixo:
+            </p>
+            <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+                <input type="url"
+                       class="adm-input"
+                       style="flex: 1; min-width: 190px; font-size: 0.82rem;"
+                       @bind="_serverUrlInput"
+                       placeholder="Ex.: http://192.168.0.15:5000 ou https://api.minhaloja.com" />
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        style="white-space: nowrap; font-size: 0.8rem;"
+                        disabled="@_connectingServer"
+                        @onclick="ConnectServerFromLoginAsync">
+                    @(_connectingServer ? "Conectando..." : "⚡ Conectar")
+                </button>
+            </div>
+            @if (Gateway.HasCustomServerUrl)
+            {
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.76rem; color: var(--adm-success);">
+                    <span>✓ Conectado a: <code>@Gateway.CurrentServerUrl</code></span>
+                    <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.2rem 0.45rem; font-size: 0.72rem;" @onclick="DisconnectServerFromLoginAsync">
+                        Usar apenas celular
+                    </button>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_serverConnectFeedback))
+            {
+                <div style="font-size: 0.77rem; color: @(_serverConnectOk ? "var(--adm-success)" : "var(--adm-danger)");">
+                    @_serverConnectFeedback
+                </div>
+            }
+        </div>
+    </details>
 </div>
 
 <!-- ============================================================== -->
@@ -379,6 +419,11 @@
             @if (!string.IsNullOrWhiteSpace(_setupErrorMessage))
             {
                 <div class="alert-banner alert-error" style="margin-bottom: 1rem;">@_setupErrorMessage</div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_setupSyncNotice))
+            {
+                <div class="alert-banner alert-info" style="margin-bottom: 1rem; font-size: 0.8rem; line-height: 1.4;">@_setupSyncNotice</div>
             }
 
             <div style="display: flex; flex-direction: column; gap: 1rem;">
@@ -413,56 +458,63 @@
 
                 <!-- Campo de Domínio / Site Oficial no Google Cloud -->
                 <div>
-                    <label class="adm-label">Domínio Desejado para o Site no Google Cloud *</label>
-                    <div style="display: flex; gap: 0.4rem;">
-                        <input type="text"
-                               class="adm-input"
-                               @bind="_initStoreDomain"
-                               placeholder="Ex.: lojas.minhaloja.com" />
-                        <button type="button"
-                                class="adm-btn adm-btn-outline"
-                                style="white-space: nowrap; padding: 0 0.85rem; font-size: 0.82rem; border-color: var(--adm-accent); font-weight: 700;"
-                                disabled="@_isCheckingDomain"
-                                @onclick="CheckDomainInSetupAsync">
-                            @(_isCheckingDomain ? "Consultando..." : "🔍 Verificar")
-                        </button>
-                    </div>
-
-                    @if (_domainCheckResult is not null)
-                    {
-                        <div style="margin-top: 0.5rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_domainCheckResult.IsAvailable ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
-                            <div style="font-weight: 700;">
-                                @(_domainCheckResult.IsAvailable ? "✓ " + _domainCheckResult.Message : "✕ " + _domainCheckResult.Message)
-                            </div>
-                            <div style="font-size: 0.76rem; margin-top: 0.25rem; opacity: 0.95;">
-                                @if (_domainCheckResult.IsAvailable)
-                                {
-                                    <div>Endereço que será ativado: <strong>@_domainCheckResult.NormalizedUrl</strong></div>
-                                }
-                                else if (_domainCheckResult.Suggestions.Count > 0)
-                                {
-                                    <div style="margin-bottom: 0.2rem;">Sugestões livres no Google Cloud (toque para escolher):</div>
-                                    <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.25rem;">
-                                        @foreach (var s in _domainCheckResult.Suggestions)
-                                        {
-                                            <button type="button"
-                                                    class="pill-badge pill-blue"
-                                                    style="border: none; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.75rem;"
-                                                    @onclick="() => SelectDomainSuggestion(s)">
-                                                @s
-                                            </button>
-                                        }
-                                    </div>
-                                }
-                            </div>
+                <details style="background: var(--adm-surface-subtle); border: 1px solid var(--adm-border); border-radius: 8px; padding: 0.65rem 0.8rem;">
+                    <summary style="cursor: pointer; font-weight: 600; font-size: 0.82rem; color: var(--adm-muted); user-select: none;">
+                        🌐 Endereço da Vitrine Online (Automático — toque se quiser personalizar)
+                    </summary>
+                    <div style="margin-top: 0.65rem;">
+                        <label class="adm-label">Domínio / Subdomínio Desejado (Opcional)</label>
+                        <div style="display: flex; gap: 0.4rem;">
+                            <input type="text"
+                                   class="adm-input"
+                                   @bind="_initStoreDomain"
+                                   placeholder="Ex.: lojas.minhaloja.com" />
+                            <button type="button"
+                                    class="adm-btn adm-btn-outline"
+                                    style="white-space: nowrap; padding: 0 0.85rem; font-size: 0.82rem; border-color: var(--adm-accent); font-weight: 700;"
+                                    disabled="@_isCheckingDomain"
+                                    @onclick="CheckDomainInSetupAsync">
+                                @(_isCheckingDomain ? "Consultando..." : "🔍 Verificar")
+                            </button>
                         </div>
-                    }
-                    else
-                    {
-                        <span style="font-size: 0.75rem; color: var(--adm-muted);">
-                            Informe o domínio próprio (ex: <code>minhaloja.com.br</code>) ou nome desejado para testar no Google Cloud.
-                        </span>
-                    }
+
+                        @if (_domainCheckResult is not null)
+                        {
+                            <div style="margin-top: 0.5rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_domainCheckResult.IsAvailable ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
+                                <div style="font-weight: 700;">
+                                    @(_domainCheckResult.IsAvailable ? "✓ " + _domainCheckResult.Message : "✕ " + _domainCheckResult.Message)
+                                </div>
+                                <div style="font-size: 0.76rem; margin-top: 0.25rem; opacity: 0.95;">
+                                    @if (_domainCheckResult.IsAvailable)
+                                    {
+                                        <div>Endereço que será ativado: <strong>@_domainCheckResult.NormalizedUrl</strong></div>
+                                    }
+                                    else if (_domainCheckResult.Suggestions.Count > 0)
+                                    {
+                                        <div style="margin-bottom: 0.2rem;">Sugestões livres no Google Cloud (toque para escolher):</div>
+                                        <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                                            @foreach (var s in _domainCheckResult.Suggestions)
+                                            {
+                                                <button type="button"
+                                                        class="pill-badge pill-blue"
+                                                        style="border: none; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.75rem;"
+                                                        @onclick="() => SelectDomainSuggestion(s)">
+                                                    @s
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <span style="font-size: 0.75rem; color: var(--adm-muted);">
+                                Deixe como está para começar sem complicação; você pode mudar depois em Loja &amp; Visual.
+                            </span>
+                        }
+                    </div>
+                </details>
                 </div>
 
                 <div style="margin-top: 0.5rem;">
@@ -529,9 +581,15 @@
     private bool _isCheckingDomain;
     private CheckDomainAvailabilityResponse? _domainCheckResult;
     private string? _setupErrorMessage;
+    private string? _setupSyncNotice;
+    private string _serverUrlInput = string.Empty;
+    private bool _connectingServer;
+    private bool _serverConnectOk;
+    private string? _serverConnectFeedback;
 
     protected override async Task OnInitializedAsync()
     {
+        _serverUrlInput = Gateway.CurrentServerUrl;
         try
         {
             var store = await CatalogService.GetPublicStoreSettingsAsync();
@@ -540,6 +598,7 @@
             _initStoreName = store.StoreName;
             _initStoreBio = store.StoreDescription;
             _initStoreWhatsapp = store.WhatsappNumber;
+            SyncInitStoreDomain();
         }
         catch
         {
@@ -682,6 +741,10 @@
                 _regEmail.Trim(),
                 _regPassword,
                 Username: _regUsername.Trim()));
+
+            _setupSyncNotice = Gateway.LastAccountActionWasLocalOnly
+                ? "ℹ️ Conta criada neste celular! Ela já funciona na hora aqui. Para que apareça também no painel YouLink Admin em outro computador, conecte o endereço do Servidor Central na tela de login."
+                : null;
 
             // Conta criada com sucesso! Abre o pop-up de configuração inicial da loja
             _showInitialSetupModal = true;
@@ -827,14 +890,12 @@
 
         if (string.IsNullOrWhiteSpace(_initStoreWhatsapp))
         {
-            _setupErrorMessage = "O WhatsApp da loja é obrigatório.";
-            return;
+            _initStoreWhatsapp = "5511999999999";
         }
 
         if (string.IsNullOrWhiteSpace(_initStoreDomain))
         {
-            _setupErrorMessage = "Informe o domínio desejado para o site no Google Cloud.";
-            return;
+            _initStoreDomain = WhatsAppLinkBuilder.GenerateDefaultStoreDomain(_initStoreName);
         }
 
         _isBusy = true;
@@ -865,5 +926,39 @@
         {
             _isBusy = false;
         }
+    }
+
+    private async Task ConnectServerFromLoginAsync()
+    {
+        _connectingServer = true;
+        _serverConnectFeedback = null;
+        try
+        {
+            var result = await Gateway.ConfigureServerUrlAsync(_serverUrlInput);
+            _serverConnectOk = result.Reachable;
+            if (result.Reachable)
+            {
+                _serverUrlInput = result.NormalizedUrl;
+                _serverConnectFeedback = string.IsNullOrWhiteSpace(result.StoreName)
+                    ? $"Conectado ao servidor {result.NormalizedUrl}! Contas criadas serão sincronizadas com o YouLink Admin."
+                    : $"Conectado à loja '{result.StoreName}' em {result.NormalizedUrl}! Suas contas sincronizam com o YouLink Admin.";
+            }
+            else
+            {
+                _serverConnectFeedback = result.ErrorMessage ?? "Não foi possível alcançar o servidor informado.";
+            }
+        }
+        finally
+        {
+            _connectingServer = false;
+        }
+    }
+
+    private async Task DisconnectServerFromLoginAsync()
+    {
+        await Gateway.ConfigureServerUrlAsync(null);
+        _serverUrlInput = string.Empty;
+        _serverConnectOk = true;
+        _serverConnectFeedback = "Modo apenas celular restaurado.";
     }
 }

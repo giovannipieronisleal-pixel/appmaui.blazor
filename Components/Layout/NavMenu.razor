@@ -16,7 +16,7 @@
         <span>Produtos</span>
     </NavLink>
 
-    <NavLink class="adm-nav-item" href="/estoque">
+    <NavLink class="@($"adm-nav-item {(Gateway.IsAdmin ? "adm-nav-secondary" : string.Empty)}")" href="/estoque">
         <span class="adm-nav-icon">📦</span>
         <span>Estoque</span>
     </NavLink>
@@ -36,21 +36,22 @@
             Administração
         </div>
 
-        <NavLink class="adm-nav-item" href="/funcionarios">
+        <NavLink class="adm-nav-item adm-nav-secondary" href="/funcionarios">
             <span class="adm-nav-icon">👥</span>
             <span>Equipe</span>
         </NavLink>
 
-        <NavLink class="adm-nav-item" href="/configuracoes-loja">
+        <NavLink class="adm-nav-item adm-nav-secondary" href="/configuracoes-loja">
             <span class="adm-nav-icon">🎨</span>
             <span>Loja &amp; Visual</span>
         </NavLink>
 
         <NavLink class="adm-nav-item" href="/pedidos">
             <span class="adm-nav-icon">🧾</span>
-            <span>Pedidos Pix</span>
+            <span>Pedidos</span>
         </NavLink>
-        <NavLink class="adm-nav-item" href="/planos">
+
+        <NavLink class="adm-nav-item adm-nav-secondary" href="/planos">
             <span class="adm-nav-icon">💎</span>
             <span>Planos</span>
         </NavLink>
@@ -60,23 +61,101 @@
         Catálogo Público
     </div>
 
-    <NavLink class="adm-nav-item" href="@($"/loja/{_storeSlug}")">
+    <NavLink class="adm-nav-item adm-nav-secondary" href="@($"/loja/{_storeSlug}")">
         <span class="adm-nav-icon">🌐</span>
         <span>Site</span>
     </NavLink>
+
+    <button type="button"
+            class="adm-nav-item adm-nav-more-btn @(IsSecondaryRouteActive() || _mobileMoreOpen ? "active" : string.Empty)"
+            @onclick="ToggleMobileMore"
+            aria-expanded="@_mobileMoreOpen"
+            aria-label="Mais opções do menu">
+        <span class="adm-nav-icon">⋯</span>
+        <span>Mais</span>
+    </button>
 </nav>
+
+@if (_mobileMoreOpen)
+{
+    <div class="adm-mobile-sheet-backdrop" @onclick="CloseMobileMore">
+        <div class="adm-mobile-sheet" @onclick:stopPropagation="true">
+            <div class="adm-mobile-sheet-header">
+                <strong>Menu da Loja</strong>
+                <button type="button" class="adm-mobile-sheet-close" @onclick="CloseMobileMore" aria-label="Fechar menu">✕</button>
+            </div>
+            <div class="adm-mobile-sheet-grid">
+                <a class="adm-mobile-sheet-link" href="/estoque" @onclick="CloseMobileMore">
+                    <span>📦</span>
+                    <span>Estoque</span>
+                </a>
+                @if (Gateway.IsAdmin || Gateway.CanManageStock)
+                {
+                    <a class="adm-mobile-sheet-link" href="/vendas" @onclick="CloseMobileMore">
+                        <span>💰</span>
+                        <span>Vendas</span>
+                    </a>
+                }
+                @if (Gateway.IsAdmin)
+                {
+                    <a class="adm-mobile-sheet-link" href="/pedidos" @onclick="CloseMobileMore">
+                        <span>🧾</span>
+                        <span>Pedidos Pix</span>
+                    </a>
+                    <a class="adm-mobile-sheet-link" href="/funcionarios" @onclick="CloseMobileMore">
+                        <span>👥</span>
+                        <span>Equipe</span>
+                    </a>
+                    <a class="adm-mobile-sheet-link" href="/configuracoes-loja" @onclick="CloseMobileMore">
+                        <span>🎨</span>
+                        <span>Loja &amp; Visual</span>
+                    </a>
+                    <a class="adm-mobile-sheet-link" href="/planos" @onclick="CloseMobileMore">
+                        <span>💎</span>
+                        <span>Planos</span>
+                    </a>
+                }
+                <a class="adm-mobile-sheet-link" href="@($"/loja/{_storeSlug}")" @onclick="CloseMobileMore">
+                    <span>🌐</span>
+                    <span>Ver Vitrine / Site</span>
+                </a>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private string _storeSlug = "minha-loja";
+    private bool _mobileMoreOpen;
 
     protected override async Task OnInitializedAsync()
     {
         Navigation.LocationChanged += OnLocationChanged;
+        Gateway.AuthStateChanged += OnAuthStateChanged;
         await RefreshSlugAsync();
+    }
+
+    private void ToggleMobileMore() => _mobileMoreOpen = !_mobileMoreOpen;
+    private void CloseMobileMore() => _mobileMoreOpen = false;
+
+    private bool IsSecondaryRouteActive()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/').ToLowerInvariant();
+        return path.StartsWith("estoque")
+            || path.StartsWith("funcionarios")
+            || path.StartsWith("configuracoes")
+            || path.StartsWith("planos")
+            || path.StartsWith("loja");
+    }
+
+    private async void OnAuthStateChanged()
+    {
+        await InvokeAsync(StateHasChanged);
     }
 
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
+        _mobileMoreOpen = false;
         await RefreshSlugAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -97,5 +176,6 @@
     public void Dispose()
     {
         Navigation.LocationChanged -= OnLocationChanged;
+        Gateway.AuthStateChanged -= OnAuthStateChanged;
     }
 }

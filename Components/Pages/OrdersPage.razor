@@ -25,7 +25,7 @@
             <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadOrdersAsync">
                 🔄 Atualizar
             </button>
-            <a href="/configuracoes" class="adm-btn adm-btn-primary">⚙️ Raio &amp; Chave Pix</a>
+            <a href="/configuracoes-loja" class="adm-btn adm-btn-primary">⚙️ Raio &amp; Chave Pix</a>
         </div>
     }
 </div>
@@ -67,7 +67,7 @@ else
                     <span>Para os clientes fecharem compra pelo app, vá em <strong>Loja &amp; Visual</strong>, marque a opção para ativar vendas por Pix e preencha sua Chave Pix + CEP de origem.</span>
                 }
             </div>
-            <a href="@(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "/planos" : "/configuracoes")" class="adm-btn adm-btn-accent">
+            <a href="@(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "/planos" : "/configuracoes-loja")" class="adm-btn adm-btn-accent">
                 @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "Ver Planos" : "Ativar Pix e Raio de Entrega")
             </a>
         </div>

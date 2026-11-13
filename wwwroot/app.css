@@ -830,13 +830,18 @@ html, body {
     }
 
     .adm-nav {
-        flex-direction: row;
-        justify-content: flex-start;
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
         align-items: stretch;
-        min-width: 100%;
-        width: max-content;
-        gap: 0.25rem;
-        padding: 0.2rem 0;
+        width: 100%;
+        min-width: 0;
+        gap: 0.15rem;
+        padding: 0.2rem 0.25rem;
+    }
+
+    .adm-nav-secondary {
+        display: none !important;
     }
 
     .adm-nav-link,
@@ -976,15 +981,44 @@ html, body {
     }
 
     .adm-table td {
-        border-bottom: none;
-        padding: 0.35rem 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.35rem 0.75rem;
-        text-align: right;
+        border-bottom: 1px dashed color-mix(in srgb, var(--adm-border) 55%, transparent);
+        padding: 0.5rem 0;
+        display: grid;
+        grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
+        align-items: start;
+        column-gap: 0.75rem;
+        row-gap: 0.22rem;
+        text-align: left;
         overflow-wrap: anywhere;
+    }
+
+    .adm-table td > * {
+        grid-column: 2;
+        min-width: 0;
+        text-align: left;
+    }
+
+    .adm-table td[data-label="Ações"] {
+        grid-template-columns: 1fr;
+        border-bottom: none;
+        padding-top: 0.65rem;
+    }
+
+    .adm-table td[data-label="Ações"] > * {
+        grid-column: 1;
+    }
+
+    .adm-table td::before {
+        grid-column: 1;
+        grid-row: 1 / span 6;
+        margin-right: 0 !important;
+        text-align: left;
+        padding-top: 0.1rem;
+    }
+
+    .adm-table td[data-label="Ações"]::before {
+        grid-row: 1;
+        margin-bottom: 0.25rem;
     }
 
     .adm-table td::before {

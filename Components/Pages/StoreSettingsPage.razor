@@ -1,4 +1,5 @@
 @page "/configuracoes-loja"
+@page "/configuracoes"
 @using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
@@ -15,6 +16,12 @@
     var baseSiteUrl = !string.IsNullOrWhiteSpace(_form.OnlineBaseUrl)
         ? _form.OnlineBaseUrl.TrimEnd('/')
         : WhatsAppLinkBuilder.GenerateDefaultStoreUrl(_form.StoreName);
+
+    var isPlaceholderOrLocal = string.IsNullOrWhiteSpace(_form.OnlineBaseUrl)
+        || baseSiteUrl.Contains("://lojas.", StringComparison.OrdinalIgnoreCase)
+        || baseSiteUrl.Contains("minhaloja.com", StringComparison.OrdinalIgnoreCase)
+        || baseSiteUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+        || baseSiteUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
 
     var storeCatalogUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl(baseSiteUrl, effectiveSlug);
     var qrCodeSvgUri = WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(storeCatalogUrl);
@@ -182,44 +189,73 @@
             }
         </section>
 
-        <!-- Card 3: Link Oficial do Catálogo da Sua Loja -->
+        <!-- Card 3: Vitrine no App / Link do Catálogo da Sua Loja -->
         <section class="adm-card" style="border-left: 4px solid var(--adm-success);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--adm-text);">
-                    🌐 Link Oficial do Catálogo da Sua Loja
+                    @(isPlaceholderOrLocal ? "📱 Vitrine Pronta para Vender no Celular" : "🌐 Link Público do Catálogo da Sua Loja")
                 </h2>
                 <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-                    <span class="pill-badge pill-green">🟢 Catálogo Pronto</span>
-                    <span class="pill-badge pill-blue">Servidor + Domínio Inclusos</span>
+                    @if (isPlaceholderOrLocal)
+                    {
+                        <span class="pill-badge pill-green">🟢 Pronta no Celular</span>
+                        <span class="pill-badge pill-slate">Prévia Local</span>
+                    }
+                    else
+                    {
+                        <span class="pill-badge pill-green">🟢 Catálogo Online</span>
+                        <span class="pill-badge pill-blue">Link Público Ativo</span>
+                    }
                 </div>
             </div>
 
             <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0; margin-bottom: 0.85rem; line-height: 1.45;">
-                Este é o link oficial exclusivo da sua loja (<strong>servidor em nuvem + HTTPS + endereço já inclusos no seu plano</strong>, sem taxa extra)! Compartilhe com suas clientes ou divulgue nas redes sociais:
+                @if (isPlaceholderOrLocal)
+                {
+                    <span>
+                        Sua vitrine já funciona <strong>direto aqui no aplicativo</strong> para cadastrar peças e vender no Pix pelo celular! Quando quiser divulgar um link na internet (Instagram/Bio), conecte um servidor próprio em <strong>Configurações Técnicas</strong> abaixo.
+                    </span>
+                }
+                else
+                {
+                    <span>
+                        Seu servidor online está configurado! Compartilhe este link público com seus clientes para acessarem e comprarem direto no Pix:
+                    </span>
+                }
             </p>
 
-            <div style="background: var(--adm-input-bg); border: 1.5px solid var(--adm-border); border-radius: 8px; padding: 0.85rem 1rem; font-family: monospace; font-size: 0.95rem; font-weight: 700; word-break: break-all; margin-bottom: 0.45rem; color: var(--adm-accent);">
-                @storeCatalogUrl
+            <div style="background: var(--adm-input-bg); border: 1.5px solid var(--adm-border); border-radius: 8px; padding: 0.85rem 1rem; font-family: monospace; font-size: 0.92rem; font-weight: 700; word-break: break-all; margin-bottom: 0.45rem; color: var(--adm-accent);">
+                @(isPlaceholderOrLocal ? $"/loja/{effectiveSlug}" : storeCatalogUrl)
             </div>
             <div style="font-size: 0.76rem; color: var(--adm-muted); margin-bottom: 0.95rem; line-height: 1.4;">
-                🌐 <em>Link exclusivo para suas redes sociais. Ao clicar em <strong>"Abrir no Navegador"</strong>, seu catálogo abre na hora localmente sem erro de DNS!</em>
+                @if (isPlaceholderOrLocal)
+                {
+                    <span>💡 <em>Toque em <strong>"Abrir Vitrine no Celular"</strong> para ver exatamente como o cliente compra pelo app.</em></span>
+                }
+                else
+                {
+                    <span>🌐 <em>Endereço externo configurável em Opções Avançadas de Domínio / Nuvem.</em></span>
+                }
             </div>
 
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
-                <button type="button" class="adm-btn adm-btn-primary" style="flex: 1; min-width: 140px;" @onclick="() => CopyStoreUrlAsync(storeCatalogUrl)">
+                <a href="/loja/@effectiveSlug" class="adm-btn adm-btn-primary" style="flex: 1; min-width: 165px;">
+                    👁️ Abrir Vitrine no Celular
+                </a>
+
+                <button type="button" class="adm-btn adm-btn-outline" style="flex: 1; min-width: 140px;" @onclick="() => CopyStoreUrlAsync(storeCatalogUrl)">
                     @(_copiedUrl ? "✓ Link Copiado!" : "📋 Copiar Link")
                 </button>
 
-                <button type="button" class="adm-btn adm-btn-success" style="flex: 1; min-width: 160px;" @onclick="() => ShareOnWhatsAppAsync(storeCatalogUrl)">
+                @if (!isPlaceholderOrLocal)
+                {
+                    <button type="button" class="adm-btn adm-btn-outline" style="min-width: 140px;" @onclick="() => OpenBrowserAsync(storeCatalogUrl)">
+                        Abrir no Navegador &nearr;
+                    </button>
+                }
+
+                <button type="button" class="adm-btn adm-btn-outline" style="min-width: 145px;" @onclick="() => ShareOnWhatsAppAsync(storeCatalogUrl)">
                     💬 Enviar no WhatsApp
-                </button>
-
-                <a href="/loja/@effectiveSlug" class="adm-btn adm-btn-outline" style="min-width: 110px;">
-                    👁️ Ver no App
-                </a>
-
-                <button type="button" class="adm-btn adm-btn-outline" style="min-width: 140px;" @onclick="() => OpenBrowserAsync(storeCatalogUrl)">
-                    Abrir no Navegador &nearr;
                 </button>
             </div>
 
@@ -413,8 +449,51 @@
     </div>
 </div>
 
+<!-- Bloco Técnico Opcional (Fechado por padrão para não complicar quem não é dev) -->
+<details class="adm-card" style="margin-top: 1.25rem; border: 1px dashed var(--adm-border);">
+    <summary style="cursor: pointer; font-weight: 700; font-size: 0.94rem; color: var(--adm-text); user-select: none;">
+        ⚙️ Configurações Técnicas (Sincronizar com YouLink Admin, Servidor Próprio &amp; OAuth Google) — Para Devs / Opcional
+    </summary>
+    <p style="font-size: 0.82rem; color: var(--adm-muted); margin: 0.5rem 0 1rem; line-height: 1.45;">
+        Se você usa a loja só neste celular para cadastrar peças e receber no Pix, não precisa mexer em nada aqui. Abra somente se quiser conectar este aparelho ao servidor central / PC (<strong>YouLink Admin</strong>) ou publicar em Cloud Run / Render / Fly.io.
+    </p>
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <section class="adm-card" style="margin: 0; border-left: 4px solid var(--adm-accent);">
+            <h2 style="font-size: 1.05rem; font-weight: 700; margin: 0 0 0.35rem; color: var(--adm-text);">
+                📡 Sincronizar Celular com YouLink Admin (Servidor Central)
+            </h2>
+            <p style="font-size: 0.82rem; color: var(--adm-muted); margin: 0 0 0.75rem; line-height: 1.45;">
+                Conecte a URL da sua API central (mesmo endereço exibido na aba <strong>👑 Usuários</strong> do <strong>YouLink Admin</strong>, ex.: <code>http://192.168.0.15:5000</code> ou <code>https://sua-api.run.app</code>) para que contas criadas no celular apareçam no painel Admin.
+            </p>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                <input type="url"
+                       class="adm-input"
+                       style="flex: 1; min-width: 220px;"
+                       @bind="_centralServerUrlInput"
+                       placeholder="Ex.: http://192.168.0.15:5000" />
+                <button type="button"
+                        class="adm-btn adm-btn-primary"
+                        disabled="@_connectingCentralServer"
+                        @onclick="ConnectCentralServerFromSettingsAsync">
+                    @(_connectingCentralServer ? "Testando..." : "⚡ Testar e Salvar Conexão")
+                </button>
+                @if (Gateway.HasCustomServerUrl)
+                {
+                    <button type="button" class="adm-btn adm-btn-outline" @onclick="DisconnectCentralServerFromSettingsAsync">
+                        Usar apenas local
+                    </button>
+                }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_centralServerFeedback))
+            {
+                <div style="margin-top: 0.6rem; font-size: 0.8rem; color: @(_centralServerConnectedOk ? "var(--adm-success)" : "var(--adm-danger)");">
+                    @_centralServerFeedback
+                </div>
+            }
+        </section>
+
 <!-- Card: Meu Servidor Próprio (BYO Server — Google Cloud Run / Render / Fly.io) -->
-<section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid #2563EB;">
+<section class="adm-card" style="margin-top: 0; border-left: 4px solid #2563EB;">
     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
         <div>
             <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #2563EB;">
@@ -648,6 +727,8 @@
         </div>
     }
 </section>
+    </div>
+</details>
 
 <!-- Card: Vendas por Pix no App, Raio de Distância e Calculadora Correios -->
 <section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid #16A34A;">
@@ -698,10 +779,10 @@
                 <input type="checkbox" @bind="_pixEnabled" style="width: 18px; height: 18px;" />
                 <div>
                     <div style="font-weight: 800; color: var(--adm-text);">
-                        @(_pixEnabled ? "✅ Vendas diretas por Pix ATIVADAS no catálogo" : "Ativar vendas diretas pelo app/site (Apenas Pix)")
+                        @(_pixEnabled ? "✅ Vendas diretas pelo celular (Pix) ATIVADAS" : "Ativar vendas diretas pelo celular (Apenas Pix)")
                     </div>
                     <div style="font-size: 0.78rem; color: var(--adm-muted);">
-                        Se desmarcado, os clientes continuam pedindo apenas pelo WhatsApp. Não usa cartão de crédito nem precisa de CNPJ.
+                        Venda diretamente pelo celular gerando Pix Copia e Cola — sem depender do WhatsApp, sem cartão e sem CNPJ.
                     </div>
                 </div>
             </label>
@@ -960,12 +1041,49 @@
     private bool _verifyingGoogle;
     private OwnServerHealthCheckResult? _ownServerTestResult;
     private GoogleAccountTierVerificationResult? _googleVerifyResult;
+    private string _centralServerUrlInput = string.Empty;
+    private bool _connectingCentralServer;
+    private bool _centralServerConnectedOk;
+    private string? _centralServerFeedback;
 
     protected override async Task OnInitializedAsync()
     {
         Theme.OnThemeChanged += StateHasChanged;
         CloudSync.OnSyncStatusChanged += StateHasChanged;
+        _centralServerUrlInput = Gateway.CurrentServerUrl;
         await LoadSettingsAsync();
+    }
+
+    private async Task ConnectCentralServerFromSettingsAsync()
+    {
+        _connectingCentralServer = true;
+        _centralServerFeedback = null;
+        try
+        {
+            var result = await Gateway.ConfigureServerUrlAsync(_centralServerUrlInput);
+            _centralServerConnectedOk = result.Reachable;
+            if (result.Reachable)
+            {
+                _centralServerUrlInput = result.NormalizedUrl;
+                _centralServerFeedback = $"✓ Conectado ao servidor {result.NormalizedUrl}! Contas e vendas sincronizam automaticamente.";
+            }
+            else
+            {
+                _centralServerFeedback = result.ErrorMessage ?? "Não foi possível conectar ao servidor informado.";
+            }
+        }
+        finally
+        {
+            _connectingCentralServer = false;
+        }
+    }
+
+    private async Task DisconnectCentralServerFromSettingsAsync()
+    {
+        await Gateway.ConfigureServerUrlAsync(null);
+        _centralServerUrlInput = string.Empty;
+        _centralServerConnectedOk = true;
+        _centralServerFeedback = "Modo offline local restaurado neste dispositivo.";
     }
 
     private void ChangeTheme(string preference)

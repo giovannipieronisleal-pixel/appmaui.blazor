@@ -69,6 +69,7 @@ public sealed class CreatePixOrderRequest
     public string City { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string? CustomerNotes { get; set; }
+    public bool ExpressMobileMode { get; set; }
 }
 
 public sealed class UpdateOrderFulfillmentRequest

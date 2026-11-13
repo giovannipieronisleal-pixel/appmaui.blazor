@@ -13,7 +13,7 @@
     <div>
         <h1 class="adm-page-title" style="margin: 0;">💰 Vendas &amp; Quanto Vendeu</h1>
         <p class="adm-page-subtitle" style="margin: 0.25rem 0 0;">
-            Acompanhe o faturamento confirmado por período, ranking das peças mais vendidas e vendas registradas no WhatsApp ou balcão.
+            Acompanhe o faturamento confirmado por período, ranking das peças mais vendidas e vendas feitas direto pelo celular (Pix) ou no balcão.
         </p>
     </div>
 
@@ -162,10 +162,10 @@ else
                     <div>
                         <label class="adm-label">Forma de Pagamento</label>
                         <select class="adm-input" @bind="_salePaymentMethod">
-                            <option value="WhatsApp">WhatsApp</option>
-                            <option value="Pix">Pix</option>
-                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Pix">Pix (Direto no Celular)</option>
                             <option value="Cartão / Link">Cartão / Link</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="WhatsApp">WhatsApp (Opcional)</option>
                         </select>
                     </div>
 
@@ -195,6 +195,31 @@ else
                     <div style="margin-top: 0.75rem; font-size: 0.9rem; font-weight: 700;">
                         Total desta venda: <span class="sales-value-green">@EstimatedManualSaleTotal.ToString("C", PtBr)</span>
                     </div>
+
+                    @if (_salePaymentMethod == "Pix")
+                    {
+                        var manualPixBrCode = BuildManualSalePixBrCode();
+                        @if (!string.IsNullOrWhiteSpace(manualPixBrCode))
+                        {
+                            <div style="margin-top: 0.65rem; padding: 0.75rem; border-radius: 10px; border: 1px dashed var(--adm-accent); background: var(--adm-surface-subtle); display: flex; flex-direction: column; gap: 0.45rem;">
+                                <div style="font-size: 0.8rem; font-weight: 700;">
+                                    💸 Pix Copia e Cola pronto para cobrar no celular (@EstimatedManualSaleTotal.ToString("C", PtBr)):
+                                </div>
+                                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                    <input type="text" readonly class="adm-input" value="@manualPixBrCode" style="flex: 1; font-family: monospace; font-size: 0.74rem;" />
+                                    <button type="button" class="adm-btn adm-btn-primary" @onclick="() => CopyManualSalePixAsync(manualPixBrCode)">
+                                        @(_copiedManualPix ? "✓ Pix Copiado!" : "📋 Copiar Pix para Cliente")
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        else if (Gateway.IsAdmin)
+                        {
+                            <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--adm-muted);">
+                                Dica: configure sua Chave Pix em <a href="/configuracoes-loja" style="font-weight: 700;">Loja &amp; Visual</a> para gerar o Pix Copia e Cola na hora da venda.
+                            </div>
+                        }
+                    }
                 }
 
                 <div style="display: flex; gap: 0.5rem; margin-top: 0.85rem; flex-wrap: wrap;">
@@ -403,13 +428,15 @@ else
     private bool _showManualSaleForm;
     private bool _savingManualSale;
     private bool _copiedCsv;
+    private bool _copiedManualPix;
+    private AdminStoreSettingsDto? _storeSettings;
     private string? _error;
     private string? _success;
 
     private string _selectedProductId = string.Empty;
     private string _selectedVariantId = string.Empty;
     private int _saleQuantity = 1;
-    private string _salePaymentMethod = "WhatsApp";
+    private string _salePaymentMethod = "Pix";
     private string _saleCustomerName = string.Empty;
     private string _saleCustomerWhatsapp = string.Empty;
     private decimal? _saleShippingCost;
@@ -470,6 +497,17 @@ else
             {
                 _products = await Gateway.GetProductsAsync();
             }
+
+            if (Gateway.IsAdmin)
+            {
+                try
+                {
+                    _storeSettings = await Gateway.GetStoreSettingsAsync();
+                }
+                catch
+                {
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -510,7 +548,7 @@ else
                 ProductId: productId,
                 ProductVariantId: variantId,
                 Quantity: _saleQuantity,
-                CustomerName: string.IsNullOrWhiteSpace(_saleCustomerName) ? "Cliente Balcão / WhatsApp" : _saleCustomerName.Trim(),
+                CustomerName: string.IsNullOrWhiteSpace(_saleCustomerName) ? "Cliente Balcão / Celular" : _saleCustomerName.Trim(),
                 CustomerWhatsapp: _saleCustomerWhatsapp,
                 PaymentMethod: _salePaymentMethod,
                 AgreedShippingCost: _saleShippingCost,
@@ -532,6 +570,40 @@ else
         finally
         {
             _savingManualSale = false;
+        }
+    }
+
+    private string? BuildManualSalePixBrCode()
+    {
+        if (EstimatedManualSaleTotal <= 0m || _storeSettings is null)
+            return null;
+
+        var rawKey = ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storeSettings.StorePixKey)
+            ? _storeSettings.StorePixKey
+            : _storeSettings.PicpayPixKey;
+
+        if (!ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(rawKey))
+            return null;
+
+        return ClothingStore.Shared.Helpers.PixPayloadBuilder.BuildBrCode(
+            rawKey!,
+            string.IsNullOrWhiteSpace(_storeSettings.StorePixReceiverName) ? _storeSettings.StoreName : _storeSettings.StorePixReceiverName,
+            _storeSettings.OriginCity,
+            EstimatedManualSaleTotal,
+            $"VENDA{DateTime.UtcNow:HHmmss}");
+    }
+
+    private async Task CopyManualSalePixAsync(string brCode)
+    {
+        try
+        {
+            await Clipboard.Default.SetTextAsync(brCode);
+            _copiedManualPix = true;
+            _success = "Código Pix da venda copiado! Mostre ou envie para o cliente concluir.";
+        }
+        catch
+        {
+            _error = "Não foi possível copiar automaticamente o código Pix neste dispositivo.";
         }
     }
 

@@ -29,7 +29,7 @@ else
         <div>
             <h1 class="adm-page-title">Contratar @GetPlanTitle(_selectedTier)</h1>
             <p class="adm-page-subtitle">
-                Servidor em nuvem 24h, HTTPS e domínio/endereço da loja <strong>já estão inclusos no plano (R$ 0,00 extra)</strong>. Revise o pacote e finalize via Pix ou WhatsApp.
+                Servidor em nuvem 24h, HTTPS e domínio/endereço da loja <strong>já estão inclusos no plano (R$ 0,00 extra)</strong>. Revise o pacote e conclua direto pelo celular via Pix (Copia e Cola).
             </p>
         </div>
 
@@ -317,34 +317,71 @@ else
                 </div>
             </div>
 
-            <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.55rem;">
-                <div style="font-size: 0.82rem; font-weight: 700;">Chave Pix / PicPay para Pagamento</div>
+            <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.65rem;">
+                <div style="font-size: 0.85rem; font-weight: 800;">💸 Pagamento Direto no Celular (Pix)</div>
                 <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                    <code style="flex: 1; font-size: 0.92rem; padding: 0.45rem 0.6rem; border-radius: 6px; background: var(--adm-card); border: 1px solid var(--adm-border);">
+                    <code style="flex: 1; font-size: 0.92rem; padding: 0.45rem 0.6rem; border-radius: 6px; background: var(--adm-card); border: 1px solid var(--adm-border); overflow-wrap: anywhere;">
                         @_settings.PicpayPixKey
                     </code>
                     <button type="button"
                             class="adm-btn adm-btn-outline"
                             style="white-space: nowrap;"
                             @onclick="CopyPixKeyAsync">
-                        @(_copiedPix ? "✓ Pix Copiado!" : "📋 Copiar Pix")
+                        @(_copiedPix ? "✓ Chave Copiada!" : "📋 Copiar Chave")
                     </button>
                 </div>
+
+                @if (!string.IsNullOrWhiteSpace(PlanPixBrCode))
+                {
+                    <div style="border-top: 1px solid var(--adm-border); padding-top: 0.55rem; display: flex; flex-direction: column; gap: 0.4rem;">
+                        <div style="font-size: 0.78rem; font-weight: 700; color: var(--adm-muted);">
+                            Código Pix Copia e Cola (valor já preenchido: @TotalOrderAmount.ToString("C")):
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <input type="text" readonly class="adm-input" value="@PlanPixBrCode" style="flex: 1; font-family: monospace; font-size: 0.74rem;" />
+                            <button type="button"
+                                    class="adm-btn adm-btn-primary"
+                                    style="white-space: nowrap;"
+                                    @onclick="CopyPlanPixBrCodeAsync">
+                                @(_copiedPlanBrCode ? "✓ Pix EMV Copiado!" : "📋 Copiar Pix Copia e Cola")
+                            </button>
+                        </div>
+                    </div>
+                }
             </div>
+
+            <button type="button"
+                    class="adm-btn adm-btn-success"
+                    style="text-align: center; padding: 0.95rem; font-size: 0.96rem; font-weight: 800;"
+                    @onclick="ConfirmDirectMobilePlanOrderAsync">
+                📱 Confirmar Compra Direto no Celular
+            </button>
+
+            @if (_confirmedMobilePlanReceipt is not null)
+            {
+                <div style="padding: 0.9rem; border-radius: 10px; background: rgba(22, 163, 74, 0.12); border: 1px solid var(--adm-success); display: flex; flex-direction: column; gap: 0.45rem;">
+                    <div style="font-weight: 800; color: var(--adm-success); font-size: 0.96rem;">
+                        ✅ Pedido @_confirmedMobilePlanReceipt.Protocolo registrado direto no app!
+                    </div>
+                    <div style="font-size: 0.82rem; color: var(--adm-text); line-height: 1.45;">
+                        <strong>@_confirmedMobilePlanReceipt.PlanTitle</strong> (@_confirmedMobilePlanReceipt.DurationLabel) — <strong>@_confirmedMobilePlanReceipt.AmountText</strong><br />
+                        Loja: <strong>@_confirmedMobilePlanReceipt.StoreName</strong> | Domínio: <strong>@_confirmedMobilePlanReceipt.Domain</strong>
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--adm-muted); line-height: 1.45;">
+                        Conclua o Pix pelo aplicativo do seu banco usando a chave ou Copia e Cola acima. Assim que receber seu código de ativação, resgate-o logo abaixo na hora — sem precisar usar WhatsApp!
+                    </div>
+                </div>
+            }
 
             @if (!string.IsNullOrWhiteSpace(WhatsAppSaleUrl))
             {
-                <button type="button"
-                        class="adm-btn adm-btn-success"
-                        style="text-align: center; padding: 0.9rem; font-size: 0.96rem; font-weight: 700;"
-                        @onclick="OpenWhatsAppOrderAsync">
-                    💬 Finalizar Venda / Enviar Pedido no WhatsApp
-                </button>
-            }
-            else
-            {
-                <div class="adm-alert adm-alert-error" style="margin: 0;">
-                    Configure um número de WhatsApp válido nas <a href="/configuracoes-loja" style="font-weight: 700;">Configurações da Loja</a> para gerar o link direto de pagamento/atendimento.
+                <div style="display: flex; justify-content: flex-end;">
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="font-size: 0.78rem; padding: 0.4rem 0.75rem;"
+                            @onclick="OpenWhatsAppOrderAsync">
+                        💬 Precisa de ajuda no WhatsApp? (Opcional)
+                    </button>
                 </div>
             }
 
@@ -415,6 +452,32 @@ else
     private string _giftCardCode = string.Empty;
     private string? _error;
     private string? _successMessage;
+    private bool _copiedPlanBrCode;
+    private MobilePlanReceipt? _confirmedMobilePlanReceipt;
+
+    private sealed record MobilePlanReceipt(
+        string Protocolo,
+        string PlanTitle,
+        string DurationLabel,
+        string AmountText,
+        string StoreName,
+        string Domain);
+
+    private string? PlanPixBrCode
+    {
+        get
+        {
+            if (_settings is null || !ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_settings.PicpayPixKey))
+                return null;
+
+            return ClothingStore.Shared.Helpers.PixPayloadBuilder.BuildBrCode(
+                _settings.PicpayPixKey,
+                string.IsNullOrWhiteSpace(_settings.StorePixReceiverName) ? _settings.StoreName : _settings.StorePixReceiverName,
+                _settings.OriginCity,
+                TotalOrderAmount,
+                $"YLK{_durationMonths}M");
+        }
+    }
 
     private decimal RegularMonthlyPrice => _settings is null ? 0m : _selectedTier switch
     {
@@ -608,6 +671,42 @@ else
         {
             _successMessage = $"Copie manualmente a chave Pix: {_settings.PicpayPixKey}";
         }
+    }
+
+    private async Task CopyPlanPixBrCodeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PlanPixBrCode))
+            return;
+
+        try
+        {
+            await Clipboard.Default.SetTextAsync(PlanPixBrCode);
+            _copiedPlanBrCode = true;
+            _successMessage = "Código Pix Copia e Cola copiado! Cole no app do seu banco para pagar.";
+        }
+        catch
+        {
+            _successMessage = "Selecione e copie o código Pix Copia e Cola exibido no quadro.";
+        }
+    }
+
+    private void ConfirmDirectMobilePlanOrderAsync()
+    {
+        if (_settings is null)
+            return;
+
+        _error = null;
+        var store = string.IsNullOrWhiteSpace(_customerStoreName) ? _settings.StoreName : _customerStoreName.Trim();
+        var domainText = string.IsNullOrWhiteSpace(_desiredDomain) ? "incluso no plano" : _desiredDomain.Trim();
+        var protocol = $"YLK-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
+        _confirmedMobilePlanReceipt = new MobilePlanReceipt(
+            protocol,
+            GetPlanTitle(_selectedTier),
+            DurationLabel,
+            TotalOrderAmount.ToString("C"),
+            store,
+            domainText);
+        _successMessage = $"Pedido {protocol} registrado direto pelo celular! Faça o Pix usando o Copia e Cola acima.";
     }
 
     private async Task OpenWhatsAppOrderAsync()

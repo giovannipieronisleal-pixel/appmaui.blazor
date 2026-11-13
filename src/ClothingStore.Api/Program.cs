@@ -4,6 +4,7 @@ using System.Text;
 using ClothingStore.Api.Security;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Application.Services;
+using ClothingStore.Domain.Entities;
 using ClothingStore.Domain.Enums;
 using ClothingStore.Domain.Exceptions;
 using ClothingStore.Infrastructure.Persistence;
@@ -217,6 +218,83 @@ app.MapPost("/api/public/orders/pix", async (
 // =============================================================================
 // 2. ENDPOINTS DE AUTENTICAÇÃO E ENTRADA POR E-MAIL (/api/auth/...)
 // =============================================================================
+// Headers de versionamento e compatibilidade contínua com versões antigas do app (API v1)
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-YouLink-Api-Version"] = "v1";
+    context.Response.Headers["X-YouLink-Latest-App"] = "1.0.8";
+    await next();
+});
+
+static bool IsAuthorizedPlatformSyncRequest(HttpContext httpContext, StoreSettings settings)
+{
+    if (httpContext.User.Identity?.IsAuthenticated == true &&
+        httpContext.User.IsInRole(RoleNames.Admin))
+    {
+        return true;
+    }
+
+    var envSecret = Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET");
+    var expectedSecret = !string.IsNullOrWhiteSpace(envSecret)
+        ? envSecret
+        : settings.OwnServerSyncSecret;
+
+    if (string.IsNullOrWhiteSpace(expectedSecret))
+        return false;
+
+    var headerSecret = httpContext.Request.Headers["X-YouLink-Sync-Key"].FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(headerSecret))
+        return false;
+
+    var expectedBytes = Encoding.UTF8.GetBytes(expectedSecret.Trim());
+    var providedBytes = Encoding.UTF8.GetBytes(headerSecret.Trim());
+    return expectedBytes.Length == providedBytes.Length &&
+        CryptographicOperations.FixedTimeEquals(expectedBytes, providedBytes);
+}
+
+static bool IsClientVersionOlder(string? clientVersion, string latestVersion)
+{
+    if (string.IsNullOrWhiteSpace(clientVersion))
+        return false;
+
+    var cleanClient = clientVersion.Trim().TrimStart('v', 'V');
+    return Version.TryParse(cleanClient, out var parsedClient)
+        && Version.TryParse(latestVersion, out var parsedLatest)
+        && parsedClient < parsedLatest;
+}
+
+app.MapGet("/api/app/compatibility", (string? clientVersion) =>
+{
+    const string latest = "1.0.8";
+    var updateRecommended = IsClientVersionOlder(clientVersion, latest);
+    return Results.Ok(new ApiCompatibilityStatusDto(
+        ApiVersion: "v1",
+        MinSupportedAppVersion: "1.0.0",
+        LatestAppVersion: latest,
+        UpdateRecommended: updateRecommended,
+        ClientAppVersion: clientVersion,
+        ReleaseUrl: "https://github.com/giovannipieronisleal-pixel/yourlink/releases/latest",
+        Message: updateRecommended
+            ? $"Sua versão ({clientVersion}) continua funcionando normalmente na API v1. Quando quiser, atualize para a {latest} para vendas diretas no celular e melhorias visuais."
+            : "Seu aplicativo está compatível e atualizado na API v1."));
+}).AllowAnonymous();
+
+app.MapGet("/api/v1/app/compatibility", (string? clientVersion) =>
+{
+    const string latest = "1.0.8";
+    var updateRecommended = IsClientVersionOlder(clientVersion, latest);
+    return Results.Ok(new ApiCompatibilityStatusDto(
+        ApiVersion: "v1",
+        MinSupportedAppVersion: "1.0.0",
+        LatestAppVersion: latest,
+        UpdateRecommended: updateRecommended,
+        ClientAppVersion: clientVersion,
+        ReleaseUrl: "https://github.com/giovannipieronisleal-pixel/yourlink/releases/latest",
+        Message: updateRecommended
+            ? $"Sua versão ({clientVersion}) continua funcionando normalmente na API v1. Quando quiser, atualize para a {latest}."
+            : "Aplicativo compatível na API v1."));
+}).AllowAnonymous();
+
 var authGroup = app.MapGroup("/api/auth");
 
 authGroup.MapGet("/setup-status", async (AuthService authService, CancellationToken ct) =>
@@ -225,8 +303,140 @@ authGroup.MapGet("/setup-status", async (AuthService authService, CancellationTo
 authGroup.MapPost("/register-initial-admin", async (RegisterInitialAdminRequest request, AuthService authService, CancellationToken ct) =>
     Results.Ok(await authService.RegisterInitialAdminByEmailAsync(request, ct))).AllowAnonymous();
 
+authGroup.MapPost("/register", async (RegisterUserAccountRequest request, AuthService authService, CancellationToken ct) =>
+{
+    var created = await authService.RegisterUserAccountAsync(request, ct);
+    return Results.Created($"/api/employees/{created.Employee.EmployeeId}", created);
+}).AllowAnonymous();
+
 authGroup.MapPost("/login", async (LoginRequest request, AuthService authService, CancellationToken ct) =>
     Results.Ok(await authService.LoginAsync(request, ct))).AllowAnonymous();
+
+authGroup.MapPost("/login-challenge", async (LoginRequest request, AuthService authService, CancellationToken ct) =>
+    Results.Ok(await authService.LoginWithChallengeAsync(request, ct))).AllowAnonymous();
+
+authGroup.MapPost("/verify-2fa", async (VerifyTwoFactorLoginRequest request, AuthService authService, CancellationToken ct) =>
+    Results.Ok(await authService.VerifyTwoFactorLoginAsync(request, ct))).AllowAnonymous();
+
+// Endpoints de sincronização de contas & VIP entre Celular <-> Servidor Central <-> YouLink Admin
+app.MapGet("/api/platform-sync/accounts", async (
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    var employees = await repository.GetEmployeesAsync(ct);
+    var effectiveTier = settings.GetEffectivePlanTier();
+    var list = new List<PlatformAccountSyncDto>(employees.Count);
+
+    foreach (var emp in employees)
+    {
+        var user = emp.User ?? await repository.GetUserByIdAsync(emp.UserId, ct);
+        if (user is null)
+            continue;
+
+        var username = string.IsNullOrWhiteSpace(user.Username)
+            ? User.DeriveDefaultUsername(user.Email)
+            : user.Username;
+
+        list.Add(new PlatformAccountSyncDto(
+            UserId: user.Id,
+            EmployeeId: emp.Id,
+            FullName: emp.FullName,
+            Username: username,
+            Email: user.HasEmailAddress ? user.Email : null,
+            RoleName: user.Role?.Name ?? RoleNames.Employee,
+            JobTitle: emp.JobTitle,
+            Phone: emp.Phone,
+            IsActive: emp.IsActive && user.IsActive,
+            TwoFactorEnabled: user.TwoFactorEnabled,
+            CreatedAt: user.CreatedAt,
+            LastLoginAt: user.LastLoginAt,
+            StoreName: settings.StoreName,
+            StoreSlug: settings.StoreSlug,
+            OnlineBaseUrl: settings.OnlineBaseUrl,
+            PlanTier: effectiveTier,
+            PlanExpiresAt: settings.PlanExpiresAt));
+    }
+
+    return Results.Ok(new PlatformAccountsSyncEnvelopeDto(
+        ServerVersion: "1.0.8",
+        ServerTimeUtc: DateTimeOffset.UtcNow,
+        StoreName: settings.StoreName,
+        PlanTier: effectiveTier,
+        PlanExpiresAt: settings.PlanExpiresAt,
+        OnlineBaseUrl: settings.OnlineBaseUrl,
+        Accounts: list));
+}).AllowAnonymous();
+
+app.MapPost("/api/platform-sync/apply-vip", async (
+    HttpContext httpContext,
+    RemoteApplyVipRequest request,
+    IClothingStoreRepository repository,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    var now = DateTimeOffset.UtcNow;
+    var normalizedTier = StoreSettings.NormalizePlanTier(request.PlanTier);
+    DateTimeOffset? nextExpiry = null;
+
+    if (!string.Equals(normalizedTier, StoreSettings.PlanTierBasic, StringComparison.OrdinalIgnoreCase) &&
+        request.DurationDays.HasValue && request.DurationDays.Value > 0)
+    {
+        var baseStart = request.ExtendExistingDuration &&
+                        string.Equals(settings.PlanTier, normalizedTier, StringComparison.OrdinalIgnoreCase) &&
+                        settings.PlanExpiresAt.HasValue &&
+                        settings.PlanExpiresAt.Value > now
+            ? settings.PlanExpiresAt.Value
+            : now;
+        nextExpiry = baseStart.AddDays(request.DurationDays.Value);
+    }
+
+    settings.UpdatePlanAndDesign(normalizedTier, designConfig: settings.DesignConfig);
+    settings.PlanExpiresAt = nextExpiry;
+    if (request.ActivateSite)
+        settings.ActivateSite();
+    await repository.UpdateStoreSettingsAsync(settings, ct);
+
+    return Results.Ok(EmployeeAndSettingsService.MapToAdminSettingsDto(settings));
+}).AllowAnonymous();
+
+app.MapPost("/api/platform-sync/toggle-user-active/{userId:guid}", async (
+    Guid userId,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    var currentUserIdRaw = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? httpContext.User.FindFirstValue("sub");
+    if (Guid.TryParse(currentUserIdRaw, out var callerId) && callerId == userId)
+        throw new DomainException("Você não pode desativar sua própria conta de administrador em uso.");
+
+    var user = await repository.GetUserByIdAsync(userId, ct)
+        ?? throw new DomainException("Usuário não encontrado no servidor.");
+    var employee = await repository.GetEmployeeByUserIdAsync(user.Id, ct)
+        ?? throw new DomainException("Registro de usuário vinculado não encontrado.");
+
+    var nextActive = !(user.IsActive && employee.IsActive);
+    user.IsActive = nextActive;
+    employee.IsActive = nextActive;
+    await repository.UpdateEmployeeAsync(employee, user, ct);
+
+    return Results.Ok(new RemoteToggleUserActiveResponse(
+        user.Id,
+        employee.Id,
+        nextActive,
+        nextActive ? $"Conta '{employee.FullName}' reativada no servidor." : $"Conta '{employee.FullName}' suspensa no servidor."));
+}).AllowAnonymous();
 
 authGroup.MapPost("/email-code/request", async (RequestEmailLoginCodeRequest request, AuthService authService, CancellationToken ct) =>
     Results.Ok(await authService.RequestEmailLoginCodeAsync(request, ct))).AllowAnonymous();

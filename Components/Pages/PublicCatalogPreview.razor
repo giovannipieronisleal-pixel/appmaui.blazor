@@ -406,36 +406,19 @@
                     else
                     {
                         <div style="padding: 0.85rem; background: var(--brand-surface-subtle); border: 1px solid var(--brand-border); border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.88rem; color: var(--brand-text-muted);">
-                            Consulte cores e tamanhos diretamente pelo nosso WhatsApp abaixo.
+                            Escolha a opção desejada abaixo para concluir sua compra diretamente no celular.
                         </div>
                     }
-
-                    <!-- Botão Oficial Consultar pelo WhatsApp -->
-                    <button type="button"
-                            class="adm-btn adm-btn-success"
-                            style="width: 100%; padding: 0.95rem; font-size: 1.02rem; background: #16A34A; color: #FFFFFF;"
-                            @onclick="ConsultProductOnWhatsAppAsync">
-                        💬 Pedir esta Peça no WhatsApp
-                    </button>
-
-                    <div style="background: var(--brand-surface-subtle); border: 1px solid var(--brand-border); border-radius: 8px; padding: 0.9rem; margin-top: 1rem; font-size: 0.85rem; color: var(--brand-text);">
-                        <div style="font-weight: 700; margin-bottom: 0.25rem; color: var(--brand-accent);">
-                            Mensagem pronta para a loja:
-                        </div>
-                        <div style="color: var(--brand-text-muted);">
-                            "@WhatsAppLinkBuilder.BuildProductConsultationMessage(_selectedProduct.Name, _detailColor, _detailSize)"
-                        </div>
-                    </div>
 
                     @if (_store.DirectPixSalesReady)
                     {
                         var selectedVariant = SelectedDetailVariant;
-                        <div style="margin-top: 1.25rem; border: 1.5px solid #16A34A; background: var(--brand-bg); border-radius: 12px; padding: 1.15rem;">
+                        <div style="margin-bottom: 1.15rem; border: 1.5px solid #16A34A; background: var(--brand-bg); border-radius: 12px; padding: 1.15rem;">
                             <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.45rem;">
-                                <strong style="font-size: 1rem;">💸 Comprar Direto pelo App (Apenas Pix)</strong>
-                                <span class="pill-badge pill-green">Exclusivo Pix</span>
+                                <strong style="font-size: 1rem;">💸 Comprar Direto pelo Celular (Pix)</strong>
+                                <span class="pill-badge pill-green">Sem WhatsApp obrigatório</span>
                             </div>
-                            <p style="font-size: 0.82rem; color: var(--brand-text-muted); margin: 0 0 0.85rem; line-height: 1.45;">
+                            <p style="font-size: 0.82rem; color: var(--brand-text-muted); margin: 0 0 0.75rem; line-height: 1.45;">
                                 Alcance configurado pelo vendedor: <strong>@ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.Describe(_store.DeliveryScopeMode, _store.MaxDeliveryDistanceKm, _store.OriginCity, _store.OriginState)</strong>.
                             </p>
 
@@ -454,24 +437,42 @@
                                 }
                                 else
                                 {
+                                    <div style="display: flex; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+                                        <button type="button"
+                                                class="adm-btn @(_expressMobileMode ? "adm-btn-primary" : "adm-btn-outline")"
+                                                style="flex: 1; min-width: 145px; font-size: 0.8rem; padding: 0.5rem 0.65rem;"
+                                                @onclick="() => _expressMobileMode = true">
+                                            ⚡ Compra Rápida no Celular
+                                        </button>
+                                        <button type="button"
+                                                class="adm-btn @(!_expressMobileMode ? "adm-btn-primary" : "adm-btn-outline")"
+                                                style="flex: 1; min-width: 145px; font-size: 0.8rem; padding: 0.5rem 0.65rem;"
+                                                @onclick="() => _expressMobileMode = false">
+                                            📦 Entrega com CEP / Correios
+                                        </button>
+                                    </div>
+
                                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; margin-bottom: 0.65rem;">
-                                        <div>
-                                            <label class="adm-label">CEP de Entrega *</label>
-                                            <div style="display: flex; gap: 0.35rem;">
-                                                <input type="text" class="adm-input" @bind="_buyerCep" placeholder="01310-100" />
-                                                <button type="button" class="adm-btn adm-btn-outline" style="white-space: nowrap;"
-                                                        disabled="@_calculatingShipping" @onclick="CheckShippingQuoteAsync">
-                                                    @(_calculatingShipping ? "..." : "Calcular")
-                                                </button>
-                                            </div>
-                                        </div>
                                         <div>
                                             <label class="adm-label">Quantidade (máx @selectedVariant.StockQuantity)</label>
                                             <input type="number" min="1" max="@selectedVariant.StockQuantity" class="adm-input" @bind="_orderQuantity" />
                                         </div>
+                                        @if (!_expressMobileMode)
+                                        {
+                                            <div>
+                                                <label class="adm-label">CEP de Entrega *</label>
+                                                <div style="display: flex; gap: 0.35rem;">
+                                                    <input type="text" class="adm-input" @bind="_buyerCep" placeholder="01310-100" />
+                                                    <button type="button" class="adm-btn adm-btn-outline" style="white-space: nowrap;"
+                                                            disabled="@_calculatingShipping" @onclick="CheckShippingQuoteAsync">
+                                                        @(_calculatingShipping ? "..." : "Calcular")
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
                                     </div>
 
-                                    @if (_shippingQuote is not null)
+                                    @if (!_expressMobileMode && _shippingQuote is not null)
                                     {
                                         <div style="padding: 0.65rem 0.8rem; border-radius: 8px; font-size: 0.82rem; margin-bottom: 0.75rem; @(_shippingQuote.Eligibility.IsAllowed ? "background: rgba(22,163,74,0.12); border: 1px solid #16A34A;" : "background: rgba(239,68,68,0.12); border: 1px solid #EF4444;")">
                                             <div><strong>@(_shippingQuote.Eligibility.IsAllowed ? "✓ Endereço atendido:" : "✕ Fora do limite de distância:")</strong> @_shippingQuote.Eligibility.ReasonMessage</div>
@@ -487,22 +488,25 @@
                                     }
 
                                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.55rem; margin-bottom: 0.65rem;">
-                                        <input type="text" class="adm-input" @bind="_buyerName" placeholder="Seu Nome Completo *" />
-                                        <input type="text" class="adm-input" @bind="_buyerWhatsapp" placeholder="Seu WhatsApp (DDD + Número) *" />
-                                        <input type="text" class="adm-input" @bind="_buyerStreet" placeholder="Rua / Logradouro *" />
-                                        <input type="text" class="adm-input" @bind="_buyerNumber" placeholder="Número *" />
-                                        <input type="text" class="adm-input" @bind="_buyerComplement" placeholder="Complemento" />
-                                        <input type="text" class="adm-input" @bind="_buyerNeighborhood" placeholder="Bairro *" />
-                                        <input type="text" class="adm-input" @bind="_buyerCity" placeholder="Cidade *" />
-                                        <input type="text" maxlength="2" class="adm-input" style="text-transform: uppercase;" @bind="_buyerState" placeholder="UF *" />
+                                        <input type="text" class="adm-input" @bind="_buyerName" placeholder="Nome do Cliente *" />
+                                        <input type="text" class="adm-input" @bind="_buyerWhatsapp" placeholder="Telefone / Contato *" />
+                                        @if (!_expressMobileMode)
+                                        {
+                                            <input type="text" class="adm-input" @bind="_buyerStreet" placeholder="Rua / Logradouro *" />
+                                            <input type="text" class="adm-input" @bind="_buyerNumber" placeholder="Número *" />
+                                            <input type="text" class="adm-input" @bind="_buyerComplement" placeholder="Complemento" />
+                                            <input type="text" class="adm-input" @bind="_buyerNeighborhood" placeholder="Bairro *" />
+                                            <input type="text" class="adm-input" @bind="_buyerCity" placeholder="Cidade *" />
+                                            <input type="text" maxlength="2" class="adm-input" style="text-transform: uppercase;" @bind="_buyerState" placeholder="UF *" />
+                                        }
                                     </div>
 
-                                    <input type="text" class="adm-input" style="margin-bottom: 0.75rem;" @bind="_buyerNotes" placeholder="Observações para o envio (opcional)" />
+                                    <input type="text" class="adm-input" style="margin-bottom: 0.75rem;" @bind="_buyerNotes" placeholder="@(_expressMobileMode ? "Retirada em mãos ou observação (opcional)" : "Observações para o envio (opcional)")" />
 
                                     <button type="button"
                                             class="adm-btn adm-btn-success"
                                             style="width: 100%; background: #16A34A; color: #FFFFFF; padding: 0.9rem; font-weight: 800;"
-                                            disabled="@(_submittingOrder || (_shippingQuote is not null && !_shippingQuote.Eligibility.IsAllowed))"
+                                            disabled="@(_submittingOrder || (!_expressMobileMode && _shippingQuote is not null && !_shippingQuote.Eligibility.IsAllowed))"
                                             @onclick="SubmitPixOrderAsync">
                                         @(_submittingOrder
                                             ? "Gerando pedido Pix..."
@@ -514,10 +518,19 @@
                             {
                                 <div style="background: rgba(22,163,74,0.12); border: 1px solid #16A34A; border-radius: 10px; padding: 0.9rem;">
                                     <div style="font-weight: 800; color: #166534; font-size: 1rem;">
-                                        ✅ Pedido @_createdPixOrder.OrderNumber gerado!
+                                        @(_createdPixOrder.PixConfirmedAt.HasValue
+                                            ? $"✅ Venda {_createdPixOrder.OrderNumber} confirmada e estoque atualizado!"
+                                            : $"✅ Pedido {_createdPixOrder.OrderNumber} pronto para pagamento no Pix!")
                                     </div>
                                     <p style="font-size: 0.82rem; margin: 0.35rem 0 0.65rem; line-height: 1.45;">
-                                        Pague apenas via <strong>Pix</strong> usando a chave ou o código Copia e Cola abaixo. O vendedor recebeu seu endereço em <strong>@_createdPixOrder.DeliveryCity/@_createdPixOrder.DeliveryState</strong> (~@_createdPixOrder.DistanceKmFromSeller.ToString("0.#") km) e organizará a entrega!
+                                        @if (_createdPixOrder.PixConfirmedAt.HasValue)
+                                        {
+                                            <span>Pagamento recebido em <strong>@_createdPixOrder.PixConfirmedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong> — pedido contabilizado automaticamente em Vendas.</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Copie a chave ou o Pix Copia e Cola abaixo para pagar no aplicativo do banco. <strong>@_createdPixOrder.FormattedDeliveryAddress</strong>.</span>
+                                        }
                                     </p>
                                     <div style="font-size: 0.8rem; margin-bottom: 0.35rem;">
                                         <strong>Chave Pix do Vendedor:</strong> <code>@_createdPixOrder.PixKey</code>
@@ -530,9 +543,15 @@
                                         <button type="button" class="adm-btn adm-btn-primary" @onclick="CopyPixBrCodeAsync">
                                             @(_copiedPixCode ? "✓ Código Pix Copiado!" : "📋 Copiar Código Pix")
                                         </button>
-                                        <button type="button" class="adm-btn adm-btn-success" @onclick="OpenOrderProofWhatsAppAsync">
-                                            💬 Enviar Comprovante no WhatsApp
-                                        </button>
+                                        @if (!_createdPixOrder.PixConfirmedAt.HasValue && Gateway.IsAuthenticated && Gateway.CanManageStock)
+                                        {
+                                            <button type="button"
+                                                    class="adm-btn adm-btn-success"
+                                                    disabled="@_confirmingDirectPix"
+                                                    @onclick="ConfirmCreatedPixOrderDirectAsync">
+                                                @(_confirmingDirectPix ? "Confirmando..." : "✅ Recebi o Pix — Confirmar Venda Agora")
+                                            </button>
+                                        }
                                         <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _createdPixOrder = null">
                                             Novo Pedido
                                         </button>
@@ -540,6 +559,37 @@
                                 </div>
                             }
                         </div>
+                    }
+                    else if (Gateway.IsAdmin)
+                    {
+                        <div style="margin-bottom: 1rem; padding: 0.85rem; border-radius: 10px; border: 1px dashed var(--brand-border); background: var(--brand-surface-subtle); font-size: 0.84rem;">
+                            <strong>💸 Quer receber vendas direto pelo celular (Pix) sem depender do WhatsApp?</strong>
+                            <div style="margin-top: 0.35rem;">
+                                <a href="/configuracoes-loja" class="adm-btn adm-btn-primary" style="font-size: 0.8rem; padding: 0.45rem 0.8rem;">
+                                    ⚙️ Ativar Vendas Diretas no Pix
+                                </a>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(_store.WhatsappNumber))
+                    {
+                        <details style="margin-top: 0.75rem; font-size: 0.82rem; color: var(--brand-text-muted);">
+                            <summary style="cursor: pointer; font-weight: 600;">💬 Atendimento opcional pelo WhatsApp</summary>
+                            <div style="margin-top: 0.65rem; display: flex; flex-direction: column; gap: 0.55rem;">
+                                <button type="button"
+                                        class="adm-btn adm-btn-outline"
+                                        style="width: 100%; padding: 0.7rem;"
+                                        @onclick="ConsultProductOnWhatsAppAsync">
+                                    💬 Tirar dúvida desta peça no WhatsApp (Opcional)
+                                </button>
+                                <div style="background: var(--brand-surface-subtle); border: 1px solid var(--brand-border); border-radius: 8px; padding: 0.75rem; font-size: 0.8rem; color: var(--brand-text);">
+                                    <div style="color: var(--brand-text-muted);">
+                                        "@WhatsAppLinkBuilder.BuildProductConsultationMessage(_selectedProduct.Name, _detailColor, _detailSize)"
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
                     }
                 </div>
             </div>
@@ -725,6 +775,8 @@
     private string _buyerCity = string.Empty;
     private string _buyerState = string.Empty;
     private string _buyerNotes = string.Empty;
+    private bool _expressMobileMode = true;
+    private bool _confirmingDirectPix;
     private bool _calculatingShipping;
     private bool _submittingOrder;
     private bool _copiedPixCode;
@@ -792,7 +844,8 @@
                 Neighborhood = _buyerNeighborhood,
                 City = _buyerCity,
                 State = _buyerState,
-                CustomerNotes = _buyerNotes
+                CustomerNotes = _buyerNotes,
+                ExpressMobileMode = _expressMobileMode
             });
         }
         catch (Exception ex)
@@ -802,6 +855,27 @@
         finally
         {
             _submittingOrder = false;
+        }
+    }
+
+    private async Task ConfirmCreatedPixOrderDirectAsync()
+    {
+        if (_createdPixOrder is null || _confirmingDirectPix)
+            return;
+
+        _checkoutError = null;
+        _confirmingDirectPix = true;
+        try
+        {
+            _createdPixOrder = await Gateway.ConfirmOrderPixAsync(_createdPixOrder.Id);
+        }
+        catch (Exception ex)
+        {
+            _checkoutError = ex.Message;
+        }
+        finally
+        {
+            _confirmingDirectPix = false;
         }
     }
 

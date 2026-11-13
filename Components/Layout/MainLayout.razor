@@ -113,6 +113,23 @@
                     </div>
                 </header>
 
+                @if (_compatibilityStatus?.UpdateRecommended == true && !_dismissedUpdateBanner)
+                {
+                    <div class="adm-compat-banner" style="display: flex; align-items: center; justify-content: space-between; gap: 0.65rem; flex-wrap: wrap; padding: 0.6rem 1rem; background: color-mix(in srgb, var(--adm-accent) 12%, var(--adm-surface)); border-bottom: 1px solid var(--adm-border); font-size: 0.82rem;">
+                        <span>
+                            ✨ <strong>Atualização v@(_compatibilityStatus.LatestAppVersion) disponível</strong> — sua versão continua funcionando normalmente com a API @(_compatibilityStatus.ApiVersion).
+                        </span>
+                        <div style="display: flex; gap: 0.45rem; align-items: center;">
+                            <a href="@_compatibilityStatus.ReleaseUrl" target="_blank" rel="noopener" class="adm-btn adm-btn-accent" style="padding: 0.3rem 0.65rem; font-size: 0.78rem;">
+                                ⬇️ Baixar v@(_compatibilityStatus.LatestAppVersion)
+                            </a>
+                            <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.3rem 0.55rem; font-size: 0.76rem;" @onclick="() => _dismissedUpdateBanner = true">
+                                Dispensar
+                            </button>
+                        </div>
+                    </div>
+                }
+
                 <main class="adm-content">
                     @Body
                 </main>
@@ -128,6 +145,8 @@
     private string _storeSlug = "minha-loja";
     private string? _onlineBaseUrl;
     private bool _showUserProfileModal;
+    private ApiCompatibilityStatusDto? _compatibilityStatus;
+    private bool _dismissedUpdateBanner;
 
     private static string GetUserInitials(string? fullName)
     {
@@ -151,6 +170,10 @@
 
         await Gateway.TryRestoreSessionAsync();
         await RefreshStoreInfoAsync();
+        if (_compatibilityStatus is null)
+        {
+            _compatibilityStatus = await Gateway.RefreshCompatibilityAsync();
+        }
     }
 
     private bool IsPublicCatalogRoute()

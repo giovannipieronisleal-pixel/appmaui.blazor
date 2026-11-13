@@ -166,38 +166,77 @@ public sealed class OrderAndShippingService
         var variant = product.Variants.FirstOrDefault(v => v.Id == request.ProductVariantId && v.IsActive)
             ?? throw new DomainException("A cor/tamanho selecionada não está disponível.");
 
-        if (!BrazilShippingCalculator.TrySanitizeCep(request.Cep, out var destDigits))
-            throw new DomainException("Informe um CEP de entrega válido com 8 dígitos.");
+        var isExpressMobileWithoutCep = request.ExpressMobileMode && string.IsNullOrWhiteSpace(request.Cep);
 
-        var destInfo = await BrazilShippingCalculator.LookupCepAsync(destDigits, _httpClient, ct);
-        var street = string.IsNullOrWhiteSpace(request.Street) ? destInfo.Street : request.Street.Trim();
-        var neighborhood = string.IsNullOrWhiteSpace(request.Neighborhood) ? destInfo.Neighborhood : request.Neighborhood.Trim();
-        var city = string.IsNullOrWhiteSpace(request.City) ? destInfo.City : request.City.Trim();
-        var state = string.IsNullOrWhiteSpace(request.State) ? destInfo.State : request.State.Trim().ToUpperInvariant();
+        var destDigits = string.Empty;
+        string street;
+        string number;
+        string neighborhood;
+        string city;
+        string state;
+        DeliveryEligibilityDto eligibility;
+        CorreiosQuoteDto correiosQuote;
 
-        var eligibility = BrazilShippingCalculator.EvaluateDeliveryEligibility(
-            settings.OriginCep,
-            settings.OriginCity,
-            settings.OriginState,
-            settings.DeliveryScopeMode,
-            settings.MaxDeliveryDistanceKm,
-            destDigits,
-            city,
-            state,
-            destLatOverride: destInfo.Latitude,
-            destLonOverride: destInfo.Longitude);
+        if (isExpressMobileWithoutCep)
+        {
+            var fallbackCep = BrazilShippingCalculator.TrySanitizeCep(settings.OriginCep, out var originCepDigits)
+                ? originCepDigits
+                : "01001000";
+            destDigits = fallbackCep;
+            street = string.IsNullOrWhiteSpace(request.Street) ? "Retirada / Envio Combinado no App" : request.Street.Trim();
+            number = string.IsNullOrWhiteSpace(request.Number) ? "S/N" : request.Number.Trim();
+            neighborhood = string.IsNullOrWhiteSpace(request.Neighborhood) ? "Centro" : request.Neighborhood.Trim();
+            city = string.IsNullOrWhiteSpace(request.City) ? (settings.OriginCity ?? "Brasil") : request.City.Trim();
+            state = string.IsNullOrWhiteSpace(request.State) ? (settings.OriginState ?? "SP") : request.State.Trim().ToUpperInvariant();
+            eligibility = new DeliveryEligibilityDto(true, 0, settings.OriginCity ?? city, settings.OriginState ?? state, city, state, "Compra direta pelo celular (Pix).");
+            correiosQuote = BrazilShippingCalculator.EstimateCorreios(
+                fallbackCep,
+                fallbackCep,
+                Math.Clamp(settings.DefaultPackageWeightGrams * Math.Max(1, request.Quantity), 300, 30000),
+                originStateOverride: eligibility.OriginState,
+                destStateOverride: eligibility.DestState,
+                distanceKmOverride: 0.5);
+        }
+        else
+        {
+            if (!BrazilShippingCalculator.TrySanitizeCep(request.Cep, out destDigits))
+                throw new DomainException("Informe um CEP de entrega válido com 8 dígitos.");
 
-        if (!eligibility.IsAllowed)
-            throw new DomainException(eligibility.ReasonMessage);
+            var destInfo = await BrazilShippingCalculator.LookupCepAsync(destDigits, _httpClient, ct);
+            street = string.IsNullOrWhiteSpace(request.Street)
+                ? (request.ExpressMobileMode ? "A combinar no envio" : destInfo.Street)
+                : request.Street.Trim();
+            number = string.IsNullOrWhiteSpace(request.Number)
+                ? (request.ExpressMobileMode ? "S/N" : string.Empty)
+                : request.Number.Trim();
+            neighborhood = string.IsNullOrWhiteSpace(request.Neighborhood) ? destInfo.Neighborhood : request.Neighborhood.Trim();
+            city = string.IsNullOrWhiteSpace(request.City) ? destInfo.City : request.City.Trim();
+            state = string.IsNullOrWhiteSpace(request.State) ? destInfo.State : request.State.Trim().ToUpperInvariant();
 
-        var totalWeight = Math.Clamp(settings.DefaultPackageWeightGrams * Math.Max(1, request.Quantity), 300, 30000);
-        var correiosQuote = BrazilShippingCalculator.EstimateCorreios(
-            settings.OriginCep!,
-            destDigits,
-            totalWeight,
-            originStateOverride: eligibility.OriginState,
-            destStateOverride: eligibility.DestState,
-            distanceKmOverride: eligibility.DistanceKm);
+            eligibility = BrazilShippingCalculator.EvaluateDeliveryEligibility(
+                settings.OriginCep,
+                settings.OriginCity,
+                settings.OriginState,
+                settings.DeliveryScopeMode,
+                settings.MaxDeliveryDistanceKm,
+                destDigits,
+                city,
+                state,
+                destLatOverride: destInfo.Latitude,
+                destLonOverride: destInfo.Longitude);
+
+            if (!eligibility.IsAllowed)
+                throw new DomainException(eligibility.ReasonMessage);
+
+            var totalWeight = Math.Clamp(settings.DefaultPackageWeightGrams * Math.Max(1, request.Quantity), 300, 30000);
+            correiosQuote = BrazilShippingCalculator.EstimateCorreios(
+                settings.OriginCep!,
+                destDigits,
+                totalWeight,
+                originStateOverride: eligibility.OriginState,
+                destStateOverride: eligibility.DestState,
+                distanceKmOverride: eligibility.DistanceKm);
+        }
 
         var receiverName = string.IsNullOrWhiteSpace(settings.StorePixReceiverName)
             ? settings.StoreName
@@ -221,10 +260,12 @@ public sealed class OrderAndShippingService
             variant,
             request.Quantity,
             request.CustomerName,
-            request.CustomerWhatsapp,
+            string.IsNullOrWhiteSpace(request.CustomerWhatsapp) && request.ExpressMobileMode
+                ? settings.WhatsappNumber
+                : request.CustomerWhatsapp,
             destDigits,
             street,
-            request.Number,
+            number,
             request.Complement,
             neighborhood,
             city,

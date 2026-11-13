@@ -150,3 +150,55 @@ public sealed record EmployeeProfileDto(
     public bool IsAdmin => string.Equals(RoleName, "Admin", StringComparison.OrdinalIgnoreCase);
     public string EffectiveUsername => !string.IsNullOrWhiteSpace(Username) ? Username : Email;
 }
+
+public sealed record ApiCompatibilityStatusDto(
+    string ApiVersion,
+    string MinSupportedAppVersion,
+    string LatestAppVersion,
+    bool UpdateRecommended,
+    string? ClientAppVersion,
+    string ReleaseUrl,
+    string Message);
+
+public sealed record PlatformAccountSyncDto(
+    Guid UserId,
+    Guid EmployeeId,
+    string FullName,
+    string Username,
+    string? Email,
+    string RoleName,
+    string? JobTitle,
+    string? Phone,
+    bool IsActive,
+    bool TwoFactorEnabled,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? LastLoginAt,
+    string? StoreName,
+    string? StoreSlug,
+    string? OnlineBaseUrl,
+    string PlanTier,
+    DateTimeOffset? PlanExpiresAt);
+
+public sealed record PlatformAccountsSyncEnvelopeDto(
+    string ServerVersion,
+    DateTimeOffset ServerTimeUtc,
+    string StoreName,
+    string PlanTier,
+    DateTimeOffset? PlanExpiresAt,
+    string? OnlineBaseUrl,
+    IReadOnlyList<PlatformAccountSyncDto> Accounts);
+
+public sealed record RemoteApplyVipRequest(
+    string PlanTier,
+    int? DurationDays = 30,
+    bool ExtendExistingDuration = false,
+    bool ActivateSite = true,
+    string? StoreName = null,
+    string? TargetUsername = null,
+    string? TargetEmail = null);
+
+public sealed record RemoteToggleUserActiveResponse(
+    Guid UserId,
+    Guid EmployeeId,
+    bool IsActive,
+    string Message);

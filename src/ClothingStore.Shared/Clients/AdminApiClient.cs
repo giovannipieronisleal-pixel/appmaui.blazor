@@ -43,14 +43,14 @@ public sealed class AdminApiClient
     // Autenticação e Entrada por E-mail
     public async Task<AuthSetupStatusDto> GetSetupStatusAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/api/auth/setup-status", ct);
+        var response = await _httpClient.GetAsync(Endpoint("/api/auth/setup-status"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<AuthSetupStatusDto>(cancellationToken: ct))!;
     }
 
     public async Task<LoginResponse> RegisterInitialAdminByEmailAsync(RegisterInitialAdminRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/auth/register-initial-admin", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/register-initial-admin"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var loginResult = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
         SetSession(loginResult.AccessToken, loginResult.Employee);
@@ -59,7 +59,7 @@ public sealed class AdminApiClient
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/auth/login", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/login"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var loginResult = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
         SetSession(loginResult.AccessToken, loginResult.Employee);
@@ -68,14 +68,14 @@ public sealed class AdminApiClient
 
     public async Task<RequestEmailLoginCodeResponse> RequestEmailLoginCodeAsync(RequestEmailLoginCodeRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/auth/email-code/request", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/email-code/request"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<RequestEmailLoginCodeResponse>(cancellationToken: ct))!;
     }
 
     public async Task<LoginResponse> LoginWithEmailCodeAsync(VerifyEmailLoginCodeRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/auth/email-code/verify", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/email-code/verify"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var loginResult = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
         SetSession(loginResult.AccessToken, loginResult.Employee);
@@ -84,20 +84,196 @@ public sealed class AdminApiClient
 
     public async Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/auth/forgot-password", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/forgot-password"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ForgotPasswordResponse>(cancellationToken: ct))!;
     }
 
+    private Uri? _overrideBaseUri;
+
+    public string? CurrentBaseAddress =>
+        (_overrideBaseUri ?? _httpClient.BaseAddress)?.ToString().TrimEnd('/');
+
+    public bool UpdateBaseAddress(string? rawUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl))
+        {
+            _overrideBaseUri = null;
+            return true;
+        }
+
+        var trimmed = rawUrl.Trim();
+        if (!trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = "https://" + trimmed;
+        }
+
+        if (!trimmed.EndsWith('/'))
+            trimmed += "/";
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed) ||
+            (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        {
+            return false;
+        }
+
+        _overrideBaseUri = parsed;
+        return true;
+    }
+
+    private string Endpoint(string relativePath)
+    {
+        if (_overrideBaseUri is null)
+            return relativePath;
+
+        return new Uri(_overrideBaseUri, relativePath.TrimStart('/')).ToString();
+    }
+
+    public async Task<LoginResponse> RegisterUserAccountAsync(RegisterUserAccountRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/register"), request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        var login = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
+        SetSession(login.AccessToken, login.Employee);
+        return login;
+    }
+
+    public async Task<LoginChallengeResponse> LoginWithChallengeAsync(LoginRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/login-challenge"), request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        var challenge = (await response.Content.ReadFromJsonAsync<LoginChallengeResponse>(cancellationToken: ct))!;
+        if (!challenge.RequiresTwoFactor && challenge.AuthResult is not null)
+        {
+            SetSession(challenge.AuthResult.AccessToken, challenge.AuthResult.Employee);
+        }
+        return challenge;
+    }
+
+    public async Task<LoginResponse> VerifyTwoFactorLoginAsync(VerifyTwoFactorLoginRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/verify-2fa"), request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        var login = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
+        SetSession(login.AccessToken, login.Employee);
+        return login;
+    }
+
+    public async Task<ApiCompatibilityStatusDto?> GetCompatibilityStatusAsync(string? clientAppVersion = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var query = string.IsNullOrWhiteSpace(clientAppVersion)
+                ? string.Empty
+                : $"?clientVersion={Uri.EscapeDataString(clientAppVersion.Trim())}";
+            var response = await _httpClient.GetAsync(Endpoint($"/api/app/compatibility{query}"), ct);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return await response.Content.ReadFromJsonAsync<ApiCompatibilityStatusDto>(cancellationToken: ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<(bool Reachable, string NormalizedUrl, string? StoreName, string? ErrorMessage)> TestServerConnectionAsync(
+        string? candidateUrl = null,
+        CancellationToken ct = default)
+    {
+        var raw = string.IsNullOrWhiteSpace(candidateUrl) ? CurrentBaseAddress : candidateUrl.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+            return (false, string.Empty, null, "Informe o endereço do servidor.");
+
+        if (!raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            raw = "https://" + raw;
+        }
+
+        var normalized = raw.TrimEnd('/');
+        if (!Uri.TryCreate(normalized + "/", UriKind.Absolute, out var targetBase))
+            return (false, normalized, null, "URL inválida.");
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+            var infoResp = await _httpClient.GetAsync(new Uri(targetBase, "api/public/store-info"), cts.Token);
+            if (infoResp.IsSuccessStatusCode)
+            {
+                var info = await infoResp.Content.ReadFromJsonAsync<PublicStoreSettingsDto>(cancellationToken: cts.Token);
+                return (true, normalized, info?.StoreName, null);
+            }
+
+            var healthResp = await _httpClient.GetAsync(new Uri(targetBase, "health"), cts.Token);
+            if (healthResp.IsSuccessStatusCode)
+                return (true, normalized, null, null);
+
+            return (false, normalized, null, $"Servidor respondeu HTTP {(int)infoResp.StatusCode}.");
+        }
+        catch (Exception ex)
+        {
+            return (false, normalized, null, ex.Message);
+        }
+    }
+
+    public async Task<PlatformAccountsSyncEnvelopeDto> GetPlatformAccountsSyncAsync(
+        string? syncSecret = null,
+        CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, Endpoint("/api/platform-sync/accounts"));
+        if (!string.IsNullOrWhiteSpace(syncSecret))
+            req.Headers.Add("X-YouLink-Sync-Key", syncSecret.Trim());
+
+        var response = await _httpClient.SendAsync(req, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<PlatformAccountsSyncEnvelopeDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<AdminStoreSettingsDto> ApplyRemoteVipAsync(
+        RemoteApplyVipRequest request,
+        string? syncSecret = null,
+        CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint("/api/platform-sync/apply-vip"))
+        {
+            Content = JsonContent.Create(request)
+        };
+        if (!string.IsNullOrWhiteSpace(syncSecret))
+            req.Headers.Add("X-YouLink-Sync-Key", syncSecret.Trim());
+
+        var response = await _httpClient.SendAsync(req, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<RemoteToggleUserActiveResponse> ToggleRemoteUserActiveAsync(
+        Guid userId,
+        string? syncSecret = null,
+        CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint($"/api/platform-sync/toggle-user-active/{userId}"));
+        if (!string.IsNullOrWhiteSpace(syncSecret))
+            req.Headers.Add("X-YouLink-Sync-Key", syncSecret.Trim());
+
+        var response = await _httpClient.SendAsync(req, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<RemoteToggleUserActiveResponse>(cancellationToken: ct))!;
+    }
+
     public async Task ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/auth/reset-password", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/reset-password"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
     }
 
     public async Task<EmployeeProfileDto> RefreshProfileAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/api/auth/me", ct);
+        var response = await _httpClient.GetAsync(Endpoint("/api/auth/me"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var profile = (await response.Content.ReadFromJsonAsync<EmployeeProfileDto>(cancellationToken: ct))!;
         CurrentEmployee = profile;
@@ -108,7 +284,7 @@ public sealed class AdminApiClient
     // Dashboard
     public async Task<DashboardSummaryDto> GetDashboardSummaryAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/api/dashboard/summary", ct);
+        var response = await _httpClient.GetAsync(Endpoint("/api/dashboard/summary"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<DashboardSummaryDto>(cancellationToken: ct))!;
     }
@@ -116,21 +292,21 @@ public sealed class AdminApiClient
     // Categorias & Produtos
     public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/api/categories", ct);
+        var response = await _httpClient.GetAsync(Endpoint("/api/categories"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return await response.Content.ReadFromJsonAsync<List<CategoryDto>>(cancellationToken: ct) ?? [];
     }
 
     public async Task<CategoryDto> CreateCategoryAsync(SaveCategoryRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/categories", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/categories"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<CategoryDto>(cancellationToken: ct))!;
     }
 
     public async Task<CategoryDto> UpdateCategoryAsync(Guid categoryId, SaveCategoryRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PutAsJsonAsync($"/api/categories/{categoryId}", request, ct);
+        var response = await _httpClient.PutAsJsonAsync(Endpoint($"/api/categories/{categoryId}"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<CategoryDto>(cancellationToken: ct))!;
     }
@@ -150,49 +326,49 @@ public sealed class AdminApiClient
             query.Add("includeArchived=true");
 
         var url = query.Count == 0 ? "/api/products" : $"/api/products?{string.Join("&", query)}";
-        var response = await _httpClient.GetAsync(url, ct);
+        var response = await _httpClient.GetAsync(Endpoint(url), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return await response.Content.ReadFromJsonAsync<List<ProductDetailDto>>(cancellationToken: ct) ?? [];
     }
 
     public async Task<ProductDetailDto> GetProductByIdAsync(Guid productId, CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync($"/api/products/{productId}", ct);
+        var response = await _httpClient.GetAsync(Endpoint($"/api/products/{productId}"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductDetailDto>(cancellationToken: ct))!;
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(SaveProductRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/products", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/products"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductDetailDto>(cancellationToken: ct))!;
     }
 
     public async Task<ProductDetailDto> UpdateProductAsync(Guid productId, SaveProductRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PutAsJsonAsync($"/api/products/{productId}", request, ct);
+        var response = await _httpClient.PutAsJsonAsync(Endpoint($"/api/products/{productId}"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductDetailDto>(cancellationToken: ct))!;
     }
 
     public async Task<ProductDetailDto> ToggleProductVisibilityAsync(Guid productId, bool isVisibleOnSite, CancellationToken ct = default)
     {
-        var response = await _httpClient.PatchAsync($"/api/products/{productId}/visibility?isVisibleOnSite={isVisibleOnSite.ToString().ToLowerInvariant()}", null, ct);
+        var response = await _httpClient.PatchAsync(Endpoint($"/api/products/{productId}/visibility?isVisibleOnSite={isVisibleOnSite.ToString().ToLowerInvariant()}"), null, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductDetailDto>(cancellationToken: ct))!;
     }
 
     public async Task DeleteOrArchiveProductAsync(Guid productId, CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync($"/api/products/{productId}", ct);
+        var response = await _httpClient.DeleteAsync(Endpoint($"/api/products/{productId}"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
     }
 
     // Imagens do Produto
     public async Task<ProductImageDto> AddProductImageByUrlAsync(Guid productId, AddProductImageByUrlRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync($"/api/products/{productId}/images", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint($"/api/products/{productId}/images"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductImageDto>(cancellationToken: ct))!;
     }
@@ -214,48 +390,48 @@ public sealed class AdminApiClient
             content.Add(new StringContent(altText), "altText");
         content.Add(new StringContent(isPrimary.ToString()), "isPrimary");
 
-        var response = await _httpClient.PostAsync($"/api/products/{productId}/images/upload", content, ct);
+        var response = await _httpClient.PostAsync(Endpoint($"/api/products/{productId}/images/upload"), content, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductImageDto>(cancellationToken: ct))!;
     }
 
     public async Task SetPrimaryProductImageAsync(Guid productId, Guid imageId, CancellationToken ct = default)
     {
-        var response = await _httpClient.PatchAsync($"/api/products/{productId}/images/{imageId}/primary", null, ct);
+        var response = await _httpClient.PatchAsync(Endpoint($"/api/products/{productId}/images/{imageId}/primary"), null, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
     }
 
     public async Task DeleteProductImageAsync(Guid productId, Guid imageId, CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync($"/api/products/{productId}/images/{imageId}", ct);
+        var response = await _httpClient.DeleteAsync(Endpoint($"/api/products/{productId}/images/{imageId}"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
     }
 
     // Variantes
     public async Task<ProductVariantDto> AddVariantAsync(Guid productId, SaveProductVariantRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync($"/api/products/{productId}/variants", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint($"/api/products/{productId}/variants"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductVariantDto>(cancellationToken: ct))!;
     }
 
     public async Task<ProductVariantDto> UpdateVariantAsync(Guid variantId, SaveProductVariantRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PutAsJsonAsync($"/api/variants/{variantId}", request, ct);
+        var response = await _httpClient.PutAsJsonAsync(Endpoint($"/api/variants/{variantId}"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ProductVariantDto>(cancellationToken: ct))!;
     }
 
     public async Task DeleteVariantAsync(Guid variantId, CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync($"/api/variants/{variantId}", ct);
+        var response = await _httpClient.DeleteAsync(Endpoint($"/api/variants/{variantId}"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
     }
 
     // Estoque e Movimentações
     public async Task<StockMovementDto> RegisterStockMovementAsync(CreateStockMovementRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/stock/movements", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/stock/movements"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<StockMovementDto>(cancellationToken: ct))!;
     }
@@ -272,7 +448,7 @@ public sealed class AdminApiClient
         if (variantId.HasValue)
             query.Add($"variantId={variantId.Value}");
 
-        var response = await _httpClient.GetAsync($"/api/stock/movements?{string.Join("&", query)}", ct);
+        var response = await _httpClient.GetAsync(Endpoint($"/api/stock/movements?{string.Join("&", query)}"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return await response.Content.ReadFromJsonAsync<List<StockMovementDto>>(cancellationToken: ct) ?? [];
     }
@@ -280,28 +456,28 @@ public sealed class AdminApiClient
     // Funcionários (AdminOnly)
     public async Task<IReadOnlyList<EmployeeProfileDto>> GetEmployeesAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/api/employees", ct);
+        var response = await _httpClient.GetAsync(Endpoint("/api/employees"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return await response.Content.ReadFromJsonAsync<List<EmployeeProfileDto>>(cancellationToken: ct) ?? [];
     }
 
     public async Task<EmployeeProfileDto> CreateEmployeeAsync(CreateEmployeeRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/employees", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/employees"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<EmployeeProfileDto>(cancellationToken: ct))!;
     }
 
     public async Task<EmployeeProfileDto> UpdateEmployeeAsync(Guid employeeId, UpdateEmployeeRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PutAsJsonAsync($"/api/employees/{employeeId}", request, ct);
+        var response = await _httpClient.PutAsJsonAsync(Endpoint($"/api/employees/{employeeId}"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<EmployeeProfileDto>(cancellationToken: ct))!;
     }
 
     public async Task<EmployeeProfileDto> SetEmployeeActiveStatusAsync(Guid employeeId, bool isActive, CancellationToken ct = default)
     {
-        var response = await _httpClient.PatchAsync($"/api/employees/{employeeId}/status?isActive={isActive.ToString().ToLowerInvariant()}", null, ct);
+        var response = await _httpClient.PatchAsync(Endpoint($"/api/employees/{employeeId}/status?isActive={isActive.ToString().ToLowerInvariant()}"), null, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<EmployeeProfileDto>(cancellationToken: ct))!;
     }
@@ -309,14 +485,14 @@ public sealed class AdminApiClient
     // Configurações da Loja (AdminOnly)
     public async Task<AdminStoreSettingsDto> GetStoreSettingsAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/api/settings", ct);
+        var response = await _httpClient.GetAsync(Endpoint("/api/settings"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
     }
 
     public async Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(UpdateStoreSettingsRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PutAsJsonAsync("/api/settings", request, ct);
+        var response = await _httpClient.PutAsJsonAsync(Endpoint("/api/settings"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
     }
@@ -332,14 +508,14 @@ public sealed class AdminApiClient
         streamContent.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(contentType) ? "image/png" : contentType);
         content.Add(streamContent, "file", fileName);
 
-        var response = await _httpClient.PostAsync("/api/settings/logo", content, ct);
+        var response = await _httpClient.PostAsync(Endpoint("/api/settings/logo"), content, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
     }
 
     public async Task<AdminStoreSettingsDto> RemoveStoreLogoAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync("/api/settings/logo", ct);
+        var response = await _httpClient.DeleteAsync(Endpoint("/api/settings/logo"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
     }
@@ -349,7 +525,7 @@ public sealed class AdminApiClient
     {
         try
         {
-            var url = string.IsNullOrWhiteSpace(customUrl) ? "/api/cloud/status" : $"{customUrl.TrimEnd('/')}/api/cloud/status";
+            var url = string.IsNullOrWhiteSpace(customUrl) ? Endpoint("/api/cloud/status") : $"{customUrl.TrimEnd('/')}/api/cloud/status";
             var response = await _httpClient.GetAsync(url, ct);
             return response.IsSuccessStatusCode;
         }
@@ -361,13 +537,13 @@ public sealed class AdminApiClient
 
     public async Task SyncCloudStateAsync(CloudCatalogSyncPayload payload, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/cloud/sync-state", payload, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/cloud/sync-state"), payload, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
     }
 
     public async Task<CheckDomainAvailabilityResponse> CheckDomainAvailabilityAsync(string domain, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/cloud/check-domain", new CheckDomainAvailabilityRequest { Domain = domain }, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/cloud/check-domain"), new CheckDomainAvailabilityRequest { Domain = domain }, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<CheckDomainAvailabilityResponse>(cancellationToken: ct))!;
     }
@@ -375,7 +551,7 @@ public sealed class AdminApiClient
     // Ativação de Plano via Código Gift Card
     public async Task<RedeemActivationCodeResponse> RedeemActivationCodeAsync(RedeemActivationCodeRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/settings/redeem-code", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/settings/redeem-code"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<RedeemActivationCodeResponse>(cancellationToken: ct))!;
     }
@@ -384,14 +560,14 @@ public sealed class AdminApiClient
         VerifyGoogleAccountTokenRequest request,
         CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/settings/verify-google-account", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/settings/verify-google-account"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<GoogleAccountTierVerificationResult>(cancellationToken: ct))!;
     }
 
     public async Task<AdminStoreSettingsDto> ClearGoogleAccountVerificationAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync("/api/settings/verify-google-account", ct);
+        var response = await _httpClient.DeleteAsync(Endpoint("/api/settings/verify-google-account"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
     }
@@ -399,21 +575,21 @@ public sealed class AdminApiClient
     // Pedidos Pix, CEP e Simulador de Correios
     public async Task<IReadOnlyList<StoreOrderDto>> GetOrdersAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/api/orders", ct);
+        var response = await _httpClient.GetAsync(Endpoint("/api/orders"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return await response.Content.ReadFromJsonAsync<List<StoreOrderDto>>(cancellationToken: ct) ?? [];
     }
 
     public async Task<StoreOrderDto> ConfirmOrderPixAsync(Guid orderId, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsync($"/api/orders/{orderId}/confirm-pix", null, ct);
+        var response = await _httpClient.PostAsync(Endpoint($"/api/orders/{orderId}/confirm-pix"), null, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
     }
 
     public async Task<StoreOrderDto> UpdateOrderFulfillmentAsync(Guid orderId, UpdateOrderFulfillmentRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PutAsJsonAsync($"/api/orders/{orderId}/fulfillment", request, ct);
+        var response = await _httpClient.PutAsJsonAsync(Endpoint($"/api/orders/{orderId}/fulfillment"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
     }
@@ -421,8 +597,8 @@ public sealed class AdminApiClient
     public async Task<StoreOrderDto> CancelOrderAsync(Guid orderId, string? reason = null, CancellationToken ct = default)
     {
         var url = string.IsNullOrWhiteSpace(reason)
-            ? $"/api/orders/{orderId}/cancel"
-            : $"/api/orders/{orderId}/cancel?reason={Uri.EscapeDataString(reason)}";
+            ? Endpoint($"/api/orders/{orderId}/cancel")
+            : Endpoint($"/api/orders/{orderId}/cancel?reason={Uri.EscapeDataString(reason)}");
         var response = await _httpClient.PostAsync(url, null, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
@@ -431,14 +607,14 @@ public sealed class AdminApiClient
     public async Task<SalesReportDto> GetSalesReportAsync(string period = "30d", CancellationToken ct = default)
     {
         var qs = Uri.EscapeDataString(string.IsNullOrWhiteSpace(period) ? "30d" : period.Trim());
-        var response = await _httpClient.GetAsync($"/api/orders/sales-report?period={qs}", ct);
+        var response = await _httpClient.GetAsync(Endpoint($"/api/orders/sales-report?period={qs}"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<SalesReportDto>(cancellationToken: ct))!;
     }
 
     public async Task<StoreOrderDto> RegisterManualSaleAsync(RegisterManualSaleRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/orders/manual-sale", request, ct);
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/orders/manual-sale"), request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
     }
@@ -456,7 +632,7 @@ public sealed class AdminApiClient
         if (!string.IsNullOrWhiteSpace(originCep))
             qs += $"&originCep={Uri.EscapeDataString(originCep)}";
 
-        var response = await _httpClient.GetAsync($"/api/shipping/simulate-correios?{qs}", ct);
+        var response = await _httpClient.GetAsync(Endpoint($"/api/shipping/simulate-correios?{qs}"), ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<CorreiosQuoteDto>(cancellationToken: ct))!;
     }

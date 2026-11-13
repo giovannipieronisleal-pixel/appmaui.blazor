@@ -220,7 +220,7 @@ public sealed class EmployeeAndSettingsService
             request.DefaultLowStockThreshold,
             employeeId,
             request.StoreSlug,
-            request.OnlineBaseUrl,
+            request.OnlineBaseUrl ?? settings.OnlineBaseUrl,
             request.AutoSyncOnlineOnSave,
             request.LastOnlineSyncAt);
 

@@ -40,12 +40,12 @@ public static class MauiProgram
         {
             var handler = new SocketsHttpHandler
             {
-                ConnectTimeout = TimeSpan.FromMilliseconds(600)
+                ConnectTimeout = TimeSpan.FromMilliseconds(900)
             };
             return new HttpClient(handler)
             {
                 BaseAddress = new Uri(apiBaseUrl),
-                Timeout = TimeSpan.FromMilliseconds(1500)
+                Timeout = TimeSpan.FromSeconds(6)
             };
         });
         builder.Services.AddSingleton<AdminApiClient>();

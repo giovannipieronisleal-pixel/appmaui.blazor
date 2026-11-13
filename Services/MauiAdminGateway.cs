@@ -15,6 +15,8 @@ namespace appmaui.blazor.Services;
 public sealed class MauiAdminGateway
 {
     private const string SessionStorageKey = "clothingstore_auth_session_v1";
+    private const string ServerUrlPreferenceKey = "youlink_api_base_url_v1";
+    private const string CurrentClientAppVersion = "1.0.8";
     private static readonly HttpClient FallbackDnsHttpClient = new() { Timeout = TimeSpan.FromSeconds(6) };
 
     private readonly AdminApiClient _apiClient;
@@ -33,6 +35,11 @@ public sealed class MauiAdminGateway
     public bool IsAdmin => CurrentEmployee?.IsAdmin ?? false;
     public bool CanManageProducts => IsAdmin || (CurrentEmployee?.CanManageProducts ?? false);
     public bool CanManageStock => IsAdmin || (CurrentEmployee?.CanManageStock ?? false);
+    public bool HasCustomServerUrl { get; private set; }
+    public bool LastAccountActionWasLocalOnly { get; private set; }
+    public bool IsRemoteApiOnline => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
+    public string CurrentServerUrl => _apiClient.CurrentBaseAddress ?? string.Empty;
+    public ApiCompatibilityStatusDto? LatestCompatibilityStatus { get; private set; }
 
     public event Action? AuthStateChanged;
 
@@ -52,6 +59,90 @@ public sealed class MauiAdminGateway
         _employeeAndSettingsService = employeeAndSettingsService;
         _cloudSyncService = cloudSyncService;
         _orderAndShippingService = orderAndShippingService;
+
+        LoadSavedServerUrl();
+    }
+
+    private void LoadSavedServerUrl()
+    {
+        try
+        {
+            var savedUrl = Preferences.Default.Get(ServerUrlPreferenceKey, string.Empty);
+            if (!string.IsNullOrWhiteSpace(savedUrl) && _apiClient.UpdateBaseAddress(savedUrl))
+            {
+                HasCustomServerUrl = true;
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    public async Task<(bool Reachable, string NormalizedUrl, string? StoreName, string? ErrorMessage)> ConfigureServerUrlAsync(
+        string? rawUrl,
+        CancellationToken ct = default)
+    {
+        _skipRemoteApiUntil = DateTimeOffset.MinValue;
+
+        if (string.IsNullOrWhiteSpace(rawUrl))
+        {
+            _apiClient.UpdateBaseAddress(null);
+            HasCustomServerUrl = false;
+            try
+            {
+                Preferences.Default.Remove(ServerUrlPreferenceKey);
+            }
+            catch
+            {
+            }
+
+            var defaultTest = await _apiClient.TestServerConnectionAsync(null, ct);
+            if (!defaultTest.Reachable)
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+
+            AuthStateChanged?.Invoke();
+            return defaultTest;
+        }
+
+        var probe = await _apiClient.TestServerConnectionAsync(rawUrl, ct);
+        if (_apiClient.UpdateBaseAddress(probe.NormalizedUrl))
+        {
+            HasCustomServerUrl = true;
+            try
+            {
+                Preferences.Default.Set(ServerUrlPreferenceKey, probe.NormalizedUrl);
+            }
+            catch
+            {
+            }
+        }
+
+        if (!probe.Reachable)
+            _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+
+        AuthStateChanged?.Invoke();
+        return probe;
+    }
+
+    public async Task<ApiCompatibilityStatusDto?> RefreshCompatibilityAsync(CancellationToken ct = default)
+    {
+        if (!ShouldTryRemoteApi)
+            return LatestCompatibilityStatus;
+
+        try
+        {
+            var status = await _apiClient.GetCompatibilityStatusAsync(CurrentClientAppVersion, ct);
+            if (status is not null)
+            {
+                LatestCompatibilityStatus = status;
+                AuthStateChanged?.Invoke();
+            }
+            return status;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private bool ShouldTryRemoteApi => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
@@ -108,6 +199,8 @@ public sealed class MauiAdminGateway
         {
             var rawJson = await SecureStorage.Default.GetAsync(SessionStorageKey);
             if (string.IsNullOrWhiteSpace(rawJson))
+                rawJson = Preferences.Default.Get(SessionStorageKey + "_fallback", string.Empty);
+            if (string.IsNullOrWhiteSpace(rawJson))
                 return;
 
             var saved = JsonSerializer.Deserialize<LoginResponse>(rawJson);
@@ -117,7 +210,21 @@ public sealed class MauiAdminGateway
                 return;
             }
 
-            var freshProfile = await _authService.GetCurrentProfileAsync(saved.Employee.UserId);
+            _apiClient.SetSession(saved.AccessToken, saved.Employee);
+            var freshProfile = await ExecuteWithFallbackAsync(
+                () => _apiClient.RefreshProfileAsync(),
+                async () =>
+                {
+                    try
+                    {
+                        return await _authService.GetCurrentProfileAsync(saved.Employee.UserId);
+                    }
+                    catch
+                    {
+                        return saved.Employee;
+                    }
+                });
+
             AccessToken = saved.AccessToken;
             CurrentEmployee = freshProfile;
             _apiClient.SetSession(saved.AccessToken, freshProfile);
@@ -135,10 +242,27 @@ public sealed class MauiAdminGateway
 
     public async Task<LoginResponse> RegisterUserAccountAsync(RegisterUserAccountRequest request)
     {
-        var localResp = await _authService.RegisterUserAccountAsync(request);
-        _apiClient.SetSession(localResp.AccessToken, localResp.Employee);
-        await PersistSessionAsync(localResp);
-        return localResp;
+        var usedFallback = false;
+        var response = await ExecuteWithFallbackAsync(
+            async () =>
+            {
+                var remoteResp = await _apiClient.RegisterUserAccountAsync(request);
+                LastAccountActionWasLocalOnly = false;
+                return remoteResp;
+            },
+            async () =>
+            {
+                usedFallback = true;
+                var localResp = await _authService.RegisterUserAccountAsync(request);
+                _apiClient.SetSession(localResp.AccessToken, localResp.Employee);
+                return localResp;
+            });
+
+        if (usedFallback)
+            LastAccountActionWasLocalOnly = true;
+
+        await PersistSessionAsync(response);
+        return response;
     }
 
     public async Task<LoginResponse> RegisterInitialAdminByEmailAsync(RegisterInitialAdminRequest request)
@@ -158,10 +282,30 @@ public sealed class MauiAdminGateway
 
     public async Task<LoginChallengeResponse> LoginWithChallengeAsync(LoginRequest request, bool rememberMe = true)
     {
-        var challenge = await _authService.LoginWithChallengeAsync(request);
+        var usedFallback = false;
+        var challenge = await ExecuteWithFallbackAsync(
+            async () =>
+            {
+                var remoteChallenge = await _apiClient.LoginWithChallengeAsync(request);
+                LastAccountActionWasLocalOnly = false;
+                return remoteChallenge;
+            },
+            async () =>
+            {
+                usedFallback = true;
+                var localChallenge = await _authService.LoginWithChallengeAsync(request);
+                if (!localChallenge.RequiresTwoFactor && localChallenge.AuthResult is not null)
+                {
+                    _apiClient.SetSession(localChallenge.AuthResult.AccessToken, localChallenge.AuthResult.Employee);
+                }
+                return localChallenge;
+            });
+
+        if (usedFallback)
+            LastAccountActionWasLocalOnly = true;
+
         if (!challenge.RequiresTwoFactor && challenge.AuthResult is not null)
         {
-            _apiClient.SetSession(challenge.AuthResult.AccessToken, challenge.AuthResult.Employee);
             await PersistSessionAsync(challenge.AuthResult, rememberMe);
         }
         return challenge;
@@ -169,8 +313,25 @@ public sealed class MauiAdminGateway
 
     public async Task<LoginResponse> VerifyTwoFactorLoginAsync(VerifyTwoFactorLoginRequest request, bool rememberMe = true)
     {
-        var response = await _authService.VerifyTwoFactorLoginAsync(request);
-        _apiClient.SetSession(response.AccessToken, response.Employee);
+        var usedFallback = false;
+        var response = await ExecuteWithFallbackAsync(
+            async () =>
+            {
+                var remoteResp = await _apiClient.VerifyTwoFactorLoginAsync(request);
+                LastAccountActionWasLocalOnly = false;
+                return remoteResp;
+            },
+            async () =>
+            {
+                usedFallback = true;
+                var localResp = await _authService.VerifyTwoFactorLoginAsync(request);
+                _apiClient.SetSession(localResp.AccessToken, localResp.Employee);
+                return localResp;
+            });
+
+        if (usedFallback)
+            LastAccountActionWasLocalOnly = true;
+
         await PersistSessionAsync(response, rememberMe);
         return response;
     }
@@ -220,11 +381,25 @@ public sealed class MauiAdminGateway
             if (rememberMe)
             {
                 var serialized = JsonSerializer.Serialize(response);
-                await SecureStorage.Default.SetAsync(SessionStorageKey, serialized);
+                try
+                {
+                    await SecureStorage.Default.SetAsync(SessionStorageKey, serialized);
+                }
+                catch
+                {
+                }
+                Preferences.Default.Set(SessionStorageKey + "_fallback", serialized);
             }
             else
             {
-                SecureStorage.Default.Remove(SessionStorageKey);
+                try
+                {
+                    SecureStorage.Default.Remove(SessionStorageKey);
+                }
+                catch
+                {
+                }
+                Preferences.Default.Remove(SessionStorageKey + "_fallback");
             }
         }
         catch
@@ -241,7 +416,14 @@ public sealed class MauiAdminGateway
         _apiClient.ClearSession();
         try
         {
-            SecureStorage.Default.Remove(SessionStorageKey);
+            try
+            {
+                SecureStorage.Default.Remove(SessionStorageKey);
+            }
+            catch
+            {
+            }
+            Preferences.Default.Remove(SessionStorageKey + "_fallback");
         }
         catch
         {
