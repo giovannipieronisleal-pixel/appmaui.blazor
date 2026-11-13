@@ -20,8 +20,16 @@ Os instaladores prontos (**Android `.apk`** e **Windows `win-x64 .zip`**) são g
 O **YouLink** conta com três níveis de vitrine selecionáveis no app (`/planos` e `/configuracoes-loja`), **todos já com Servidor 24h + Certificado HTTPS + Endereço/Domínio da loja inclusos sem custo adicional**:
 
 - **Plano Básico (`Basico`)**: tema fixo *Minimalista Luxo* + servidor 24h + HTTPS + endereço da vitrine inclusos, pronto para vender via WhatsApp, com QR Code e estoque em tempo real.
-- **Meia Versão (`Intermediario`)**: **5 versões de site pré-prontas** não configuráveis para troca instantânea em 1 clique + servidor 24h + HTTPS + domínio/endereço incluso.
-- **Premium Sob Medida (`Premium`)**: Estúdio Visual completo (paleta, fontes, cantos, densidade, destaque e grade configurável) + servidor 24h + HTTPS + endereço incluso (com opção de domínio próprio sem taxa extra da plataforma).
+- **Meia Versão (`Intermediario`)**: **5 versões de site pré-prontas** não configuráveis para troca instantânea em 1 clique + servidor 24h + HTTPS + domínio/endereço incluso + **opção ativável de vendas diretas pelo app/site apenas via Pix** (sem cartão e sem necessidade de CNPJ).
+- **Premium Sob Medida (`Premium`)**: Estúdio Visual completo (paleta, fontes, cantos, densidade, destaque e grade configurável) + servidor 24h + HTTPS + endereço incluso (com opção de domínio próprio sem taxa extra da plataforma) + **vendas diretas via Pix ativáveis** com vitrine personalizada.
+
+### Vendas Diretas via Pix, Limite de Distância e Cálculo dos Correios (Meia Versão e Premium)
+
+Quando ativado explicitamente pelo administrador em **Configurações da Loja** (`/configuracoes-loja`), informando sua chave Pix e CEP de origem:
+
+- **Checkout apenas via Pix (sem CNPJ / sem cartão)**: gera código **Pix Copia e Cola** padrão BACEN EMV (`CRC-16/CCITT-FALSE`), enquanto o comprador informa nome, WhatsApp e **endereço completo de entrega com CEP**.
+- **Alcance e Limite de Distância configuráveis pelo vendedor**: escolha entre enviar para **Todo o Brasil**, **Mesmo Estado (UF)**, **Mesma Cidade** ou **Raio Máximo em km** calculado a partir do CEP de origem.
+- **Estimativa de Custos nos Correios (PAC e SEDEX)**: cálculo automático de prazo em dias úteis, peso real vs. peso cubado e faixa tarifária dos Correios na loja, no simulador das configurações e na tela de gestão **Pedidos Pix** (`/pedidos`) para o vendedor confirmar o Pix, abater estoque e organizar o envio (Correios PAC/SEDEX, Motoboy, Transportadora ou Retirada).
 
 ---
 
@@ -29,14 +37,14 @@ O **YouLink** conta com três níveis de vitrine selecionáveis no app (`/planos
 
 | Projeto | Caminho | Descrição |
 | :--- | :--- | :--- |
-| **YouLink (`appmaui.blazor`)** | [appmaui.blazor.csproj](appmaui.blazor.csproj) | Aplicativo `.NET MAUI Blazor Hybrid` (Android, Windows, iOS, MacCatalyst) para gerenciar catálogo, estoque, equipe, planos e visual da loja. |
-| **ClothingStore.Web** | [ClothingStore.Web.csproj](src/ClothingStore.Web/ClothingStore.Web.csproj) | Site público em Blazor Web App funcionando como catálogo digital com integração ao WhatsApp (`https://wa.me/NUMERO?text=MENSAGEM`). |
+| **YouLink (`appmaui.blazor`)** | [appmaui.blazor.csproj](appmaui.blazor.csproj) | Aplicativo `.NET MAUI Blazor Hybrid` (Android, Windows, iOS, MacCatalyst) para gerenciar catálogo, estoque, equipe, pedidos Pix (`/pedidos`), planos e visual da loja. |
+| **ClothingStore.Web** | [ClothingStore.Web.csproj](src/ClothingStore.Web/ClothingStore.Web.csproj) | Site público em Blazor Web App funcionando como catálogo digital com integração ao WhatsApp (`https://wa.me/NUMERO?text=MENSAGEM`) e checkout direto via Pix + CEP quando ativado na loja. |
 | **ClothingStore.Api** | [ClothingStore.Api.csproj](src/ClothingStore.Api/ClothingStore.Api.csproj) | ASP.NET Core Web API com endpoints públicos e administrativos protegidos por JWT e Policies no backend. Inclui [Dockerfile](src/ClothingStore.Api/Dockerfile). |
-| **ClothingStore.Application** | [ClothingStore.Application.csproj](src/ClothingStore.Application/ClothingStore.Application.csproj) | Regras de aplicação (`AuthService`, `CatalogService`, `ProductManagementService`, `StockManagementService`, `EmployeeAndSettingsService`). |
-| **ClothingStore.Domain** | [ClothingStore.Domain.csproj](src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`, `PlanActivationCode`). |
+| **ClothingStore.Application** | [ClothingStore.Application.csproj](src/ClothingStore.Application/ClothingStore.Application.csproj) | Regras de aplicação (`AuthService`, `CatalogService`, `ProductManagementService`, `StockManagementService`, `EmployeeAndSettingsService`, `OrderAndShippingService`). |
+| **ClothingStore.Domain** | [ClothingStore.Domain.csproj](src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`, `StoreOrder`, `PlanActivationCode`). |
 | **ClothingStore.Infrastructure** | [ClothingStore.Infrastructure.csproj](src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj) | Repositório transacional (`ClothingStoreRepository`), autenticação JWT/PBKDF2 e armazenamento de imagens. |
-| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens e helper de links/domínios. |
-| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 52 testes automatizados de domínio, segurança, planos, domínios, stress tests e validação Windows x64 / NTFS / API. |
+| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens, `PixPayloadBuilder`, `BrazilShippingCalculator` e helper de links/domínios. |
+| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 58 testes automatizados de domínio, segurança, planos, domínios, Pix EMV, CEP/distância, cálculo dos Correios, pedidos, stress tests e validação Windows x64 / NTFS / API. |
 
 ---
 

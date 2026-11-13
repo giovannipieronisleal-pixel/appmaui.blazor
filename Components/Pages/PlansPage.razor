@@ -163,6 +163,7 @@ else
                 <li><strong>5 versões de site pré-prontas</strong> (escolha abaixo)</li>
                 <li><strong>Servidor 24h + HTTPS inclusos</strong> (sem cobrança separada)</li>
                 <li><strong>Domínio / Endereço da loja incluso</strong> sem taxa adicional</li>
+                <li><strong>Vendas no app apenas por Pix</strong> (ativável), distância máxima e cálculo Correios</li>
                 <li><strong>Não configurável:</strong> layouts fixos calibrados para o público</li>
                 <li>Troca instantânea com 1 clique sem mexer em código</li>
                 <li>Ideal para destacar a identidade da coleção sem complexidade</li>
@@ -195,6 +196,7 @@ else
             <ul class="plan-feature-list">
                 <li><strong>Todas as 5 versões pré-prontas</strong> como base inicial</li>
                 <li><strong>Servidor 24h + HTTPS + Domínio inclusos</strong> no plano (zero taxa à parte)</li>
+                <li><strong>Vendas no app apenas por Pix</strong> (ativável), limite de distância e cálculo Correios</li>
                 <li>Suporte opcional a domínio personalizado sem custo extra na plataforma</li>
                 <li>Estúdio Visual completo: paleta livre, fontes e cantos</li>
                 <li>Texto de destaque, faixa promocional e grade customizáveis</li>
@@ -571,10 +573,10 @@ else
     private string GetPlanSummaryText()
     {
         if (BrandState.IsPremiumPlan)
-            return "Você tem acesso completo às 5 versões pré-prontas e ao Estúdio Visual Sob Medida.";
+            return "Você tem acesso completo às 5 versões pré-prontas, Estúdio Visual Sob Medida, vendas diretas no app por Pix (ativável) com limite de distância e cálculo dos Correios.";
         if (BrandState.IsIntermediatePlan)
-            return "Você pode alternar livremente entre 5 versões de site pré-prontas, sem configuração complexa.";
-        return "Sua loja opera com o layout fixo Minimalista Luxo, pensado para compras rápidas e diretas.";
+            return "Você pode alternar livremente entre 5 versões de site pré-prontas e ativar vendas diretas no app por Pix com limite de distância e estimativa dos Correios.";
+        return "Sua loja opera com o layout fixo Minimalista Luxo, pensado para compras rápidas pelo WhatsApp.";
     }
 
     public void Dispose()

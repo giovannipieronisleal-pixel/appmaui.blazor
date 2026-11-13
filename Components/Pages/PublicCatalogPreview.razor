@@ -6,6 +6,7 @@
 @using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
+@inject OrderAndShippingService OrderService
 @inject StoreBrandStateService BrandState
 @inject NavigationManager Navigation
 
@@ -425,6 +426,121 @@
                             "@WhatsAppLinkBuilder.BuildProductConsultationMessage(_selectedProduct.Name, _detailColor, _detailSize)"
                         </div>
                     </div>
+
+                    @if (_store.DirectPixSalesReady)
+                    {
+                        var selectedVariant = SelectedDetailVariant;
+                        <div style="margin-top: 1.25rem; border: 1.5px solid #16A34A; background: var(--brand-bg); border-radius: 12px; padding: 1.15rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.45rem;">
+                                <strong style="font-size: 1rem;">💸 Comprar Direto pelo App (Apenas Pix)</strong>
+                                <span class="pill-badge pill-green">Exclusivo Pix</span>
+                            </div>
+                            <p style="font-size: 0.82rem; color: var(--brand-text-muted); margin: 0 0 0.85rem; line-height: 1.45;">
+                                Alcance configurado pelo vendedor: <strong>@ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.Describe(_store.DeliveryScopeMode, _store.MaxDeliveryDistanceKm, _store.OriginCity, _store.OriginState)</strong>.
+                            </p>
+
+                            @if (_createdPixOrder is null)
+                            {
+                                @if (!string.IsNullOrWhiteSpace(_checkoutError))
+                                {
+                                    <div class="adm-alert adm-alert-error" style="margin-bottom: 0.75rem;">@_checkoutError</div>
+                                }
+
+                                @if (selectedVariant is null || selectedVariant.StockQuantity <= 0)
+                                {
+                                    <div style="font-size: 0.84rem; color: var(--adm-danger); font-weight: 700;">
+                                        Escolha uma cor e tamanho com estoque disponível para comprar via Pix.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; margin-bottom: 0.65rem;">
+                                        <div>
+                                            <label class="adm-label">CEP de Entrega *</label>
+                                            <div style="display: flex; gap: 0.35rem;">
+                                                <input type="text" class="adm-input" @bind="_buyerCep" placeholder="01310-100" />
+                                                <button type="button" class="adm-btn adm-btn-outline" style="white-space: nowrap;"
+                                                        disabled="@_calculatingShipping" @onclick="CheckShippingQuoteAsync">
+                                                    @(_calculatingShipping ? "..." : "Calcular")
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="adm-label">Quantidade (máx @selectedVariant.StockQuantity)</label>
+                                            <input type="number" min="1" max="@selectedVariant.StockQuantity" class="adm-input" @bind="_orderQuantity" />
+                                        </div>
+                                    </div>
+
+                                    @if (_shippingQuote is not null)
+                                    {
+                                        <div style="padding: 0.65rem 0.8rem; border-radius: 8px; font-size: 0.82rem; margin-bottom: 0.75rem; @(_shippingQuote.Eligibility.IsAllowed ? "background: rgba(22,163,74,0.12); border: 1px solid #16A34A;" : "background: rgba(239,68,68,0.12); border: 1px solid #EF4444;")">
+                                            <div><strong>@(_shippingQuote.Eligibility.IsAllowed ? "✓ Endereço atendido:" : "✕ Fora do limite de distância:")</strong> @_shippingQuote.Eligibility.ReasonMessage</div>
+                                            @if (_shippingQuote.Eligibility.IsAllowed && _shippingQuote.CorreiosQuote is not null)
+                                            {
+                                                <div style="margin-top: 0.25rem; font-size: 0.78rem;">
+                                                    Correios estimado para referência do envio:
+                                                    <strong>PAC ~@_shippingQuote.CorreiosQuote.PacPrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</strong> (@_shippingQuote.CorreiosQuote.PacDaysMin–@_shippingQuote.CorreiosQuote.PacDaysMax dias úteis) |
+                                                    <strong>SEDEX ~@_shippingQuote.CorreiosQuote.SedexPrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</strong> (@_shippingQuote.CorreiosQuote.SedexDaysMin–@_shippingQuote.CorreiosQuote.SedexDaysMax dias úteis).
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.55rem; margin-bottom: 0.65rem;">
+                                        <input type="text" class="adm-input" @bind="_buyerName" placeholder="Seu Nome Completo *" />
+                                        <input type="text" class="adm-input" @bind="_buyerWhatsapp" placeholder="Seu WhatsApp (DDD + Número) *" />
+                                        <input type="text" class="adm-input" @bind="_buyerStreet" placeholder="Rua / Logradouro *" />
+                                        <input type="text" class="adm-input" @bind="_buyerNumber" placeholder="Número *" />
+                                        <input type="text" class="adm-input" @bind="_buyerComplement" placeholder="Complemento" />
+                                        <input type="text" class="adm-input" @bind="_buyerNeighborhood" placeholder="Bairro *" />
+                                        <input type="text" class="adm-input" @bind="_buyerCity" placeholder="Cidade *" />
+                                        <input type="text" maxlength="2" class="adm-input" style="text-transform: uppercase;" @bind="_buyerState" placeholder="UF *" />
+                                    </div>
+
+                                    <input type="text" class="adm-input" style="margin-bottom: 0.75rem;" @bind="_buyerNotes" placeholder="Observações para o envio (opcional)" />
+
+                                    <button type="button"
+                                            class="adm-btn adm-btn-success"
+                                            style="width: 100%; background: #16A34A; color: #FFFFFF; padding: 0.9rem; font-weight: 800;"
+                                            disabled="@(_submittingOrder || (_shippingQuote is not null && !_shippingQuote.Eligibility.IsAllowed))"
+                                            @onclick="SubmitPixOrderAsync">
+                                        @(_submittingOrder
+                                            ? "Gerando pedido Pix..."
+                                            : $"💸 Finalizar Pedido no Pix ({((_selectedProduct.BasePrice * Math.Max(1, _orderQuantity))).ToString("C", new System.Globalization.CultureInfo("pt-BR"))})")
+                                    </button>
+                                }
+                            }
+                            else
+                            {
+                                <div style="background: rgba(22,163,74,0.12); border: 1px solid #16A34A; border-radius: 10px; padding: 0.9rem;">
+                                    <div style="font-weight: 800; color: #166534; font-size: 1rem;">
+                                        ✅ Pedido @_createdPixOrder.OrderNumber gerado!
+                                    </div>
+                                    <p style="font-size: 0.82rem; margin: 0.35rem 0 0.65rem; line-height: 1.45;">
+                                        Pague apenas via <strong>Pix</strong> usando a chave ou o código Copia e Cola abaixo. O vendedor recebeu seu endereço em <strong>@_createdPixOrder.DeliveryCity/@_createdPixOrder.DeliveryState</strong> (~@_createdPixOrder.DistanceKmFromSeller.ToString("0.#") km) e organizará a entrega!
+                                    </p>
+                                    <div style="font-size: 0.8rem; margin-bottom: 0.35rem;">
+                                        <strong>Chave Pix do Vendedor:</strong> <code>@_createdPixOrder.PixKey</code>
+                                    </div>
+                                    <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 0.25rem;">
+                                        Código Pix Copia e Cola (@_createdPixOrder.TotalPixAmount.ToString("C", new System.Globalization.CultureInfo("pt-BR"))):
+                                    </div>
+                                    <textarea readonly rows="3" class="adm-input" style="font-family: monospace; font-size: 0.75rem; margin-bottom: 0.55rem;">@_createdPixOrder.PixBrCode</textarea>
+                                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                        <button type="button" class="adm-btn adm-btn-primary" @onclick="CopyPixBrCodeAsync">
+                                            @(_copiedPixCode ? "✓ Código Pix Copiado!" : "📋 Copiar Código Pix")
+                                        </button>
+                                        <button type="button" class="adm-btn adm-btn-success" @onclick="OpenOrderProofWhatsAppAsync">
+                                            💬 Enviar Comprovante no WhatsApp
+                                        </button>
+                                        <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _createdPixOrder = null">
+                                            Novo Pedido
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
         </section>
@@ -585,11 +701,132 @@
     {
         try
         {
-            LocalWebServerLauncher.Initialize(CatalogService);
+            LocalWebServerLauncher.Initialize(CatalogService, OrderService);
             await LocalWebServerLauncher.OpenCatalogInBrowserAsync(url);
         }
         catch
         {
         }
+    }
+
+    private ProductVariantDto? SelectedDetailVariant =>
+        _selectedProduct?.Variants.FirstOrDefault(v =>
+            (string.IsNullOrWhiteSpace(_detailColor) || string.Equals(v.Color, _detailColor, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(_detailSize) || string.Equals(v.Size, _detailSize, StringComparison.OrdinalIgnoreCase)));
+
+    private string _buyerCep = string.Empty;
+    private int _orderQuantity = 1;
+    private string _buyerName = string.Empty;
+    private string _buyerWhatsapp = string.Empty;
+    private string _buyerStreet = string.Empty;
+    private string _buyerNumber = string.Empty;
+    private string _buyerComplement = string.Empty;
+    private string _buyerNeighborhood = string.Empty;
+    private string _buyerCity = string.Empty;
+    private string _buyerState = string.Empty;
+    private string _buyerNotes = string.Empty;
+    private bool _calculatingShipping;
+    private bool _submittingOrder;
+    private bool _copiedPixCode;
+    private string? _checkoutError;
+    private ShippingQuoteResponse? _shippingQuote;
+    private StoreOrderDto? _createdPixOrder;
+
+    private async Task CheckShippingQuoteAsync()
+    {
+        _checkoutError = null;
+        _calculatingShipping = true;
+        try
+        {
+            var lookup = await OrderService.LookupCepAsync(_buyerCep);
+            _buyerCep = lookup.Cep;
+            if (string.IsNullOrWhiteSpace(_buyerStreet) && !string.IsNullOrWhiteSpace(lookup.Street))
+                _buyerStreet = lookup.Street;
+            if (string.IsNullOrWhiteSpace(_buyerNeighborhood) && !string.IsNullOrWhiteSpace(lookup.Neighborhood))
+                _buyerNeighborhood = lookup.Neighborhood;
+            if (!string.IsNullOrWhiteSpace(lookup.City))
+                _buyerCity = lookup.City;
+            if (!string.IsNullOrWhiteSpace(lookup.State))
+                _buyerState = lookup.State;
+
+            _shippingQuote = await OrderService.QuoteShippingForBuyerAsync(new ShippingQuoteRequest
+            {
+                DestinationCep = _buyerCep,
+                DestinationCity = _buyerCity,
+                DestinationState = _buyerState,
+                WeightGrams = _store.DefaultPackageWeightGrams * Math.Max(1, _orderQuantity)
+            });
+        }
+        catch (Exception ex)
+        {
+            _checkoutError = ex.Message;
+        }
+        finally
+        {
+            _calculatingShipping = false;
+        }
+    }
+
+    private async Task SubmitPixOrderAsync()
+    {
+        var selectedVariant = SelectedDetailVariant;
+        if (_selectedProduct is null || selectedVariant is null)
+            return;
+
+        _checkoutError = null;
+        _copiedPixCode = false;
+        _submittingOrder = true;
+        try
+        {
+            _createdPixOrder = await OrderService.PlacePixOrderAsync(new CreatePixOrderRequest
+            {
+                ProductId = _selectedProduct.Id,
+                ProductVariantId = selectedVariant.Id,
+                Quantity = Math.Max(1, _orderQuantity),
+                CustomerName = _buyerName,
+                CustomerWhatsapp = _buyerWhatsapp,
+                Cep = _buyerCep,
+                Street = _buyerStreet,
+                Number = _buyerNumber,
+                Complement = _buyerComplement,
+                Neighborhood = _buyerNeighborhood,
+                City = _buyerCity,
+                State = _buyerState,
+                CustomerNotes = _buyerNotes
+            });
+        }
+        catch (Exception ex)
+        {
+            _checkoutError = ex.Message;
+        }
+        finally
+        {
+            _submittingOrder = false;
+        }
+    }
+
+    private async Task CopyPixBrCodeAsync()
+    {
+        if (_createdPixOrder is null)
+            return;
+
+        try
+        {
+            await Clipboard.Default.SetTextAsync(_createdPixOrder.PixBrCode);
+            _copiedPixCode = true;
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task OpenOrderProofWhatsAppAsync()
+    {
+        if (_createdPixOrder is null)
+            return;
+
+        var msg = $"Olá! Acabei de gerar o pedido Pix {_createdPixOrder.OrderNumber} no valor de R$ {_createdPixOrder.TotalPixAmount:N2} ({_selectedProduct?.Name}). Endereço de entrega: {_createdPixOrder.FormattedDeliveryAddress}. Segue comprovante do Pix!";
+        var url = $"https://wa.me/{_store.WhatsappNumber}?text={Uri.EscapeDataString(msg)}";
+        await OpenWhatsAppLinkAsync(url);
     }
 }

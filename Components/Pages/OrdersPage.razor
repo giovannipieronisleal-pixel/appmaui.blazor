@@ -1,0 +1,604 @@
+@page "/pedidos"
+@using System.Globalization
+@using ClothingStore.Shared.Helpers
+@inject MauiAdminGateway Gateway
+@inject StoreBrandStateService BrandState
+@inject NavigationManager Navigation
+
+<PageTitle>Pedidos Pix &amp; Envios — YouLink</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
+    <div>
+        <h1 class="adm-page-title" style="margin: 0;">🧾 Pedidos Pix &amp; Envios</h1>
+        <p class="adm-page-subtitle" style="margin: 0.25rem 0 0;">
+            Confira pagamentos via Pix, veja o endereço e distância do comprador, calcule os Correios e organize o envio de cada peça.
+        </p>
+    </div>
+
+    @if (Gateway.IsAuthenticated)
+    {
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _showCorreiosSimulator = !_showCorreiosSimulator">
+                @(_showCorreiosSimulator ? "Ocultar Simulador Correios" : "📦 Simulador Correios")
+            </button>
+            <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadOrdersAsync">
+                🔄 Atualizar
+            </button>
+            <a href="/configuracoes" class="adm-btn adm-btn-primary">⚙️ Raio &amp; Chave Pix</a>
+        </div>
+    }
+</div>
+
+@if (!Gateway.IsAuthenticated)
+{
+    <div class="adm-card">
+        <p style="margin: 0 0 0.75rem;">Faça login no painel para visualizar e gerenciar pedidos Pix e envios.</p>
+        <button type="button" class="adm-btn adm-btn-primary" @onclick='() => Navigation.NavigateTo("/")'>Ir para o Login</button>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="adm-alert adm-alert-error">@_error</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_success))
+    {
+        <div class="adm-alert adm-alert-success">@_success</div>
+    }
+
+    @if (_settings is not null && !_settings.DirectPixSalesReady)
+    {
+        <div class="adm-card" style="border-left: 4px solid #F59E0B; margin-bottom: 1rem;">
+            <div style="font-weight: 800; margin-bottom: 0.25rem;">
+                @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan
+                    ? "🔒 Vendas diretas por Pix disponíveis a partir da Meia Versão"
+                    : "⚙️ Vendas diretas por Pix ainda não estão ativas nas configurações")
+            </div>
+            <div style="font-size: 0.85rem; color: var(--adm-muted); line-height: 1.45; margin-bottom: 0.75rem;">
+                @if (!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan)
+                {
+                    <span>Atualmente sua loja está no Plano Básico. Faça upgrade para a <strong>Meia Versão (Intermediário)</strong> ou <strong>Premium</strong> e ative o recebimento direto pelo app via Pix.</span>
+                }
+                else
+                {
+                    <span>Para os clientes fecharem compra pelo app, vá em <strong>Loja &amp; Visual</strong>, marque a opção para ativar vendas por Pix e preencha sua Chave Pix + CEP de origem.</span>
+                }
+            </div>
+            <a href="@(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "/planos" : "/configuracoes")" class="adm-btn adm-btn-accent">
+                @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "Ver Planos" : "Ativar Pix e Raio de Entrega")
+            </a>
+        </div>
+    }
+
+    @if (_showCorreiosSimulator)
+    {
+        <section class="adm-card" style="margin-bottom: 1.25rem; border-left: 4px solid var(--brand-accent, #B69158);">
+            <h2 style="font-size: 1.05rem; font-weight: 800; margin: 0 0 0.35rem;">📦 Calculadora Rápida de Custos dos Correios (PAC &amp; SEDEX)</h2>
+            <p style="font-size: 0.82rem; color: var(--adm-muted); margin: 0 0 0.85rem;">
+                Estimativa gratuita de postagem de balcão (sem contrato CNPJ) usando seu CEP de origem e o CEP do cliente.
+            </p>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.65rem; margin-bottom: 0.85rem;">
+                <div>
+                    <label class="adm-label">CEP Origem</label>
+                    <input class="adm-input" @bind="_simOriginCep" placeholder="01310-100" />
+                </div>
+                <div>
+                    <label class="adm-label">CEP Destino (Comprador)</label>
+                    <input class="adm-input" @bind="_simDestCep" placeholder="20040-020" />
+                </div>
+                <div>
+                    <label class="adm-label">Peso (gramas)</label>
+                    <input type="number" min="100" max="30000" class="adm-input" @bind="_simWeightG" />
+                </div>
+                <div>
+                    <label class="adm-label">Caixa C x L x A (cm)</label>
+                    <div style="display: flex; gap: 0.3rem;">
+                        <input type="number" min="16" max="100" class="adm-input" style="padding: 0.5rem 0.4rem;" @bind="_simLenCm" title="Comprimento cm" />
+                        <input type="number" min="11" max="100" class="adm-input" style="padding: 0.5rem 0.4rem;" @bind="_simWidthCm" title="Largura cm" />
+                        <input type="number" min="2" max="100" class="adm-input" style="padding: 0.5rem 0.4rem;" @bind="_simHeightCm" title="Altura cm" />
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                <button type="button" class="adm-btn adm-btn-primary" disabled="@_simulating" @onclick="RunCorreiosSimulationAsync">
+                    @(_simulating ? "Calculando..." : "📊 Calcular Preço Correios")
+                </button>
+                <a href="@BrazilShippingCalculator.OfficialCorreiosUrl" target="_blank" rel="noopener" class="adm-btn adm-btn-outline">
+                    Site Oficial Correios &nearr;
+                </a>
+            </div>
+
+            @if (_simQuote is not null)
+            {
+                <div style="margin-top: 0.9rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem;">
+                    <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem;">
+                        <div style="font-size: 0.75rem; color: var(--adm-muted); font-weight: 700;">DISTÂNCIA &amp; PESO COBRADO</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; margin-top: 0.25rem;">📍 @_simQuote.DistanceKm.ToString("0.#") km</div>
+                        <div style="font-size: 0.8rem; color: var(--adm-muted);">@_simQuote.ZoneName · Peso: @_simQuote.BillableWeightGrams g</div>
+                    </div>
+                    <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem;">
+                        <div style="font-size: 0.75rem; color: var(--adm-muted); font-weight: 700;">CORREIOS PAC (ECONÔMICO)</div>
+                        <div style="font-size: 1.15rem; font-weight: 800; color: var(--adm-success); margin-top: 0.2rem;">@_simQuote.PacPrice.ToString("C", PtBr)</div>
+                        <div style="font-size: 0.8rem; color: var(--adm-muted);">Prazo: @_simQuote.PacDaysMin a @_simQuote.PacDaysMax dias úteis</div>
+                    </div>
+                    <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem;">
+                        <div style="font-size: 0.75rem; color: var(--adm-muted); font-weight: 700;">CORREIOS SEDEX (EXPRESSO)</div>
+                        <div style="font-size: 1.15rem; font-weight: 800; color: var(--adm-accent); margin-top: 0.2rem;">@_simQuote.SedexPrice.ToString("C", PtBr)</div>
+                        <div style="font-size: 0.8rem; color: var(--adm-muted);">Prazo: @_simQuote.SedexDaysMin a @_simQuote.SedexDaysMax dias úteis</div>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+
+    <!-- Resumo Rápido -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+        <div class="adm-card" style="padding: 0.9rem 1rem;">
+            <div style="font-size: 0.74rem; font-weight: 700; color: var(--adm-muted); text-transform: uppercase;">Total de Pedidos</div>
+            <div style="font-size: 1.4rem; font-weight: 800; margin-top: 0.2rem;">@_orders.Count</div>
+        </div>
+        <div class="adm-card" style="padding: 0.9rem 1rem;">
+            <div style="font-size: 0.74rem; font-weight: 700; color: var(--adm-muted); text-transform: uppercase;">Aguardando Pix</div>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #D97706; margin-top: 0.2rem;">@_orders.Count(o => o.Status == BrazilShippingCalculator.OrderStatuses.AwaitingPix)</div>
+        </div>
+        <div class="adm-card" style="padding: 0.9rem 1rem;">
+            <div style="font-size: 0.74rem; font-weight: 700; color: var(--adm-muted); text-transform: uppercase;">Para Enviar</div>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #2563EB; margin-top: 0.2rem;">@_orders.Count(o => o.Status == BrazilShippingCalculator.OrderStatuses.PaidPreparing)</div>
+        </div>
+        <div class="adm-card" style="padding: 0.9rem 1rem;">
+            <div style="font-size: 0.74rem; font-weight: 700; color: var(--adm-muted); text-transform: uppercase;">Enviados / Entregues</div>
+            <div style="font-size: 1.4rem; font-weight: 800; color: var(--adm-success); margin-top: 0.2rem;">@_orders.Count(o => o.Status is BrazilShippingCalculator.OrderStatuses.Shipped or BrazilShippingCalculator.OrderStatuses.Delivered)</div>
+        </div>
+    </div>
+
+    <!-- Filtros por Status -->
+    <div style="display: flex; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 1rem;">
+        @foreach (var tab in StatusTabs)
+        {
+            var isSel = _statusFilter == tab.Key;
+            <button type="button"
+                    class="adm-btn @(isSel ? "adm-btn-primary" : "adm-btn-outline")"
+                    style="padding: 0.45rem 0.85rem; font-size: 0.82rem;"
+                    @onclick="() => _statusFilter = tab.Key">
+                @tab.Label
+            </button>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <div class="adm-card">Carregando pedidos...</div>
+    }
+    else if (FilteredOrders.Count == 0)
+    {
+        <div class="adm-card" style="text-align: center; padding: 2.25rem 1.25rem; color: var(--adm-muted);">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📦</div>
+            <strong>Nenhum pedido encontrado nesta aba.</strong>
+            <div style="font-size: 0.84rem; margin-top: 0.35rem;">
+                Quando clientes comprarem via Pix no seu catálogo público, os pedidos aparecerão aqui com endereço completo e frete estimado dos Correios.
+            </div>
+        </div>
+    }
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            @foreach (var order in FilteredOrders)
+            {
+                var edit = GetOrCreateDraft(order);
+                <article class="adm-card" style="border-left: 4px solid @GetStatusAccentColor(order.Status);">
+                    <!-- Cabeçalho do Pedido -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.85rem;">
+                        <div>
+                            <div style="display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;">
+                                <strong style="font-size: 1.05rem;">Pedido @order.OrderNumber</strong>
+                                <span class="pill-badge @GetStatusPillClass(order.Status)">
+                                    @BrazilShippingCalculator.OrderStatuses.LabelFor(order.Status)
+                                </span>
+                                <span class="pill-badge pill-green">💸 Exclusivo Pix</span>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                                Realizado em @order.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                @if (order.StockDeducted)
+                                {
+                                    <span> · ✓ Estoque baixado</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.74rem; color: var(--adm-muted); text-transform: uppercase;">Valor dos Itens (Pix)</div>
+                            <div style="font-size: 1.25rem; font-weight: 800; color: var(--adm-text);">@order.TotalPixAmount.ToString("C", PtBr)</div>
+                        </div>
+                    </div>
+
+                    <!-- Itens Comprados -->
+                    <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.75rem 0.9rem; margin-bottom: 0.85rem;">
+                        @foreach (var item in order.Items)
+                        {
+                            <div style="display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; font-size: 0.9rem;">
+                                <div>
+                                    <strong>@item.Quantity x @item.ProductName</strong>
+                                    <span style="color: var(--adm-muted);"> — Cor: @item.Color · Tam: @item.Size (SKU: @item.Sku)</span>
+                                </div>
+                                <strong>@item.Subtotal.ToString("C", PtBr)</strong>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Grade Endereço + Correios -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.85rem; margin-bottom: 0.95rem;">
+                        <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem;">
+                            <div style="font-size: 0.74rem; font-weight: 800; color: var(--adm-accent); text-transform: uppercase; margin-bottom: 0.35rem;">
+                                📍 Comprador &amp; Endereço de Entrega
+                            </div>
+                            <div style="font-weight: 700;">@order.CustomerName</div>
+                            <div style="font-size: 0.84rem; color: var(--adm-muted); margin-bottom: 0.35rem;">WhatsApp: @order.CustomerWhatsapp</div>
+                            <div style="font-size: 0.86rem; line-height: 1.45;">@order.FormattedDeliveryAddress</div>
+                            @if (!string.IsNullOrWhiteSpace(order.CustomerNotes))
+                            {
+                                <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.35rem;">
+                                    <em>Obs. do cliente: @order.CustomerNotes</em>
+                                </div>
+                            }
+                            <div style="display: flex; gap: 0.45rem; flex-wrap: wrap; margin-top: 0.65rem;">
+                                <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;"
+                                        @onclick="() => CopyShippingLabelAsync(order)">
+                                    @(_copiedOrderId == order.Id ? "✓ Etiqueta Copiada" : "📋 Copiar Endereço")
+                                </button>
+                                <a href="@BuildBuyerWhatsAppUrl(order)" target="_blank" rel="noopener"
+                                   class="adm-btn adm-btn-success" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;">
+                                    💬 WhatsApp Comprador
+                                </a>
+                            </div>
+                        </div>
+
+                        <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem;">
+                            <div style="font-size: 0.74rem; font-weight: 800; color: var(--adm-accent); text-transform: uppercase; margin-bottom: 0.35rem;">
+                                🚚 Distância &amp; Estimativa Correios
+                            </div>
+                            <div style="font-size: 0.88rem; font-weight: 700; margin-bottom: 0.3rem;">
+                                Distância até o comprador: @order.DistanceKmFromSeller.ToString("0.#") km
+                            </div>
+                            <div style="font-size: 0.79rem; color: var(--adm-muted); margin-bottom: 0.55rem;">
+                                Faixa: @order.ShippingZoneLabel
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                <div style="border: 1px solid var(--adm-border); border-radius: 8px; padding: 0.5rem; background: var(--adm-surface);">
+                                    <div style="font-size: 0.7rem; color: var(--adm-muted); font-weight: 700;">CORREIOS PAC</div>
+                                    <div style="font-size: 1rem; font-weight: 800; color: var(--adm-success);">@order.EstimatedCorreiosPac.ToString("C", PtBr)</div>
+                                    <div style="font-size: 0.72rem; color: var(--adm-muted);">@order.EstimatedPacDaysMin–@order.EstimatedPacDaysMax dias úteis</div>
+                                </div>
+                                <div style="border: 1px solid var(--adm-border); border-radius: 8px; padding: 0.5rem; background: var(--adm-surface);">
+                                    <div style="font-size: 0.7rem; color: var(--adm-muted); font-weight: 700;">CORREIOS SEDEX</div>
+                                    <div style="font-size: 1rem; font-weight: 800; color: var(--adm-accent);">@order.EstimatedCorreiosSedex.ToString("C", PtBr)</div>
+                                    <div style="font-size: 0.72rem; color: var(--adm-muted);">@order.EstimatedSedexDaysMin–@order.EstimatedSedexDaysMax dias úteis</div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 0.55rem;">
+                                <a href="@BrazilShippingCalculator.OfficialCorreiosUrl" target="_blank" rel="noopener"
+                                   style="font-size: 0.76rem; color: var(--adm-accent); font-weight: 600;">
+                                    Conferir no Preços e Prazos dos Correios &nearr;
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gestão de Pix e Envio pelo Vendedor -->
+                    @if (order.Status != BrazilShippingCalculator.OrderStatuses.Cancelled)
+                    {
+                        <div style="border-top: 1px solid var(--adm-border); padding-top: 0.85rem;">
+                            @if (order.Status == BrazilShippingCalculator.OrderStatuses.AwaitingPix && Gateway.CanManageStock)
+                            {
+                                <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid #F59E0B; border-radius: 8px; padding: 0.7rem 0.85rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.85rem;">
+                                    <div style="font-size: 0.84rem;">
+                                        <strong>Pix aguardando conferência:</strong> Confira no seu banco se o Pix de <strong>@order.TotalPixAmount.ToString("C", PtBr)</strong> caiu antes de despachar o pacote.
+                                    </div>
+                                    <button type="button" class="adm-btn adm-btn-success" disabled="@_savingOrderId.HasValue" @onclick="() => ConfirmPixAsync(order.Id)">
+                                        ✅ Confirmar Pix Recebido &amp; Baixar Estoque
+                                    </button>
+                                </div>
+                            }
+
+                            <div style="font-size: 0.82rem; font-weight: 800; margin-bottom: 0.5rem;">
+                                📬 Como você vai mandar este item? (Organize o envio)
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 0.65rem; margin-bottom: 0.7rem;">
+                                <div>
+                                    <label class="adm-label">Meio de Envio Escolhido</label>
+                                    <select class="adm-select" @bind="edit.FulfillmentMethod">
+                                        @foreach (var method in BrazilShippingCalculator.FulfillmentMethods.All)
+                                        {
+                                            <option value="@method">@method</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="adm-label">Código de Rastreio (Opcional)</label>
+                                    <input class="adm-input" @bind="edit.TrackingCode" placeholder="Ex.: AA123456789BR" />
+                                </div>
+                                <div>
+                                    <label class="adm-label">Custo Real do Frete (R$)</label>
+                                    <input type="number" step="0.01" min="0" class="adm-input" @bind="edit.AgreedShippingCost" placeholder="@order.EstimatedCorreiosPac.ToString("0.00", CultureInfo.InvariantCulture)" />
+                                </div>
+                                <div>
+                                    <label class="adm-label">Observação do Envio</label>
+                                    <input class="adm-input" @bind="edit.SellerNotes" placeholder="Ex.: Postado hoje às 15h" />
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                <button type="button" class="adm-btn adm-btn-outline" disabled="@_savingOrderId.HasValue"
+                                        @onclick="() => SaveFulfillmentAsync(order.Id, markShipped: false, markDelivered: false)">
+                                    💾 Salvar Forma de Envio
+                                </button>
+
+                                @if (order.Status != BrazilShippingCalculator.OrderStatuses.Shipped && order.Status != BrazilShippingCalculator.OrderStatuses.Delivered)
+                                {
+                                    <button type="button" class="adm-btn adm-btn-primary" disabled="@_savingOrderId.HasValue"
+                                            @onclick="() => SaveFulfillmentAsync(order.Id, markShipped: true, markDelivered: false)">
+                                        🚚 Marcar como Enviado
+                                    </button>
+                                }
+
+                                @if (order.Status != BrazilShippingCalculator.OrderStatuses.Delivered)
+                                {
+                                    <button type="button" class="adm-btn adm-btn-success" disabled="@_savingOrderId.HasValue"
+                                            @onclick="() => SaveFulfillmentAsync(order.Id, markShipped: true, markDelivered: true)">
+                                        🎉 Marcar como Entregue
+                                    </button>
+                                }
+
+                                @if (order.Status != BrazilShippingCalculator.OrderStatuses.Delivered && Gateway.CanManageStock)
+                                {
+                                    <button type="button" class="adm-btn adm-btn-danger" style="margin-left: auto;" disabled="@_savingOrderId.HasValue"
+                                            @onclick="() => CancelOrderAsync(order.Id)">
+                                        Cancelar Pedido
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    }
+}
+
+@code {
+    private static readonly CultureInfo PtBr = new("pt-BR");
+
+    private static readonly (string Key, string Label)[] StatusTabs =
+    [
+        ("Todos", "Todos"),
+        (BrazilShippingCalculator.OrderStatuses.AwaitingPix, "Aguardando Pix"),
+        (BrazilShippingCalculator.OrderStatuses.PaidPreparing, "Para Enviar"),
+        (BrazilShippingCalculator.OrderStatuses.Shipped, "Enviados"),
+        (BrazilShippingCalculator.OrderStatuses.Delivered, "Entregues"),
+        (BrazilShippingCalculator.OrderStatuses.Cancelled, "Cancelados")
+    ];
+
+    private AdminStoreSettingsDto? _settings;
+    private IReadOnlyList<StoreOrderDto> _orders = [];
+    private readonly Dictionary<Guid, UpdateOrderFulfillmentRequest> _drafts = new();
+    private string _statusFilter = "Todos";
+    private bool _loading = true;
+    private Guid? _savingOrderId;
+    private Guid? _copiedOrderId;
+    private string? _error;
+    private string? _success;
+
+    private bool _showCorreiosSimulator;
+    private bool _simulating;
+    private string _simOriginCep = string.Empty;
+    private string _simDestCep = string.Empty;
+    private int _simWeightG = 450;
+    private int _simLenCm = 24;
+    private int _simWidthCm = 18;
+    private int _simHeightCm = 8;
+    private CorreiosQuoteDto? _simQuote;
+
+    private IReadOnlyList<StoreOrderDto> FilteredOrders =>
+        _statusFilter == "Todos"
+            ? _orders
+            : _orders.Where(o => string.Equals(o.Status, _statusFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadOrdersAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            if (Gateway.IsAdmin)
+            {
+                _settings = await Gateway.GetStoreSettingsAsync();
+                if (string.IsNullOrWhiteSpace(_simOriginCep) && !string.IsNullOrWhiteSpace(_settings.OriginCep))
+                    _simOriginCep = _settings.OriginCep;
+                if (_settings.DefaultPackageWeightGrams >= 100)
+                    _simWeightG = _settings.DefaultPackageWeightGrams;
+            }
+
+            _orders = await Gateway.GetOrdersAsync();
+            _drafts.Clear();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private UpdateOrderFulfillmentRequest GetOrCreateDraft(StoreOrderDto order)
+    {
+        if (_drafts.TryGetValue(order.Id, out var existing))
+            return existing;
+
+        var draft = new UpdateOrderFulfillmentRequest
+        {
+            FulfillmentMethod = string.IsNullOrWhiteSpace(order.FulfillmentMethod)
+                ? BrazilShippingCalculator.FulfillmentMethods.CorreiosPac
+                : order.FulfillmentMethod,
+            TrackingCode = order.TrackingCode,
+            AgreedShippingCost = order.AgreedShippingCost ?? order.EstimatedCorreiosPac,
+            SellerNotes = order.SellerNotes
+        };
+        _drafts[order.Id] = draft;
+        return draft;
+    }
+
+    private async Task RunCorreiosSimulationAsync()
+    {
+        _error = null;
+        _simulating = true;
+        try
+        {
+            _simQuote = await Gateway.SimulateCorreiosAsync(
+                _simOriginCep,
+                _simDestCep,
+                _simWeightG,
+                _simLenCm,
+                _simWidthCm,
+                _simHeightCm);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _simulating = false;
+        }
+    }
+
+    private async Task ConfirmPixAsync(Guid orderId)
+    {
+        _error = null;
+        _success = null;
+        _savingOrderId = orderId;
+        try
+        {
+            var updated = await Gateway.ConfirmOrderPixAsync(orderId);
+            _success = $"Pix do pedido {updated.OrderNumber} confirmado e estoque atualizado!";
+            await LoadOrdersAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingOrderId = null;
+        }
+    }
+
+    private async Task SaveFulfillmentAsync(Guid orderId, bool markShipped, bool markDelivered)
+    {
+        _error = null;
+        _success = null;
+        _savingOrderId = orderId;
+        try
+        {
+            var order = _orders.First(o => o.Id == orderId);
+            var draft = GetOrCreateDraft(order);
+            draft.MarkAsShipped = markShipped;
+            draft.MarkAsDelivered = markDelivered;
+
+            var updated = await Gateway.UpdateOrderFulfillmentAsync(orderId, draft);
+            _success = $"Dados de envio do pedido {updated.OrderNumber} atualizados ({updated.FulfillmentMethod}).";
+            await LoadOrdersAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingOrderId = null;
+        }
+    }
+
+    private async Task CancelOrderAsync(Guid orderId)
+    {
+        _error = null;
+        _success = null;
+        _savingOrderId = orderId;
+        try
+        {
+            var updated = await Gateway.CancelOrderAsync(orderId, "Cancelado pelo vendedor no painel.");
+            _success = $"Pedido {updated.OrderNumber} cancelado.";
+            await LoadOrdersAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingOrderId = null;
+        }
+    }
+
+    private async Task CopyShippingLabelAsync(StoreOrderDto order)
+    {
+        try
+        {
+            var text =
+                $"DESTINATÁRIO: {order.CustomerName}\n" +
+                $"WHATSAPP: {order.CustomerWhatsapp}\n" +
+                $"ENDEREÇO: {order.FormattedDeliveryAddress}\n" +
+                $"PEDIDO: {order.OrderNumber}";
+            await Clipboard.Default.SetTextAsync(text);
+            _copiedOrderId = order.Id;
+        }
+        catch
+        {
+        }
+    }
+
+    private static string BuildBuyerWhatsAppUrl(StoreOrderDto order)
+    {
+        var trackingInfo = string.IsNullOrWhiteSpace(order.TrackingCode)
+            ? string.Empty
+            : $" Código de rastreio: {order.TrackingCode}.";
+        var msg =
+            $"Olá {order.CustomerName}! Sobre o seu pedido {order.OrderNumber} ({BrazilShippingCalculator.OrderStatuses.LabelFor(order.Status)}) — Envio: {order.FulfillmentMethod}.{trackingInfo}";
+        return $"https://wa.me/{order.CustomerWhatsapp}?text={Uri.EscapeDataString(msg)}";
+    }
+
+    private static string GetStatusPillClass(string status) => status switch
+    {
+        BrazilShippingCalculator.OrderStatuses.Delivered => "pill-green",
+        BrazilShippingCalculator.OrderStatuses.Shipped => "pill-blue",
+        BrazilShippingCalculator.OrderStatuses.PaidPreparing => "pill-gold",
+        BrazilShippingCalculator.OrderStatuses.Cancelled => "pill-slate",
+        _ => "pill-gold"
+    };
+
+    private static string GetStatusAccentColor(string status) => status switch
+    {
+        BrazilShippingCalculator.OrderStatuses.Delivered => "#16A34A",
+        BrazilShippingCalculator.OrderStatuses.Shipped => "#2563EB",
+        BrazilShippingCalculator.OrderStatuses.PaidPreparing => "#B69158",
+        BrazilShippingCalculator.OrderStatuses.Cancelled => "#71717A",
+        _ => "#D97706"
+    };
+}

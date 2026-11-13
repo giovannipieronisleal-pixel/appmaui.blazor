@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddScoped<IClothingStoreRepository>(sp =>
     new ClothingStoreRepository(sp.GetRequiredService<IPasswordHasher>(), sharedDbPath));
 builder.Services.AddScoped<CatalogService>();
+builder.Services.AddScoped<OrderAndShippingService>();
 builder.Services.AddScoped<CatalogDataGateway>();
 
 var app = builder.Build();

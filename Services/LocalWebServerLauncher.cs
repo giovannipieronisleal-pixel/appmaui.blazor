@@ -21,13 +21,16 @@ public static class LocalWebServerLauncher
     public static int ActivePort { get; private set; } = DefaultPort;
 
     private static CatalogService? _catalogService;
+    private static OrderAndShippingService? _orderService;
     private static TcpListener? _embeddedListener;
     private static Process? _webServerProcess;
     private static readonly SemaphoreSlim _startLock = new(1, 1);
 
-    public static void Initialize(CatalogService catalogService)
+    public static void Initialize(CatalogService catalogService, OrderAndShippingService? orderService = null)
     {
         _catalogService = catalogService;
+        if (orderService is not null)
+            _orderService = orderService;
     }
 
     public static async Task OpenCatalogInBrowserAsync(string url, string? localStoreSlug = null)
@@ -217,40 +220,147 @@ public static class LocalWebServerLauncher
                 client.SendTimeout = 5000;
 
                 await using var stream = client.GetStream();
-                using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
-
-                var requestLine = await reader.ReadLineAsync();
+                var (requestLine, headers, bodyBytes) = await ReadHttpRequestAsync(stream);
                 if (string.IsNullOrWhiteSpace(requestLine))
                     return;
 
-                // Consome cabeçalhos HTTP
-                string? headerLine;
-                while (!string.IsNullOrEmpty(headerLine = await reader.ReadLineAsync()))
-                {
-                }
-
                 var parts = requestLine.Split(' ');
+                var method = parts.Length >= 1 ? parts[0].ToUpperInvariant() : "GET";
                 var rawTarget = parts.Length >= 2 ? parts[1] : "/";
 
+                if (rawTarget.StartsWith("/api/public/", StringComparison.OrdinalIgnoreCase))
+                {
+                    var (statusCode, jsonPayload) = await HandleEmbeddedApiRequestAsync(method, rawTarget, bodyBytes);
+                    await WriteHttpResponseAsync(stream, statusCode, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(jsonPayload));
+                    return;
+                }
+
                 var html = await RenderCatalogResponseAsync(rawTarget);
-                var bodyBytes = Encoding.UTF8.GetBytes(html);
-
-                var responseHeader =
-                    "HTTP/1.1 200 OK\r\n" +
-                    "Content-Type: text/html; charset=utf-8\r\n" +
-                    $"Content-Length: {bodyBytes.Length}\r\n" +
-                    "Cache-Control: no-store, no-cache, must-revalidate\r\n" +
-                    "X-Content-Type-Options: nosniff\r\n" +
-                    "Connection: close\r\n\r\n";
-
-                var headerBytes = Encoding.ASCII.GetBytes(responseHeader);
-                await stream.WriteAsync(headerBytes);
-                await stream.WriteAsync(bodyBytes);
-                await stream.FlushAsync();
+                await WriteHttpResponseAsync(stream, "200 OK", "text/html; charset=utf-8", Encoding.UTF8.GetBytes(html));
             }
             catch
             {
             }
+        }
+    }
+
+    private static async Task<(string? RequestLine, Dictionary<string, string> Headers, byte[] Body)> ReadHttpRequestAsync(NetworkStream stream)
+    {
+        var buffer = new List<byte>(2048);
+        var single = new byte[1];
+        var headerEndIndex = -1;
+
+        while (buffer.Count < 65536)
+        {
+            var read = await stream.ReadAsync(single.AsMemory(0, 1));
+            if (read == 0)
+                break;
+
+            buffer.Add(single[0]);
+            var n = buffer.Count;
+            if (n >= 4 && buffer[n - 4] == '\r' && buffer[n - 3] == '\n' && buffer[n - 2] == '\r' && buffer[n - 1] == '\n')
+            {
+                headerEndIndex = n - 4;
+                break;
+            }
+        }
+
+        if (headerEndIndex <= 0)
+            return (null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), []);
+
+        var headerText = Encoding.ASCII.GetString(buffer.Take(headerEndIndex).ToArray());
+        var lines = headerText.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        var requestLine = lines.Length > 0 ? lines[0] : null;
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var colon = lines[i].IndexOf(':');
+            if (colon > 0)
+            {
+                headers[lines[i][..colon].Trim()] = lines[i][(colon + 1)..].Trim();
+            }
+        }
+
+        byte[] body = [];
+        if (headers.TryGetValue("Content-Length", out var lenStr) &&
+            int.TryParse(lenStr, out var contentLength) &&
+            contentLength > 0 &&
+            contentLength <= 1_048_576)
+        {
+            body = new byte[contentLength];
+            var totalRead = 0;
+            while (totalRead < contentLength)
+            {
+                var chunk = await stream.ReadAsync(body.AsMemory(totalRead, contentLength - totalRead));
+                if (chunk == 0)
+                    break;
+                totalRead += chunk;
+            }
+            if (totalRead < contentLength)
+                body = body[..totalRead];
+        }
+
+        return (requestLine, headers, body);
+    }
+
+    private static async Task WriteHttpResponseAsync(NetworkStream stream, string statusCode, string contentType, byte[] bodyBytes)
+    {
+        var responseHeader =
+            $"HTTP/1.1 {statusCode}\r\n" +
+            $"Content-Type: {contentType}\r\n" +
+            $"Content-Length: {bodyBytes.Length}\r\n" +
+            "Cache-Control: no-store, no-cache, must-revalidate\r\n" +
+            "X-Content-Type-Options: nosniff\r\n" +
+            "Connection: close\r\n\r\n";
+
+        var headerBytes = Encoding.ASCII.GetBytes(responseHeader);
+        await stream.WriteAsync(headerBytes);
+        await stream.WriteAsync(bodyBytes);
+        await stream.FlushAsync();
+    }
+
+    private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static async Task<(string StatusCode, string Json)> HandleEmbeddedApiRequestAsync(string method, string rawTarget, byte[] bodyBytes)
+    {
+        if (_orderService is null)
+            return ("503 Service Unavailable", JsonSerializer.Serialize(new { error = "Serviço de pedidos Pix indisponível." }, WebJsonOptions));
+
+        try
+        {
+            var path = rawTarget.Split('?')[0].TrimEnd('/');
+
+            if (method == "GET" && path.StartsWith("/api/public/cep/", StringComparison.OrdinalIgnoreCase))
+            {
+                var cep = Uri.UnescapeDataString(path["/api/public/cep/".Length..]);
+                var dto = await _orderService.LookupCepAsync(cep);
+                return ("200 OK", JsonSerializer.Serialize(dto, WebJsonOptions));
+            }
+
+            if (method == "POST" && string.Equals(path, "/api/public/shipping-quote", StringComparison.OrdinalIgnoreCase))
+            {
+                var req = JsonSerializer.Deserialize<ShippingQuoteRequest>(bodyBytes, WebJsonOptions) ?? new ShippingQuoteRequest();
+                var quote = await _orderService.QuoteShippingForBuyerAsync(req);
+                return ("200 OK", JsonSerializer.Serialize(quote, WebJsonOptions));
+            }
+
+            if (method == "POST" && string.Equals(path, "/api/public/orders/pix", StringComparison.OrdinalIgnoreCase))
+            {
+                var req = JsonSerializer.Deserialize<CreatePixOrderRequest>(bodyBytes, WebJsonOptions) ?? new CreatePixOrderRequest();
+                var order = await _orderService.PlacePixOrderAsync(req);
+                return ("201 Created", JsonSerializer.Serialize(order, WebJsonOptions));
+            }
+
+            return ("404 Not Found", JsonSerializer.Serialize(new { error = "Endpoint não encontrado." }, WebJsonOptions));
+        }
+        catch (ClothingStore.Domain.Exceptions.DomainException dex)
+        {
+            return ("400 Bad Request", JsonSerializer.Serialize(new { error = dex.Message }, WebJsonOptions));
+        }
+        catch (Exception ex)
+        {
+            return ("400 Bad Request", JsonSerializer.Serialize(new { error = ex.Message }, WebJsonOptions));
         }
     }
 
@@ -538,13 +648,53 @@ public static class LocalWebServerLauncher
 
         sb.AppendLine($"<a id=\"waBtn\" href=\"{H(initialWaUrl)}\" target=\"_blank\" rel=\"noopener\" class=\"btn-wa-big\">Consultar pelo WhatsApp</a>");
         sb.AppendLine("<div class=\"wa-preview\"><strong>Mensagem automática:</strong><div id=\"waMsg\">\"" + H(initialWaMsg) + "\"</div></div>");
+
+        if (store.DirectPixSalesReady && product.Variants.Any(v => v.IsActive && v.StockQuantity > 0))
+        {
+            var scopeDesc = H(BrazilShippingCalculator.DeliveryScopeModes.Describe(
+                store.DeliveryScopeMode,
+                store.MaxDeliveryDistanceKm,
+                store.OriginCity,
+                store.OriginState));
+
+            sb.AppendLine("<div id=\"pixCheckoutBox\" style=\"margin-top:1.25rem;border:1.5px solid #16A34A;border-radius:10px;padding:1rem;background:var(--brand-bg,#FAF8F5);\">");
+            sb.AppendLine("<div style=\"display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.4rem;\"><strong>💸 Comprar Direto pelo App (Apenas Pix)</strong><span style=\"font-size:0.72rem;font-weight:700;background:#DCFCE7;color:#166534;padding:0.18rem 0.55rem;border-radius:999px;\">Exclusivo Pix</span></div>");
+            sb.AppendLine($"<p style=\"font-size:0.82rem;color:#57534E;margin:0 0 0.7rem;\">Área de entrega: <strong>{scopeDesc}</strong></p>");
+            sb.AppendLine("<div id=\"pixErr\" style=\"display:none;background:rgba(239,68,68,0.12);border:1px solid #EF4444;color:#991B1B;padding:0.55rem 0.7rem;border-radius:6px;font-size:0.82rem;margin-bottom:0.6rem;\"></div>");
+            sb.AppendLine("<div style=\"display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.55rem;\">");
+            sb.AppendLine("<input id=\"pxCep\" type=\"text\" placeholder=\"CEP de Entrega (ex.: 01310-100)\" style=\"flex:1;min-width:160px;padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxQty\" type=\"number\" min=\"1\" max=\"50\" value=\"1\" style=\"width:80px;padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\" title=\"Quantidade\"/>");
+            sb.AppendLine("<button type=\"button\" class=\"btn-outline\" onclick=\"checkShipping()\">Calcular</button>");
+            sb.AppendLine("</div>");
+            sb.AppendLine("<div id=\"pxShipInfo\" style=\"display:none;padding:0.6rem;border-radius:8px;font-size:0.82rem;margin-bottom:0.65rem;\"></div>");
+            sb.AppendLine("<div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.45rem;margin-bottom:0.65rem;\">");
+            sb.AppendLine("<input id=\"pxName\" type=\"text\" placeholder=\"Seu Nome Completo *\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxWa\" type=\"text\" placeholder=\"Seu WhatsApp (DDD+Número) *\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxStreet\" type=\"text\" placeholder=\"Rua / Logradouro *\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxNum\" type=\"text\" placeholder=\"Número *\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxComp\" type=\"text\" placeholder=\"Complemento\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxNeigh\" type=\"text\" placeholder=\"Bairro *\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxCity\" type=\"text\" placeholder=\"Cidade *\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;\"/>");
+            sb.AppendLine("<input id=\"pxUf\" type=\"text\" maxlength=\"2\" placeholder=\"UF *\" style=\"padding:0.5rem;border:1px solid #D6D3D1;border-radius:6px;text-transform:uppercase;\"/>");
+            sb.AppendLine("</div>");
+            sb.AppendLine("<button id=\"pxSubmitBtn\" type=\"button\" class=\"btn-dark full\" style=\"background:#16A34A;color:#FFF;padding:0.85rem;font-size:0.95rem;\" onclick=\"submitPixOrder()\">💸 Finalizar Pedido no Pix</button>");
+            sb.AppendLine("<div id=\"pxReceipt\" style=\"display:none;background:rgba(22,163,74,0.12);border:1px solid #16A34A;border-radius:8px;padding:0.85rem;margin-top:0.65rem;\"></div>");
+            sb.AppendLine("</div>");
+        }
+
         sb.AppendLine("</div></main>");
 
+        var variantJson = JsonSerializer.Serialize(product.Variants.Select(v => new { id = v.Id, color = v.Color, size = v.Size, stock = v.StockQuantity }), WebJsonOptions);
         sb.AppendLine("<script>");
+        sb.AppendLine($"var prodId = '{product.Id}';");
+        sb.AppendLine($"var unitPrice = {product.BasePrice.ToString("0.00", CultureInfo.InvariantCulture)};");
+        sb.AppendLine($"var defWeightG = {store.DefaultPackageWeightGrams};");
+        sb.AppendLine($"var variantsData = {variantJson};");
         sb.AppendLine($"var storePhone = '{HJs(store.WhatsappNumber)}';");
         sb.AppendLine($"var prodName = '{HJs(product.Name)}';");
         sb.AppendLine($"var selColor = '{HJs(defaultColor)}';");
         sb.AppendLine($"var selSize = '{HJs(defaultSize)}';");
+        sb.AppendLine("function getSelectedVariant(){ return variantsData.find(function(v){ return (!selColor || v.color.toLowerCase()===selColor.toLowerCase()) && (!selSize || v.size.toLowerCase()===selSize.toLowerCase()) && v.stock>0; }) || variantsData[0]; }");
         sb.AppendLine("function updateWa(){");
         sb.AppendLine("  var c = selColor ? selColor.toLowerCase() : 'padrão';");
         sb.AppendLine("  var s = selSize ? selSize.toUpperCase() : 'único';");
@@ -554,6 +704,8 @@ public static class LocalWebServerLauncher
         sb.AppendLine("}");
         sb.AppendLine("function setColor(c){ selColor=c; var el=document.getElementById('lblColor'); if(el) el.textContent=c; updateWa(); }");
         sb.AppendLine("function setSize(s){ selSize=s; var el=document.getElementById('lblSize'); if(el) el.textContent=s; updateWa(); }");
+        sb.AppendLine("async function checkShipping(){ var err=document.getElementById('pxErr'); var box=document.getElementById('pxShipInfo'); err.style.display='none'; box.style.display='none'; var cep=document.getElementById('pxCep').value; var qty=parseInt(document.getElementById('pxQty').value||'1'); try{ var r1=await fetch('/api/public/cep/'+encodeURIComponent(cep)); if(r1.ok){ var c=await r1.json(); if(c.street && !document.getElementById('pxStreet').value) document.getElementById('pxStreet').value=c.street; if(c.neighborhood && !document.getElementById('pxNeigh').value) document.getElementById('pxNeigh').value=c.neighborhood; if(c.city) document.getElementById('pxCity').value=c.city; if(c.state) document.getElementById('pxUf').value=c.state; } var r2=await fetch('/api/public/shipping-quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destinationCep:cep,destinationCity:document.getElementById('pxCity').value,destinationState:document.getElementById('pxUf').value,weightGrams:defWeightG*Math.max(1,qty)})}); var data=await r2.json(); if(!r2.ok) throw new Error(data.error||'Erro ao calcular'); box.style.display='block'; box.style.background=data.eligibility.isAllowed?'rgba(22,163,74,0.12)':'rgba(239,68,68,0.12)'; box.style.border=data.eligibility.isAllowed?'1px solid #16A34A':'1px solid #EF4444'; var h='<strong>'+(data.eligibility.isAllowed?'✓ Endereço atendido: ':'✕ Fora do limite: ')+'</strong>'+data.eligibility.reasonMessage; if(data.eligibility.isAllowed && data.correiosQuote){ h+='<br/>Correios estimado: PAC R$ '+data.correiosQuote.pacPrice.toFixed(2)+' | SEDEX R$ '+data.correiosQuote.sedexPrice.toFixed(2); } box.innerHTML=h; }catch(e){ err.style.display='block'; err.textContent=e.message; } }");
+        sb.AppendLine("async function submitPixOrder(){ var err=document.getElementById('pxErr'); var rec=document.getElementById('pxReceipt'); err.style.display='none'; var v=getSelectedVariant(); if(!v){ err.style.display='block'; err.textContent='Selecione uma variante com estoque.'; return; } try{ var payload={productId:prodId,productVariantId:v.id,quantity:parseInt(document.getElementById('pxQty').value||'1'),customerName:document.getElementById('pxName').value,customerWhatsapp:document.getElementById('pxWa').value,cep:document.getElementById('pxCep').value,street:document.getElementById('pxStreet').value,number:document.getElementById('pxNum').value,complement:document.getElementById('pxComp').value,neighborhood:document.getElementById('pxNeigh').value,city:document.getElementById('pxCity').value,state:document.getElementById('pxUf').value}; var r=await fetch('/api/public/orders/pix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); var o=await r.json(); if(!r.ok) throw new Error(o.error||'Falha ao gerar pedido Pix'); rec.style.display='block'; rec.innerHTML='<strong>✅ Pedido '+o.orderNumber+' gerado!</strong><br/>Total Pix: R$ '+o.totalPixAmount.toFixed(2)+'<br/>Chave Pix: <code>'+o.pixKey+'</code><br/>Código Copia e Cola:<textarea readonly rows=\"3\" style=\"width:100%;margin-top:0.35rem;font-family:monospace;font-size:0.75rem;\">'+o.pixBrCode+'</textarea>'; }catch(e){ err.style.display='block'; err.textContent=e.message; } }");
         sb.AppendLine("</script></body></html>");
         return sb.ToString();
     }

@@ -18,6 +18,7 @@ public sealed class ClothingStoreDatabaseState
     public List<StockMovement> StockMovements { get; set; } = [];
     public StoreSettings StoreSettings { get; set; } = new();
     public List<PlanActivationCode> PlanActivationCodes { get; set; } = [];
+    public List<StoreOrder> Orders { get; set; } = [];
 
     public static ClothingStoreDatabaseState CreateInitialSeed(IPasswordHasher passwordHasher)
     {

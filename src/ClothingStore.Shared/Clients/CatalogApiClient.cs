@@ -70,5 +70,47 @@ public sealed class CatalogApiClient
 
         return await response.Content.ReadFromJsonAsync<ProductDetailDto>(cancellationToken: ct);
     }
+
+    public async Task<CepAddressLookupDto?> LookupCepAsync(string cep, CancellationToken ct = default)
+    {
+        var response = await _httpClient.GetAsync($"/api/public/cep/{Uri.EscapeDataString(cep)}", ct);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadFromJsonAsync<CepAddressLookupDto>(cancellationToken: ct);
+    }
+
+    public async Task<ShippingQuoteResponse> QuoteShippingAsync(ShippingQuoteRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/public/shipping-quote", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<ShippingQuoteResponse>(cancellationToken: ct))!;
+    }
+
+    public async Task<StoreOrderDto> PlacePixOrderAsync(CreatePixOrderRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/public/orders/pix", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
+    }
+
+    private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var raw = await response.Content.ReadAsStringAsync(ct);
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("error", out var errProp))
+                throw new InvalidOperationException(errProp.GetString() ?? "Erro na requisição.");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
+
+        throw new InvalidOperationException($"Erro HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
+    }
 }
 

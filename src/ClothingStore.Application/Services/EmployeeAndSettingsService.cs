@@ -254,6 +254,58 @@ public sealed class EmployeeAndSettingsService
                 request.IntermediaryPlanMonthlyPrice);
         }
 
+        if (request.DirectPixSalesEnabled.HasValue ||
+            request.StorePixKey is not null ||
+            request.StorePixReceiverName is not null ||
+            request.OriginCep is not null ||
+            request.OriginCity is not null ||
+            request.OriginState is not null ||
+            request.DeliveryScopeMode is not null ||
+            request.MaxDeliveryDistanceKm.HasValue ||
+            request.DefaultPackageWeightGrams.HasValue)
+        {
+            var effectiveEnabled = request.DirectPixSalesEnabled ?? settings.DirectPixSalesEnabled;
+            var rawKey = request.StorePixKey ?? settings.StorePixKey;
+            var normalizedKey = string.IsNullOrWhiteSpace(rawKey)
+                ? null
+                : ClothingStore.Shared.Helpers.PixPayloadBuilder.NormalizePixKey(rawKey);
+
+            if (effectiveEnabled && !ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(normalizedKey))
+            {
+                throw new DomainException(
+                    "Para ativar as vendas por Pix no app, informe uma Chave Pix válida (CPF, E-mail, Celular ou Chave Aleatória).");
+            }
+
+            var effOriginCep = request.OriginCep ?? settings.OriginCep;
+            var effOriginCity = request.OriginCity ?? settings.OriginCity;
+            var effOriginState = request.OriginState ?? settings.OriginState;
+
+            if (!string.IsNullOrWhiteSpace(effOriginCep))
+            {
+                if (!ClothingStore.Shared.Helpers.BrazilShippingCalculator.TrySanitizeCep(effOriginCep, out var digits))
+                    throw new DomainException("Informe um CEP de origem válido com 8 dígitos (ex.: 01310-100).");
+
+                effOriginCep = ClothingStore.Shared.Helpers.BrazilShippingCalculator.FormatCep(digits);
+                var region = ClothingStore.Shared.Helpers.BrazilShippingCalculator.ResolveRegionFromCep(digits);
+                if (string.IsNullOrWhiteSpace(effOriginCity))
+                    effOriginCity = region.City;
+                if (string.IsNullOrWhiteSpace(effOriginState))
+                    effOriginState = region.State;
+            }
+
+            settings.ConfigurePixAndShipping(
+                effectiveEnabled,
+                normalizedKey,
+                request.StorePixReceiverName ?? settings.StorePixReceiverName,
+                effOriginCep,
+                effOriginCity,
+                effOriginState,
+                request.DeliveryScopeMode ?? settings.DeliveryScopeMode,
+                request.MaxDeliveryDistanceKm ?? settings.MaxDeliveryDistanceKm,
+                request.DefaultPackageWeightGrams ?? settings.DefaultPackageWeightGrams,
+                employeeId);
+        }
+
         await _repository.UpdateStoreSettingsAsync(settings, ct);
         return MapToAdminSettingsDto(settings);
     }
@@ -389,6 +441,16 @@ public sealed class EmployeeAndSettingsService
             s.PlanActivatedAt,
             s.PlanExpiresAt,
             s.ActiveGiftCardCode,
-            s.IntermediaryPlanMonthlyPrice);
+            s.IntermediaryPlanMonthlyPrice,
+            s.CanUseDirectPixSales() && s.DirectPixSalesEnabled,
+            s.IsDirectPixCheckoutReady(),
+            s.StorePixKey,
+            s.StorePixReceiverName,
+            s.OriginCep,
+            s.OriginCity,
+            s.OriginState,
+            s.DeliveryScopeMode,
+            s.MaxDeliveryDistanceKm,
+            s.DefaultPackageWeightGrams);
 }
 

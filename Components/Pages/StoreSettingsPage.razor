@@ -357,6 +357,195 @@
     </div>
 </div>
 
+<!-- Card: Vendas por Pix no App, Raio de Distância e Calculadora Correios -->
+<section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid #16A34A;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+        <div>
+            <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #16A34A;">
+                Exclusivo Meia Versão &amp; Premium
+            </div>
+            <h2 style="font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0; color: var(--adm-text);">
+                💸 Vendas pelo App apenas por Pix, Distância &amp; Correios
+            </h2>
+            <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0.25rem 0 0; line-height: 1.45;">
+                Ative para o cliente comprar direto pelo catálogo usando <strong>apenas Pix</strong> (sem CNPJ/cartão), informando o endereço completo dele. Você define até onde entrega e consulta na hora quanto custará enviar pelos Correios.
+            </p>
+        </div>
+        <div>
+            @if (!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan)
+            {
+                <span class="pill-badge pill-slate">🔒 Plano Básico</span>
+            }
+            else if (_pixEnabled && ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storePixKey) && ClothingStore.Shared.Helpers.BrazilShippingCalculator.TrySanitizeCep(_originCep, out _))
+            {
+                <span class="pill-badge pill-green">🟢 Vendas Pix Ativas no App</span>
+            }
+            else
+            {
+                <span class="pill-badge pill-gold">⚙️ Desativado / Falta Configurar</span>
+            }
+        </div>
+    </div>
+
+    @if (!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan)
+    {
+        <div style="background: var(--adm-input-bg); border: 1px dashed var(--adm-border); border-radius: 10px; padding: 1rem;">
+            <div style="font-weight: 700; margin-bottom: 0.35rem; color: var(--adm-text);">
+                Recurso liberado a partir da Meia Versão (Intermediário) até a Premium
+            </div>
+            <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0 0 0.85rem; line-height: 1.45;">
+                No Plano Básico as clientes consultam você pelo WhatsApp. Na <strong>Meia Versão</strong> e <strong>Premium</strong>, você pode ativar a compra direta no app por Pix, limitar a distância de envio e ver o custo dos Correios (PAC e SEDEX).
+            </p>
+            <a href="/planos" class="adm-btn adm-btn-accent">💎 Conhecer Meia Versão / Premium &rarr;</a>
+        </div>
+    }
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+            <label style="display: flex; align-items: center; gap: 0.65rem; background: var(--adm-input-bg); border: 1.5px solid @(_pixEnabled ? "#16A34A" : "var(--adm-border)"); border-radius: 10px; padding: 0.85rem 1rem; cursor: pointer;">
+                <input type="checkbox" @bind="_pixEnabled" style="width: 18px; height: 18px;" />
+                <div>
+                    <div style="font-weight: 800; color: var(--adm-text);">
+                        @(_pixEnabled ? "✅ Vendas diretas por Pix ATIVADAS no catálogo" : "Ativar vendas diretas pelo app/site (Apenas Pix)")
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--adm-muted);">
+                        Se desmarcado, os clientes continuam pedindo apenas pelo WhatsApp. Não usa cartão de crédito nem precisa de CNPJ.
+                    </div>
+                </div>
+            </label>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
+                <div>
+                    <label class="adm-label">Sua Chave Pix para Receber Vendas *</label>
+                    <input type="text" class="adm-input" @bind="_storePixKey" @bind:event="oninput"
+                           placeholder="CPF, E-mail, +55 Celular ou Chave Aleatória" />
+                    <span style="font-size: 0.74rem; color: @(ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storePixKey) ? "var(--adm-success)" : "var(--adm-muted)");">
+                        Tipo detectado: <strong>@ClothingStore.Shared.Helpers.PixPayloadBuilder.DetectKeyTypeLabel(_storePixKey)</strong>
+                    </span>
+                </div>
+
+                <div>
+                    <label class="adm-label">Nome do Recebedor no Pix (Opcional)</label>
+                    <input type="text" class="adm-input" @bind="_storePixReceiverName"
+                           placeholder="Ex.: Seu Nome ou Nome da Loja" />
+                </div>
+            </div>
+
+            <!-- CEP de Origem do Vendedor -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem; align-items: end;">
+                <div>
+                    <label class="adm-label">Seu CEP de Origem (Ponto de Partida) *</label>
+                    <div style="display: flex; gap: 0.4rem;">
+                        <input type="text" class="adm-input" @bind="_originCep" placeholder="01310-100" />
+                        <button type="button" class="adm-btn adm-btn-outline" style="white-space: nowrap;" disabled="@_lookingUpCep" @onclick="LookupOriginCepAsync">
+                            @(_lookingUpCep ? "..." : "🔍 Buscar")
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="adm-label">Sua Cidade</label>
+                    <input type="text" class="adm-input" @bind="_originCity" placeholder="São Paulo" />
+                </div>
+                <div>
+                    <label class="adm-label">Seu Estado (UF)</label>
+                    <input type="text" maxlength="2" class="adm-input" style="text-transform: uppercase;" @bind="_originState" placeholder="SP" />
+                </div>
+            </div>
+
+            <!-- Escolha de Distância / Alcance do Vendedor -->
+            <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.9rem;">
+                <div style="font-weight: 800; font-size: 0.9rem; margin-bottom: 0.6rem; color: var(--adm-text);">
+                    📍 Até onde você aceita mandar os itens da sua distância?
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); gap: 0.75rem;">
+                    <div>
+                        <label class="adm-label">Área de Entrega</label>
+                        <select class="adm-select" @bind="_deliveryScopeMode">
+                            <option value="@ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.AllBrazil">Todo o Brasil</option>
+                            <option value="@ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.SameState">Apenas no Mesmo Estado (UF)</option>
+                            <option value="@ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.SameCity">Apenas na Mesma Cidade</option>
+                            <option value="@ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.RadiusKm">Limitar por Distância Exata (km)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="adm-label">Distância Máxima em KM (0 = sem limite)</label>
+                        <input type="number" min="0" max="5000" class="adm-input" @bind="_maxDeliveryDistanceKm" />
+                        <div style="display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.35rem;">
+                            @foreach (var kmPreset in new[] { 15, 30, 50, 150, 500, 0 })
+                            {
+                                <button type="button" class="pill-badge pill-slate" style="border: none; cursor: pointer;"
+                                        @onclick="() => SetDistancePreset(kmPreset)">
+                                    @(kmPreset == 0 ? "Sem limite km" : $"{kmPreset} km")
+                                </button>
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <label class="adm-label">Peso Médio por Peça (g)</label>
+                        <input type="number" min="100" max="30000" class="adm-input" @bind="_defaultPackageWeightGrams" />
+                        <span style="font-size: 0.72rem; color: var(--adm-muted);">Usado na estimativa dos Correios (padrão 450 g).</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; align-items: center;">
+                <button type="button" class="adm-btn adm-btn-success" style="font-weight: 800; padding: 0.7rem 1.2rem;" disabled="@_savingPixShipping" @onclick="SavePixAndShippingSettingsAsync">
+                    @(_savingPixShipping ? "Salvando..." : "💾 Salvar Vendas Pix, Distância & Correios")
+                </button>
+                <a href="/pedidos" class="adm-btn adm-btn-outline">🧾 Ver Pedidos Recebidos</a>
+            </div>
+
+            <!-- Simulador Rápido Correios & Distância -->
+            <details style="border-top: 1px solid var(--adm-border); padding-top: 0.75rem;">
+                <summary style="cursor: pointer; font-weight: 700; font-size: 0.86rem; color: var(--adm-text);">
+                    📦 Simular quanto custará mandar pelos Correios (PAC &amp; SEDEX)
+                </summary>
+                <div style="margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.65rem;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem;">
+                        <div>
+                            <label class="adm-label">CEP do Comprador (Teste)</label>
+                            <input type="text" class="adm-input" @bind="_simTestDestCep" placeholder="20040-020" />
+                        </div>
+                        <div>
+                            <label class="adm-label">Peso do Pacote (g)</label>
+                            <input type="number" min="100" max="30000" class="adm-input" @bind="_simTestWeightG" />
+                        </div>
+                        <div style="display: flex; align-items: flex-end;">
+                            <button type="button" class="adm-btn adm-btn-primary" style="width: 100%;" disabled="@_simulatingCorreios" @onclick="SimulateCorreiosSellerAsync">
+                                @(_simulatingCorreios ? "Calculando..." : "📊 Simular Frete & Distância")
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (_simTestEligibility is not null)
+                    {
+                        <div style="padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.84rem; @(_simTestEligibility.IsAllowed ? "background: rgba(22,163,74,0.12); border: 1px solid #16A34A;" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger);")">
+                            <strong>@(_simTestEligibility.IsAllowed ? "✓ Comprador dentro da sua área:" : "✕ Bloqueado pelo seu limite:")</strong>
+                            @_simTestEligibility.ReasonMessage
+                        </div>
+                    }
+
+                    @if (_simTestCorreiosQuote is not null)
+                    {
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.65rem;">
+                            <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 8px; padding: 0.7rem;">
+                                <div style="font-size: 0.72rem; color: var(--adm-muted); font-weight: 700;">CORREIOS PAC</div>
+                                <div style="font-size: 1.1rem; font-weight: 800; color: var(--adm-success);">@_simTestCorreiosQuote.PacPrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
+                                <div style="font-size: 0.76rem; color: var(--adm-muted);">@_simTestCorreiosQuote.PacDaysMin–@_simTestCorreiosQuote.PacDaysMax dias úteis · @_simTestCorreiosQuote.ZoneName</div>
+                            </div>
+                            <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 8px; padding: 0.7rem;">
+                                <div style="font-size: 0.72rem; color: var(--adm-muted); font-weight: 700;">CORREIOS SEDEX</div>
+                                <div style="font-size: 1.1rem; font-weight: 800; color: var(--adm-accent);">@_simTestCorreiosQuote.SedexPrice.ToString("C", new System.Globalization.CultureInfo("pt-BR"))</div>
+                                <div style="font-size: 0.76rem; color: var(--adm-muted);">@_simTestCorreiosQuote.SedexDaysMin–@_simTestCorreiosQuote.SedexDaysMax dias úteis · 📍 @_simTestCorreiosQuote.DistanceKm km</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </details>
+        </div>
+    }
+</section>
+
 <section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid var(--brand-accent, #B69158);">
     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
         <div>
@@ -503,6 +692,7 @@
             _intermediaryPlanPrice = current.IntermediaryPlanMonthlyPrice;
             _premiumPlanPrice = current.PremiumPlanMonthlyPrice;
             _designDraft = (current.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
+            ApplyPixAndShippingFields(current);
             BrandState.ApplyFromAdminSettings(current);
         }
         catch (Exception ex)
@@ -817,6 +1007,7 @@
             _form.PlanTier = _planTier;
             _form.IsSiteActive = result.UpdatedSettings.IsSiteActive;
             _designDraft = (result.UpdatedSettings.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
+            ApplyPixAndShippingFields(result.UpdatedSettings);
             BrandState.ApplyFromAdminSettings(result.UpdatedSettings);
             _success = "🎉 " + result.Message;
         }
@@ -864,6 +1055,137 @@
         finally
         {
             _savingDesign = false;
+        }
+    }
+
+    private bool _pixEnabled;
+    private string _storePixKey = string.Empty;
+    private string _storePixReceiverName = string.Empty;
+    private string _originCep = string.Empty;
+    private string _originCity = string.Empty;
+    private string _originState = string.Empty;
+    private string _deliveryScopeMode = ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.AllBrazil;
+    private int _maxDeliveryDistanceKm;
+    private int _defaultPackageWeightGrams = 450;
+    private bool _lookingUpCep;
+    private bool _savingPixShipping;
+    private string _simTestDestCep = "20040-020";
+    private int _simTestWeightG = 450;
+    private bool _simulatingCorreios;
+    private DeliveryEligibilityDto? _simTestEligibility;
+    private CorreiosQuoteDto? _simTestCorreiosQuote;
+
+    private void ApplyPixAndShippingFields(AdminStoreSettingsDto s)
+    {
+        _pixEnabled = s.DirectPixSalesEnabled;
+        _storePixKey = s.StorePixKey ?? string.Empty;
+        _storePixReceiverName = s.StorePixReceiverName ?? string.Empty;
+        _originCep = s.OriginCep ?? string.Empty;
+        _originCity = s.OriginCity ?? string.Empty;
+        _originState = s.OriginState ?? string.Empty;
+        _deliveryScopeMode = string.IsNullOrWhiteSpace(s.DeliveryScopeMode)
+            ? ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.AllBrazil
+            : s.DeliveryScopeMode;
+        _maxDeliveryDistanceKm = s.MaxDeliveryDistanceKm;
+        _defaultPackageWeightGrams = s.DefaultPackageWeightGrams >= 100 ? s.DefaultPackageWeightGrams : 450;
+        _simTestWeightG = _defaultPackageWeightGrams;
+    }
+
+    private void SetDistancePreset(int km)
+    {
+        _maxDeliveryDistanceKm = km;
+        if (km > 0 && _deliveryScopeMode == ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.AllBrazil)
+        {
+            _deliveryScopeMode = ClothingStore.Shared.Helpers.BrazilShippingCalculator.DeliveryScopeModes.RadiusKm;
+        }
+    }
+
+    private async Task LookupOriginCepAsync()
+    {
+        _error = null;
+        _lookingUpCep = true;
+        try
+        {
+            var info = await Gateway.LookupCepAsync(_originCep);
+            _originCep = info.Cep;
+            _originCity = info.City;
+            _originState = info.State;
+            _success = $"CEP localizado: {info.City}/{info.State} ({info.Source}).";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _lookingUpCep = false;
+        }
+    }
+
+    private async Task SavePixAndShippingSettingsAsync()
+    {
+        _error = null;
+        _success = null;
+        _savingPixShipping = true;
+        try
+        {
+            _form.DirectPixSalesEnabled = _pixEnabled;
+            _form.StorePixKey = _storePixKey;
+            _form.StorePixReceiverName = _storePixReceiverName;
+            _form.OriginCep = _originCep;
+            _form.OriginCity = _originCity;
+            _form.OriginState = _originState;
+            _form.DeliveryScopeMode = _deliveryScopeMode;
+            _form.MaxDeliveryDistanceKm = _maxDeliveryDistanceKm;
+            _form.DefaultPackageWeightGrams = _defaultPackageWeightGrams;
+
+            var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            ApplyPixAndShippingFields(updated);
+            BrandState.ApplyFromAdminSettings(updated);
+
+            _success = updated.DirectPixSalesReady
+                ? "✅ Vendas por Pix no app, limite de distância e cálculo dos Correios salvos e ATIVADOS!"
+                : "✅ Preferências de envio e distância salvas (vendas diretas por Pix estão desativadas).";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingPixShipping = false;
+        }
+    }
+
+    private async Task SimulateCorreiosSellerAsync()
+    {
+        _error = null;
+        _simulatingCorreios = true;
+        try
+        {
+            var destInfo = await Gateway.LookupCepAsync(_simTestDestCep);
+            _simTestEligibility = ClothingStore.Shared.Helpers.BrazilShippingCalculator.EvaluateDeliveryEligibility(
+                _originCep,
+                _originCity,
+                _originState,
+                _deliveryScopeMode,
+                _maxDeliveryDistanceKm,
+                destInfo.Cep,
+                destInfo.City,
+                destInfo.State);
+
+            _simTestCorreiosQuote = await Gateway.SimulateCorreiosAsync(
+                _originCep,
+                destInfo.Cep,
+                _simTestWeightG);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _simulatingCorreios = false;
         }
     }
 

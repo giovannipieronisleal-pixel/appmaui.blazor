@@ -81,6 +81,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<ProductManagementService>();
         builder.Services.AddSingleton<StockManagementService>();
         builder.Services.AddSingleton<EmployeeAndSettingsService>();
+        builder.Services.AddSingleton<OrderAndShippingService>();
         builder.Services.AddSingleton<ThemeService>();
         builder.Services.AddSingleton<StoreBrandStateService>();
         builder.Services.AddSingleton<GoogleCloudSyncService>();
@@ -89,7 +90,9 @@ public static class MauiProgram
         var app = builder.Build();
 
         // Inicializa o servidor HTTP do catálogo público (porta 5190) em todas as plataformas (Windows e Android/iOS)
-        LocalWebServerLauncher.Initialize(app.Services.GetRequiredService<CatalogService>());
+        LocalWebServerLauncher.Initialize(
+            app.Services.GetRequiredService<CatalogService>(),
+            app.Services.GetRequiredService<OrderAndShippingService>());
         _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
 
         return app;

@@ -140,7 +140,16 @@ public sealed class GoogleCloudSyncService
                     IntermediaryPlanMonthlyPrice = settings.IntermediaryPlanMonthlyPrice,
                     PremiumPlanMonthlyPrice = settings.PremiumPlanMonthlyPrice,
                     PicpayPixKey = settings.PicpayPixKey,
-                    Design = StoreDesignMapper.ToDto(settings.GetEffectivePublicDesign())
+                    Design = StoreDesignMapper.ToDto(settings.GetEffectivePublicDesign()),
+                    DirectPixSalesEnabled = settings.DirectPixSalesEnabled,
+                    StorePixKey = settings.StorePixKey,
+                    StorePixReceiverName = settings.StorePixReceiverName,
+                    OriginCep = settings.OriginCep,
+                    OriginCity = settings.OriginCity,
+                    OriginState = settings.OriginState,
+                    DeliveryScopeMode = settings.DeliveryScopeMode,
+                    MaxDeliveryDistanceKm = settings.MaxDeliveryDistanceKm,
+                    DefaultPackageWeightGrams = settings.DefaultPackageWeightGrams
                 },
                 Categories = categories.Select(c => new SaveCategoryRequest
                 {

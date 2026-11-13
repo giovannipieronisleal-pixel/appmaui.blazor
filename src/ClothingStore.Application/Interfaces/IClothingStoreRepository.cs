@@ -52,5 +52,10 @@ public interface IClothingStoreRepository
     Task<PlanActivationCode?> GetPlanActivationCodeByCodeAsync(string code, CancellationToken ct = default);
     Task<PlanActivationCode?> GetPlanActivationCodeByIdAsync(Guid id, CancellationToken ct = default);
     Task SavePlanActivationCodeAsync(PlanActivationCode activationCode, CancellationToken ct = default);
+
+    // Pedidos Pix no app / cálculo de envio
+    Task<IReadOnlyList<StoreOrder>> GetOrdersAsync(CancellationToken ct = default);
+    Task<StoreOrder?> GetOrderByIdAsync(Guid id, CancellationToken ct = default);
+    Task SaveOrderAsync(StoreOrder order, CancellationToken ct = default);
 }
 

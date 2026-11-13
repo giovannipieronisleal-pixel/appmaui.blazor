@@ -380,6 +380,56 @@ public sealed class AdminApiClient
         return (await response.Content.ReadFromJsonAsync<RedeemActivationCodeResponse>(cancellationToken: ct))!;
     }
 
+    // Pedidos Pix, CEP e Simulador de Correios
+    public async Task<IReadOnlyList<StoreOrderDto>> GetOrdersAsync(CancellationToken ct = default)
+    {
+        var response = await _httpClient.GetAsync("/api/orders", ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync<List<StoreOrderDto>>(cancellationToken: ct) ?? [];
+    }
+
+    public async Task<StoreOrderDto> ConfirmOrderPixAsync(Guid orderId, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsync($"/api/orders/{orderId}/confirm-pix", null, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<StoreOrderDto> UpdateOrderFulfillmentAsync(Guid orderId, UpdateOrderFulfillmentRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PutAsJsonAsync($"/api/orders/{orderId}/fulfillment", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<StoreOrderDto> CancelOrderAsync(Guid orderId, string? reason = null, CancellationToken ct = default)
+    {
+        var url = string.IsNullOrWhiteSpace(reason)
+            ? $"/api/orders/{orderId}/cancel"
+            : $"/api/orders/{orderId}/cancel?reason={Uri.EscapeDataString(reason)}";
+        var response = await _httpClient.PostAsync(url, null, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<CorreiosQuoteDto> SimulateCorreiosAsync(
+        string? originCep,
+        string destCep,
+        int weightGrams = 450,
+        int lengthCm = 24,
+        int widthCm = 18,
+        int heightCm = 8,
+        CancellationToken ct = default)
+    {
+        var qs = $"destCep={Uri.EscapeDataString(destCep)}&weightGrams={weightGrams}&lengthCm={lengthCm}&widthCm={widthCm}&heightCm={heightCm}";
+        if (!string.IsNullOrWhiteSpace(originCep))
+            qs += $"&originCep={Uri.EscapeDataString(originCep)}";
+
+        var response = await _httpClient.GetAsync($"/api/shipping/simulate-correios?{qs}", ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<CorreiosQuoteDto>(cancellationToken: ct))!;
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)
     {
         if (response.IsSuccessStatusCode)

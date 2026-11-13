@@ -211,6 +211,17 @@ public sealed class UpdateStoreSettingsRequest
     public decimal? PremiumPlanMonthlyPrice { get; set; }
     public string? PicpayPixKey { get; set; }
     public StoreDesignDto? Design { get; set; }
+
+    // Vendas por Pix no app (exclusivo Intermediário e Premium, ativação explícita), distância máxima e CEP Correios
+    public bool? DirectPixSalesEnabled { get; set; }
+    public string? StorePixKey { get; set; }
+    public string? StorePixReceiverName { get; set; }
+    public string? OriginCep { get; set; }
+    public string? OriginCity { get; set; }
+    public string? OriginState { get; set; }
+    public string? DeliveryScopeMode { get; set; }
+    public int? MaxDeliveryDistanceKm { get; set; }
+    public int? DefaultPackageWeightGrams { get; set; }
 }
 
 public sealed record AdminStoreSettingsDto(
@@ -238,7 +249,17 @@ public sealed record AdminStoreSettingsDto(
     DateTimeOffset? PlanActivatedAt = null,
     DateTimeOffset? PlanExpiresAt = null,
     string? ActiveGiftCardCode = null,
-    decimal IntermediaryPlanMonthlyPrice = 89.90m);
+    decimal IntermediaryPlanMonthlyPrice = 89.90m,
+    bool DirectPixSalesEnabled = false,
+    bool DirectPixSalesReady = false,
+    string? StorePixKey = null,
+    string? StorePixReceiverName = null,
+    string? OriginCep = null,
+    string? OriginCity = null,
+    string? OriginState = null,
+    string DeliveryScopeMode = "TodoBrasil",
+    int MaxDeliveryDistanceKm = 0,
+    int DefaultPackageWeightGrams = 450);
 
 public sealed class CloudCatalogSyncPayload
 {

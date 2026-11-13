@@ -20,7 +20,14 @@ public sealed record PublicStoreSettingsDto(
     StoreDesignDto? Design = null,
     DateTimeOffset? PlanActivatedAt = null,
     DateTimeOffset? PlanExpiresAt = null,
-    string? ActiveGiftCardCode = null);
+    string? ActiveGiftCardCode = null,
+    bool DirectPixSalesReady = false,
+    string? OriginCep = null,
+    string? OriginCity = null,
+    string? OriginState = null,
+    string DeliveryScopeMode = "TodoBrasil",
+    int MaxDeliveryDistanceKm = 0,
+    int DefaultPackageWeightGrams = 450);
 
 public sealed record CategoryDto(
     Guid Id,

@@ -142,6 +142,8 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         {
             state.StoreSettings.StoreSlug = Category.GenerateSlug(state.StoreSettings.StoreName);
         }
+
+        state.Orders ??= [];
     }
 
     private void PersistToDisk(ClothingStoreDatabaseState state)
@@ -868,6 +870,63 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
             {
                 _state.PlanActivationCodes.Add(activationCode);
             }
+            PersistToDisk(_state);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<StoreOrder>> GetOrdersAsync(CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            _state.Orders ??= [];
+            return _state.Orders
+                .OrderByDescending(o => o.CreatedAt)
+                .ToList();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<StoreOrder?> GetOrderByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            _state.Orders ??= [];
+            return _state.Orders.FirstOrDefault(o => o.Id == id);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task SaveOrderAsync(StoreOrder order, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            _state.Orders ??= [];
+            var idx = _state.Orders.FindIndex(o => o.Id == order.Id);
+            if (idx >= 0)
+            {
+                _state.Orders[idx] = order;
+            }
+            else
+            {
+                _state.Orders.Add(order);
+            }
+
             PersistToDisk(_state);
         }
         finally

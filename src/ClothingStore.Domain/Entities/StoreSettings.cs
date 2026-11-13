@@ -46,6 +46,17 @@ public sealed class StoreSettings
     public string? ActiveGiftCardCode { get; set; }
     public StoreDesignConfig DesignConfig { get; set; } = StoreDesignConfig.CreateMinimalistaLuxo();
 
+    // Vendas diretas no app apenas por Pix (exclusivo Meia Versão / Intermediário até Premium), distância e Correios
+    public bool DirectPixSalesEnabled { get; set; } = false;
+    public string? StorePixKey { get; set; }
+    public string? StorePixReceiverName { get; set; }
+    public string? OriginCep { get; set; }
+    public string? OriginCity { get; set; }
+    public string? OriginState { get; set; }
+    public string DeliveryScopeMode { get; set; } = "TodoBrasil";
+    public int MaxDeliveryDistanceKm { get; set; } = 0;
+    public int DefaultPackageWeightGrams { get; set; } = 450;
+
     public static string NormalizePlanTier(string? candidate)
     {
         if (string.IsNullOrWhiteSpace(candidate))
@@ -436,6 +447,97 @@ public sealed class StoreSettings
         }
 
         return $"Olá! Tenho interesse no produto {cleanProduct}. Gostaria de saber mais informações.";
+    }
+
+    public bool CanUseDirectPixSales(DateTimeOffset? now = null) =>
+        IsEffectiveIntermediatePlan(now) || IsEffectivePremiumPlan(now);
+
+    public bool IsDirectPixCheckoutReady(DateTimeOffset? now = null) =>
+        CanUseDirectPixSales(now) &&
+        DirectPixSalesEnabled &&
+        !string.IsNullOrWhiteSpace(StorePixKey) &&
+        Regex.Replace(OriginCep ?? string.Empty, @"\D", "").Length == 8;
+
+    public void ConfigurePixAndShipping(
+        bool directPixSalesEnabled,
+        string? storePixKey,
+        string? storePixReceiverName,
+        string? originCep,
+        string? originCity,
+        string? originState,
+        string? deliveryScopeMode,
+        int maxDeliveryDistanceKm,
+        int defaultPackageWeightGrams,
+        Guid? employeeId = null,
+        DateTimeOffset? now = null)
+    {
+        var eligible = CanUseDirectPixSales(now);
+        if (directPixSalesEnabled && !eligible)
+        {
+            throw new DomainException(
+                "A venda direta no app por Pix está disponível apenas da Meia Versão (Intermediário) até a Premium. Atualize seu plano em Planos para ativar.");
+        }
+
+        var normalizedPixKey = string.IsNullOrWhiteSpace(storePixKey) ? null : storePixKey.Trim();
+        if (directPixSalesEnabled && (string.IsNullOrWhiteSpace(normalizedPixKey) || normalizedPixKey.Length < 5))
+        {
+            throw new DomainException(
+                "Para ativar as vendas por Pix no app, informe uma Chave Pix válida (CPF, E-mail, Celular ou Chave Aleatória).");
+        }
+
+        string? formattedOriginCep = null;
+        var resolvedOriginCity = string.IsNullOrWhiteSpace(originCity) ? null : originCity.Trim();
+        var resolvedOriginState = string.IsNullOrWhiteSpace(originState) ? null : originState.Trim().ToUpperInvariant();
+
+        if (!string.IsNullOrWhiteSpace(originCep))
+        {
+            var cepDigits = Regex.Replace(originCep, @"\D", "");
+            if (cepDigits.Length != 8)
+                throw new DomainException("Informe um CEP de origem válido com 8 dígitos (ex.: 01310-100).");
+
+            formattedOriginCep = $"{cepDigits[..5]}-{cepDigits[5..]}";
+        }
+        else if (directPixSalesEnabled)
+        {
+            throw new DomainException(
+                "Para ativar vendas por Pix no app, informe o seu CEP de origem para calcular a distância de entrega e o frete dos Correios.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(resolvedOriginState) && resolvedOriginState.Length != 2)
+            throw new DomainException("A UF do vendedor deve conter exatamente 2 letras (ex.: SP, RJ, MG).");
+
+        var scopeToken = (deliveryScopeMode ?? string.Empty).Trim();
+        var scope = scopeToken switch
+        {
+            var s when string.Equals(s, "MesmoEstado", StringComparison.OrdinalIgnoreCase) => "MesmoEstado",
+            var s when string.Equals(s, "MesmaCidade", StringComparison.OrdinalIgnoreCase) => "MesmaCidade",
+            var s when string.Equals(s, "RaioKm", StringComparison.OrdinalIgnoreCase) => "RaioKm",
+            _ => "TodoBrasil"
+        };
+
+        if (maxDeliveryDistanceKm < 0 || maxDeliveryDistanceKm > 5000)
+            throw new DomainException("A distância máxima de entrega deve estar entre 0 e 5.000 km.");
+
+        if (scope == "RaioKm" && maxDeliveryDistanceKm <= 0)
+            throw new DomainException("No modo 'Por Raio em KM', informe a distância máxima em quilômetros (ex.: 50 km).");
+
+        if (defaultPackageWeightGrams < 100 || defaultPackageWeightGrams > 30000)
+            throw new DomainException("O peso padrão do pacote deve estar entre 100 g e 30.000 g (30 kg).");
+
+        DirectPixSalesEnabled = eligible && directPixSalesEnabled;
+        StorePixKey = normalizedPixKey;
+        StorePixReceiverName = string.IsNullOrWhiteSpace(storePixReceiverName)
+            ? null
+            : storePixReceiverName.Trim();
+        OriginCep = formattedOriginCep;
+        OriginCity = resolvedOriginCity;
+        OriginState = resolvedOriginState;
+        DeliveryScopeMode = scope;
+        MaxDeliveryDistanceKm = maxDeliveryDistanceKm;
+        DefaultPackageWeightGrams = defaultPackageWeightGrams;
+
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
     }
 }
 

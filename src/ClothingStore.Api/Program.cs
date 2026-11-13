@@ -59,6 +59,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ProductManagementService>();
 builder.Services.AddScoped<StockManagementService>();
 builder.Services.AddScoped<EmployeeAndSettingsService>();
+builder.Services.AddScoped<OrderAndShippingService>();
 
 // Autenticação JWT + Policies de Autorização verificadas no Backend
 builder.Services.AddAuthentication(JwtBearerAuthenticationHandler.SchemeName)
@@ -184,6 +185,31 @@ publicGroup.MapGet("/products/{slugOrId}", async (
     return product is not null
         ? Results.Ok(product)
         : Results.NotFound(new { error = "Produto não encontrado ou indisponível no catálogo." });
+});
+
+app.MapGet("/api/public/cep/{cep}", async (
+    string cep,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    return Results.Ok(await orderService.LookupCepAsync(cep, ct));
+});
+
+app.MapPost("/api/public/shipping-quote", async (
+    ShippingQuoteRequest request,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    return Results.Ok(await orderService.QuoteShippingForBuyerAsync(request, ct));
+});
+
+app.MapPost("/api/public/orders/pix", async (
+    CreatePixOrderRequest request,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    var created = await orderService.PlacePixOrderAsync(request, ct);
+    return Results.Created($"/api/orders/{created.Id}", created);
 });
 
 // =============================================================================
@@ -498,6 +524,63 @@ app.MapPost("/api/settings/redeem-code", async (
     var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
     return Results.Ok(await service.RedeemActivationCodeAsync(request, employeeId, ct));
 }).RequireAuthorization(RoleNames.PolicyAdminOnly);
+
+// =============================================================================
+// 8.5. ENDPOINTS DE PEDIDOS PIX, RAIO DE ENTREGA E CALCULADORA CORREIOS
+// =============================================================================
+app.MapGet("/api/orders", async (OrderAndShippingService orderService, CancellationToken ct) =>
+    Results.Ok(await orderService.GetOrdersAsync(ct)))
+    .RequireAuthorization();
+
+app.MapPost("/api/orders/{id:guid}/confirm-pix", async (
+    Guid id,
+    ClaimsPrincipal user,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    var employeeId = Guid.Parse(user.FindFirstValue("employee_id")!);
+    return Results.Ok(await orderService.ConfirmPixPaymentAsync(id, employeeId, ct));
+}).RequireAuthorization(RoleNames.PolicyCanManageStock);
+
+app.MapPut("/api/orders/{id:guid}/fulfillment", async (
+    Guid id,
+    UpdateOrderFulfillmentRequest request,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    return Results.Ok(await orderService.UpdateOrderFulfillmentAsync(id, request, ct));
+}).RequireAuthorization();
+
+app.MapPost("/api/orders/{id:guid}/cancel", async (
+    Guid id,
+    string? reason,
+    ClaimsPrincipal user,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    var employeeId = Guid.Parse(user.FindFirstValue("employee_id")!);
+    return Results.Ok(await orderService.CancelOrderAsync(id, employeeId, reason, ct));
+}).RequireAuthorization(RoleNames.PolicyCanManageStock);
+
+app.MapGet("/api/shipping/simulate-correios", async (
+    string? originCep,
+    string destCep,
+    int? weightGrams,
+    int? lengthCm,
+    int? widthCm,
+    int? heightCm,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    return Results.Ok(await orderService.SimulateCorreiosForSellerAsync(
+        originCep,
+        destCep,
+        weightGrams ?? 450,
+        lengthCm ?? 24,
+        widthCm ?? 18,
+        heightCm ?? 8,
+        ct));
+}).RequireAuthorization();
 
 // =============================================================================
 // 9. ENDPOINTS DE STATUS E SINCRONIZAÇÃO EM NUVEM (Google Cloud Run / 24h Online)

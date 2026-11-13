@@ -12,12 +12,17 @@ public sealed class CatalogDataGateway
 {
     private readonly CatalogApiClient _apiClient;
     private readonly CatalogService _localCatalogService;
+    private readonly OrderAndShippingService? _localOrderService;
     private static DateTimeOffset _skipRemoteApiUntil = DateTimeOffset.MinValue;
 
-    public CatalogDataGateway(CatalogApiClient apiClient, CatalogService localCatalogService)
+    public CatalogDataGateway(
+        CatalogApiClient apiClient,
+        CatalogService localCatalogService,
+        OrderAndShippingService? localOrderService = null)
     {
         _apiClient = apiClient;
         _localCatalogService = localCatalogService;
+        _localOrderService = localOrderService;
     }
 
     private async Task<T> ExecuteWithFallbackAsync<T>(Func<Task<T>> remoteCall, Func<Task<T>> localFallback)
@@ -63,5 +68,26 @@ public sealed class CatalogDataGateway
         ExecuteWithFallbackAsync(
             () => _apiClient.GetProductDetailAsync(slugOrId, ct),
             () => _localCatalogService.GetPublicProductDetailAsync(slugOrId, ct));
+
+    public Task<CepAddressLookupDto?> LookupCepAsync(string cep, CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync<CepAddressLookupDto?>(
+            () => _apiClient.LookupCepAsync(cep, ct),
+            async () => _localOrderService is not null
+                ? await _localOrderService.LookupCepAsync(cep, ct)
+                : ClothingStore.Shared.Helpers.BrazilShippingCalculator.ResolveRegionFromCep(cep));
+
+    public Task<ShippingQuoteResponse> QuoteShippingAsync(ShippingQuoteRequest request, CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.QuoteShippingAsync(request, ct),
+            () => _localOrderService is not null
+                ? _localOrderService.QuoteShippingForBuyerAsync(request, ct)
+                : throw new InvalidOperationException("Serviço de cálculo de entrega indisponível."));
+
+    public Task<StoreOrderDto> PlacePixOrderAsync(CreatePixOrderRequest request, CancellationToken ct = default) =>
+        ExecuteWithFallbackAsync(
+            () => _apiClient.PlacePixOrderAsync(request, ct),
+            () => _localOrderService is not null
+                ? _localOrderService.PlacePixOrderAsync(request, ct)
+                : throw new InvalidOperationException("Serviço de pedidos Pix indisponível."));
 }
     

@@ -45,7 +45,14 @@ public sealed class CatalogService
             StoreDesignMapper.ToDto(settings.GetEffectivePublicDesign()),
             settings.PlanActivatedAt,
             settings.PlanExpiresAt,
-            settings.ActiveGiftCardCode);
+            settings.ActiveGiftCardCode,
+            settings.IsDirectPixCheckoutReady(),
+            settings.OriginCep,
+            settings.OriginCity,
+            settings.OriginState,
+            settings.DeliveryScopeMode,
+            settings.MaxDeliveryDistanceKm,
+            settings.DefaultPackageWeightGrams);
     }
 
     public async Task<IReadOnlyList<CategoryDto>> GetPublicCategoriesAsync(CancellationToken ct = default)

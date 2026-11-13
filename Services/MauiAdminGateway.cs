@@ -21,6 +21,7 @@ public sealed class MauiAdminGateway
     private readonly StockManagementService _stockService;
     private readonly EmployeeAndSettingsService _employeeAndSettingsService;
     private readonly GoogleCloudSyncService? _cloudSyncService;
+    private readonly OrderAndShippingService? _orderAndShippingService;
 
     private DateTimeOffset _skipRemoteApiUntil = DateTimeOffset.MinValue;
 
@@ -39,7 +40,8 @@ public sealed class MauiAdminGateway
         ProductManagementService productService,
         StockManagementService stockService,
         EmployeeAndSettingsService employeeAndSettingsService,
-        GoogleCloudSyncService? cloudSyncService = null)
+        GoogleCloudSyncService? cloudSyncService = null,
+        OrderAndShippingService? orderAndShippingService = null)
     {
         _apiClient = apiClient;
         _authService = authService;
@@ -47,6 +49,7 @@ public sealed class MauiAdminGateway
         _stockService = stockService;
         _employeeAndSettingsService = employeeAndSettingsService;
         _cloudSyncService = cloudSyncService;
+        _orderAndShippingService = orderAndShippingService;
     }
 
     private bool ShouldTryRemoteApi => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
@@ -622,6 +625,80 @@ public sealed class MauiAdminGateway
                 $"Domínio '{domain}' verificado para publicação no Google Cloud.",
                 $"https://{domain.Trim().TrimEnd('/')}",
                 [])));
+    }
+
+    public async Task<CepAddressLookupDto> LookupCepAsync(string cep, CancellationToken ct = default)
+    {
+        if (_orderAndShippingService is null)
+            return ClothingStore.Shared.Helpers.BrazilShippingCalculator.ResolveRegionFromCep(cep);
+
+        return await _orderAndShippingService.LookupCepAsync(cep, ct);
+    }
+
+    public async Task<CorreiosQuoteDto> SimulateCorreiosAsync(
+        string? originCep,
+        string destCep,
+        int weightGrams = 450,
+        int lengthCm = 24,
+        int widthCm = 18,
+        int heightCm = 8,
+        CancellationToken ct = default)
+    {
+        EnsureAuthenticated();
+        return await ExecuteWithFallbackAsync(
+            () => _apiClient.SimulateCorreiosAsync(originCep, destCep, weightGrams, lengthCm, widthCm, heightCm, ct),
+            () => _orderAndShippingService is not null
+                ? _orderAndShippingService.SimulateCorreiosForSellerAsync(originCep, destCep, weightGrams, lengthCm, widthCm, heightCm, ct)
+                : throw new DomainException("Serviço de cálculo de Correios indisponível."));
+    }
+
+    public Task<IReadOnlyList<StoreOrderDto>> GetOrdersAsync(CancellationToken ct = default)
+    {
+        EnsureAuthenticated();
+        return ExecuteWithFallbackAsync(
+            () => _apiClient.GetOrdersAsync(ct),
+            () => _orderAndShippingService is not null
+                ? _orderAndShippingService.GetOrdersAsync(ct)
+                : Task.FromResult<IReadOnlyList<StoreOrderDto>>([]));
+    }
+
+    public async Task<StoreOrderDto> ConfirmOrderPixAsync(Guid orderId, CancellationToken ct = default)
+    {
+        EnsureStockPermission();
+        var updated = await ExecuteWithFallbackAsync(
+            () => _apiClient.ConfirmOrderPixAsync(orderId, ct),
+            () => _orderAndShippingService is not null
+                ? _orderAndShippingService.ConfirmPixPaymentAsync(orderId, CurrentEmployee!.EmployeeId, ct)
+                : throw new DomainException("Serviço de pedidos indisponível."));
+
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return updated;
+    }
+
+    public async Task<StoreOrderDto> UpdateOrderFulfillmentAsync(Guid orderId, UpdateOrderFulfillmentRequest request, CancellationToken ct = default)
+    {
+        EnsureAuthenticated();
+        var updated = await ExecuteWithFallbackAsync(
+            () => _apiClient.UpdateOrderFulfillmentAsync(orderId, request, ct),
+            () => _orderAndShippingService is not null
+                ? _orderAndShippingService.UpdateOrderFulfillmentAsync(orderId, request, ct)
+                : throw new DomainException("Serviço de pedidos indisponível."));
+
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return updated;
+    }
+
+    public async Task<StoreOrderDto> CancelOrderAsync(Guid orderId, string? reason = null, CancellationToken ct = default)
+    {
+        EnsureStockPermission();
+        var updated = await ExecuteWithFallbackAsync(
+            () => _apiClient.CancelOrderAsync(orderId, reason, ct),
+            () => _orderAndShippingService is not null
+                ? _orderAndShippingService.CancelOrderAsync(orderId, CurrentEmployee!.EmployeeId, reason, ct)
+                : throw new DomainException("Serviço de pedidos indisponível."));
+
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return updated;
     }
 
     private void EnsureAuthenticated()
