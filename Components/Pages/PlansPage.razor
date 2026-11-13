@@ -65,10 +65,28 @@ else
                     <span class="pill-badge @(_settings.IsSiteActive ? "pill-green" : "pill-red")">
                         @(_settings.IsSiteActive ? "🟢 Site Visível para o Público" : "🔴 Site Pausado / Oculto")
                     </span>
+                    @if (string.Equals(_settings.ActivePlanBillingKind, ClothingStore.Domain.Entities.PlanActivationCode.BillingKindGiftedUnpaid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        <span class="pill-badge pill-gold">☁️ Cortesia (Sem Pagamento) · Servidor na Conta do Admin</span>
+                    }
                 </div>
                 <p style="margin: 0; font-size: 0.9rem; color: var(--adm-muted);">
                     @GetPlanSummaryText()
                 </p>
+                @if (string.Equals(_settings.ActivePlanBillingKind, ClothingStore.Domain.Entities.PlanActivationCode.BillingKindGiftedUnpaid, StringComparison.OrdinalIgnoreCase))
+                {
+                    <div style="margin-top: 0.55rem; padding: 0.7rem 0.85rem; border-radius: 10px; background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); font-size: 0.84rem; line-height: 1.45;">
+                        <strong>☁️ Servidor Hospedado na Conta YouLink:</strong> Como você recebeu este plano sem pagamento, seu catálogo fica hospedado automaticamente no servidor do administrador. Escolha abaixo se quer <strong>usar um domínio grátis</strong> ou <strong>comprar seu domínio próprio</strong>!
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.55rem;">
+                            <button type="button" class="adm-btn adm-btn-success" style="font-size: 0.8rem; padding: 0.42rem 0.78rem;" @onclick="SearchFreeDomainsAsync">
+                                🎁 Escolher Domínio Grátis
+                            </button>
+                            <a href="/configuracoes-loja" class="adm-btn adm-btn-outline" style="font-size: 0.8rem; padding: 0.42rem 0.78rem; text-decoration: none;">
+                                🛒 Comprar / Configurar Domínio Próprio
+                            </a>
+                        </div>
+                    </div>
+                }
             </div>
 
             <div style="text-align: right; font-size: 0.84rem; color: var(--adm-muted);">
@@ -142,11 +160,22 @@ else
                         Deseja usar ele gratuitamente (<strong>@featured.ProviderName</strong>) e ter um <strong>plano mais barato</strong> (por ex. Meia Versão de <s>@_settings.IntermediaryPlanMonthlyPrice.ToString("C")</s> por <strong>@sampleCheaper.CheaperMonthlyPrice.ToString("C")/mês</strong>)?
                     </div>
                 </div>
-                <button type="button"
-                        class="adm-btn @(_useFreeDomainCheaperPlan && _selectedFreeDomain == featured.Domain ? "adm-btn-primary" : "adm-btn-success")"
-                        @onclick="() => ApplyFreeDomainOffer(featured)">
-                    @(_useFreeDomainCheaperPlan && _selectedFreeDomain == featured.Domain ? "✓ Domínio Grátis Aplicado!" : "✓ Sim, Usar Domínio Grátis & Plano Mais Barato")
-                </button>
+                <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+                    <button type="button"
+                            class="adm-btn @(_useFreeDomainCheaperPlan && _selectedFreeDomain == featured.Domain ? "adm-btn-primary" : "adm-btn-success")"
+                            @onclick="() => ApplyFreeDomainOffer(featured)">
+                        @(_useFreeDomainCheaperPlan && _selectedFreeDomain == featured.Domain ? "✓ Domínio Grátis Aplicado!" : "✓ Sim, Usar Domínio Grátis & Plano Mais Barato")
+                    </button>
+                    @if (Gateway.IsAdmin)
+                    {
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                disabled="@_savingPreset"
+                                @onclick="() => ActivateFreeDomainOnStoreNowAsync(featured)">
+                            💾 Salvar este Domínio Grátis na Minha Loja Agora
+                        </button>
+                    }
+                </div>
             </div>
 
             @if (_freeDomainSearch.Candidates.Count > 1)
@@ -627,6 +656,37 @@ else
         _selectedFreeDomain = candidate.Domain;
         _useFreeDomainCheaperPlan = true;
         _successMessage = $"🎁 Domínio gratuito '{candidate.Domain}' aplicado! Todos os planos ficaram {FreeDomainFinder.DefaultMonthlyDiscountWithFreeDomain:C}/mês mais baratos.";
+    }
+
+    private async Task ActivateFreeDomainOnStoreNowAsync(FreeDomainCandidateDto candidate)
+    {
+        if (_settings is null || !Gateway.IsAdmin)
+            return;
+
+        _savingPreset = true;
+        _error = null;
+        _successMessage = null;
+        try
+        {
+            var req = BuildUpdateRequest(_settings, (_settings.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone());
+            req.OnlineBaseUrl = candidate.NormalizedUrl;
+            req.DomainAcquisitionMode = ClothingStore.Domain.Entities.StoreSettings.DomainModeFreeDomain;
+
+            var updated = await Gateway.UpdateStoreSettingsAsync(req);
+            _settings = updated;
+            BrandState.ApplyFromAdminSettings(updated);
+            _selectedFreeDomain = candidate.Domain;
+            _useFreeDomainCheaperPlan = true;
+            _successMessage = $"✓ Domínio grátis '{candidate.Domain}' ({candidate.NormalizedUrl}) salvo na sua loja! Hospedagem atual: {(_settings.ServerHostingMode == "DedicatedOwnServer" ? "Meu Servidor Próprio" : "Servidor na Conta YouLink")}.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingPreset = false;
+        }
     }
 
     private void ClearFreeDomainOffer()

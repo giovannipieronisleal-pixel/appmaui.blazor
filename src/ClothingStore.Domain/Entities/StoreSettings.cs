@@ -57,7 +57,13 @@ public sealed class StoreSettings
     public int MaxDeliveryDistanceKm { get; set; } = 0;
     public int DefaultPackageWeightGrams { get; set; } = 450;
 
-    // Modo "Meu Servidor Próprio" (BYO Server) e Verificação de Nível da Conta Google
+    // Modo "Meu Servidor Próprio" (BYO Server), Plano Cortesia sem Pagamento & Domínio
+    public const string DomainModePlatformDefault = "PlataformaPadrao";
+    public const string DomainModeFreeDomain = "DominioGratis";
+    public const string DomainModePurchasedDomain = "DominioComprado";
+
+    public string ActivePlanBillingKind { get; set; } = PlanActivationCode.BillingKindPaid;
+    public string DomainAcquisitionMode { get; set; } = DomainModePlatformDefault;
     public string ServerHostingMode { get; set; } = "PlatformShared";
     public string OwnServerProvider { get; set; } = "GoogleCloudRun";
     public string? OwnServerSyncSecret { get; set; }
@@ -174,6 +180,30 @@ public sealed class StoreSettings
         PlanActivatedAt = current;
         PlanExpiresAt = nextExpiry;
         ActiveGiftCardCode = activationCode.Code;
+        ActivePlanBillingKind = activationCode.IsGiftedUnpaid
+            ? PlanActivationCode.BillingKindGiftedUnpaid
+            : PlanActivationCode.BillingKindPaid;
+
+        // Regra de hospedagem para planos ganhos sem pagamento: vira servidor na conta do administrador (PlatformShared),
+        // mantendo liberdade para o lojista usar um domínio grátis ou comprar seu domínio próprio.
+        if (activationCode.IsGiftedUnpaid)
+        {
+            ServerHostingMode = "PlatformShared";
+            OwnServerSyncSecret = null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(activationCode.SuggestedDomainName))
+        {
+            var suggested = activationCode.SuggestedDomainName.Trim();
+            var normalizedSuggestedUrl = suggested.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                                         suggested.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? suggested.TrimEnd('/')
+                : $"https://{suggested.TrimEnd('/')}";
+
+            OnlineBaseUrl = normalizedSuggestedUrl;
+            DomainAcquisitionMode = InferDomainAcquisitionMode(normalizedSuggestedUrl);
+        }
+
         IsSiteActive = true;
         DeactivationReason = null;
         PublishedStoreName = StoreName;
@@ -643,6 +673,74 @@ public sealed class StoreSettings
         GoogleDriveQuotaBytes = null;
         GoogleHostedDomain = null;
         GoogleAccountVerifiedAt = null;
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public bool IsCurrentPlanGiftedUnpaid(DateTimeOffset? now = null) =>
+        IsLicenseActive(now) &&
+        string.Equals(ActivePlanBillingKind, PlanActivationCode.BillingKindGiftedUnpaid, StringComparison.OrdinalIgnoreCase);
+
+    public bool UsesOwnerSharedServer =>
+        !string.Equals(ServerHostingMode, "DedicatedOwnServer", StringComparison.OrdinalIgnoreCase);
+
+    public static string NormalizeDomainAcquisitionMode(string? candidate)
+    {
+        var raw = (candidate ?? string.Empty).Trim();
+        if (string.Equals(raw, DomainModeFreeDomain, StringComparison.OrdinalIgnoreCase))
+            return DomainModeFreeDomain;
+        if (string.Equals(raw, DomainModePurchasedDomain, StringComparison.OrdinalIgnoreCase))
+            return DomainModePurchasedDomain;
+        return DomainModePlatformDefault;
+    }
+
+    public static string InferDomainAcquisitionMode(string? urlOrDomain)
+    {
+        if (string.IsNullOrWhiteSpace(urlOrDomain))
+            return DomainModePlatformDefault;
+
+        var raw = urlOrDomain.Trim().ToLowerInvariant();
+        if (raw.Contains("localhost", StringComparison.Ordinal) ||
+            raw.Contains("127.0.0.1", StringComparison.Ordinal) ||
+            raw.Contains("minhaloja.com", StringComparison.Ordinal) ||
+            raw.Contains("://lojas.", StringComparison.Ordinal))
+        {
+            return DomainModePlatformDefault;
+        }
+
+        if (raw.Contains(".duckdns.org", StringComparison.Ordinal) ||
+            raw.Contains(".dpdns.org", StringComparison.Ordinal) ||
+            raw.Contains(".pages.dev", StringComparison.Ordinal) ||
+            raw.Contains(".workers.dev", StringComparison.Ordinal) ||
+            raw.Contains(".onrender.com", StringComparison.Ordinal) ||
+            raw.Contains(".run.app", StringComparison.Ordinal) ||
+            raw.Contains(".fly.dev", StringComparison.Ordinal) ||
+            raw.Contains(".github.io", StringComparison.Ordinal))
+        {
+            return DomainModeFreeDomain;
+        }
+
+        return DomainModePurchasedDomain;
+    }
+
+    public void ConfigureDomainChoice(
+        string? domainAcquisitionMode,
+        string? onlineBaseUrl = null,
+        Guid? employeeId = null)
+    {
+        if (!string.IsNullOrWhiteSpace(onlineBaseUrl))
+        {
+            var trimmed = onlineBaseUrl.Trim().TrimEnd('/');
+            OnlineBaseUrl = trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? trimmed
+                : $"https://{trimmed}";
+        }
+
+        DomainAcquisitionMode = string.IsNullOrWhiteSpace(domainAcquisitionMode)
+            ? InferDomainAcquisitionMode(OnlineBaseUrl)
+            : NormalizeDomainAcquisitionMode(domainAcquisitionMode);
+
         UpdatedByEmployeeId = employeeId;
         UpdatedAt = DateTimeOffset.UtcNow;
     }

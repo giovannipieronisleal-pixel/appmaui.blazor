@@ -79,45 +79,79 @@
 @if (_mobileMoreOpen)
 {
     <div class="adm-mobile-sheet-backdrop" @onclick="CloseMobileMore">
-        <div class="adm-mobile-sheet" @onclick:stopPropagation="true">
+        <div class="adm-mobile-sheet" role="dialog" aria-modal="true" aria-labelledby="adm-mobile-sheet-heading" @onclick:stopPropagation="true">
+            <div class="adm-mobile-sheet-handle-wrap" aria-hidden="true">
+                <div class="adm-mobile-sheet-handle"></div>
+            </div>
             <div class="adm-mobile-sheet-header">
-                <strong>Menu da Loja</strong>
+                <div class="adm-mobile-sheet-heading-group">
+                    <strong id="adm-mobile-sheet-heading" class="adm-mobile-sheet-title">Menu da Loja</strong>
+                    <span class="adm-mobile-sheet-subtitle">Toque na opção que deseja abrir</span>
+                </div>
                 <button type="button" class="adm-mobile-sheet-close" @onclick="CloseMobileMore" aria-label="Fechar menu">✕</button>
             </div>
             <div class="adm-mobile-sheet-grid">
                 <NavLink class="adm-mobile-sheet-link" href="/estoque" @onclick="CloseMobileMore">
-                    <span>📦</span>
-                    <span>Estoque</span>
+                    <span class="adm-mobile-sheet-icon">📦</span>
+                    <span class="adm-mobile-sheet-copy">
+                        <span class="adm-mobile-sheet-item-title">Estoque</span>
+                        <span class="adm-mobile-sheet-item-desc">Controlar quantidades e tamanhos</span>
+                    </span>
+                    <span class="adm-mobile-sheet-chevron" aria-hidden="true">›</span>
                 </NavLink>
                 @if (Gateway.IsAdmin || Gateway.CanManageStock)
                 {
                     <NavLink class="adm-mobile-sheet-link" href="/vendas" @onclick="CloseMobileMore">
-                        <span>💰</span>
-                        <span>Vendas</span>
+                        <span class="adm-mobile-sheet-icon">💰</span>
+                        <span class="adm-mobile-sheet-copy">
+                            <span class="adm-mobile-sheet-item-title">Vendas</span>
+                            <span class="adm-mobile-sheet-item-desc">Caixa, Pix e faturamento</span>
+                        </span>
+                        <span class="adm-mobile-sheet-chevron" aria-hidden="true">›</span>
                     </NavLink>
                 }
                 @if (Gateway.IsAdmin)
                 {
                     <NavLink class="adm-mobile-sheet-link" href="/pedidos" @onclick="CloseMobileMore">
-                        <span>🧾</span>
-                        <span>Pedidos Pix</span>
+                        <span class="adm-mobile-sheet-icon">🧾</span>
+                        <span class="adm-mobile-sheet-copy">
+                            <span class="adm-mobile-sheet-item-title">Pedidos Pix</span>
+                            <span class="adm-mobile-sheet-item-desc">Confirmar pagamentos e entregas</span>
+                        </span>
+                        <span class="adm-mobile-sheet-chevron" aria-hidden="true">›</span>
                     </NavLink>
                     <NavLink class="adm-mobile-sheet-link" href="/funcionarios" @onclick="CloseMobileMore">
-                        <span>👥</span>
-                        <span>Equipe</span>
+                        <span class="adm-mobile-sheet-icon">👥</span>
+                        <span class="adm-mobile-sheet-copy">
+                            <span class="adm-mobile-sheet-item-title">Equipe</span>
+                            <span class="adm-mobile-sheet-item-desc">Acessos e funcionários da loja</span>
+                        </span>
+                        <span class="adm-mobile-sheet-chevron" aria-hidden="true">›</span>
                     </NavLink>
                     <NavLink class="adm-mobile-sheet-link" href="/configuracoes-loja" @onclick="CloseMobileMore">
-                        <span>🎨</span>
-                        <span>Loja &amp; Visual</span>
+                        <span class="adm-mobile-sheet-icon">🎨</span>
+                        <span class="adm-mobile-sheet-copy">
+                            <span class="adm-mobile-sheet-item-title">Loja &amp; Visual</span>
+                            <span class="adm-mobile-sheet-item-desc">Nome, logo, cores e servidor</span>
+                        </span>
+                        <span class="adm-mobile-sheet-chevron" aria-hidden="true">›</span>
                     </NavLink>
                     <NavLink class="adm-mobile-sheet-link" href="/planos" @onclick="CloseMobileMore">
-                        <span>💎</span>
-                        <span>Planos</span>
+                        <span class="adm-mobile-sheet-icon">💎</span>
+                        <span class="adm-mobile-sheet-copy">
+                            <span class="adm-mobile-sheet-item-title">Planos &amp; Domínio</span>
+                            <span class="adm-mobile-sheet-item-desc">Assinatura, Gift Card e endereço</span>
+                        </span>
+                        <span class="adm-mobile-sheet-chevron" aria-hidden="true">›</span>
                     </NavLink>
                 }
-                <NavLink class="adm-mobile-sheet-link" href="@($"/loja/{_storeSlug}")" @onclick="CloseMobileMore">
-                    <span>🌐</span>
-                    <span>Ver Vitrine / Site</span>
+                <NavLink class="adm-mobile-sheet-link adm-mobile-sheet-link-storefront" href="@($"/loja/{_storeSlug}")" @onclick="CloseMobileMore">
+                    <span class="adm-mobile-sheet-icon adm-mobile-sheet-icon-storefront">🌐</span>
+                    <span class="adm-mobile-sheet-copy">
+                        <span class="adm-mobile-sheet-item-title">Ver Vitrine / Site</span>
+                        <span class="adm-mobile-sheet-item-desc">Abrir catálogo online dos clientes</span>
+                    </span>
+                    <span class="adm-mobile-sheet-chevron" aria-hidden="true">›</span>
                 </NavLink>
             </div>
         </div>

@@ -229,6 +229,7 @@ public sealed class UpdateStoreSettingsRequest
     public string? OwnServerSyncSecret { get; set; }
     public bool ClearOwnServerSyncSecret { get; set; } = false;
     public string? GoogleOAuthClientId { get; set; }
+    public string? DomainAcquisitionMode { get; set; }
 }
 
 public sealed record AdminStoreSettingsDto(
@@ -276,7 +277,9 @@ public sealed record AdminStoreSettingsDto(
     long? GoogleDriveQuotaBytes = null,
     string? GoogleHostedDomain = null,
     DateTimeOffset? GoogleAccountVerifiedAt = null,
-    bool QualifiesForDedicatedServerBenefit = false);
+    bool QualifiesForDedicatedServerBenefit = false,
+    string ActivePlanBillingKind = "Pago",
+    string DomainAcquisitionMode = "PlataformaPadrao");
 
 public sealed class CloudCatalogSyncPayload
 {

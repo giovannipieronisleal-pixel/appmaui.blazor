@@ -215,6 +215,14 @@ public sealed class AdminApiClient
 
             return (false, normalized, null, $"Servidor respondeu HTTP {(int)infoResp.StatusCode}.");
         }
+        catch (OperationCanceledException)
+        {
+            return (false, normalized, null, "Tempo esgotado ao conectar ao servidor informado. Verifique o endereço ou tente novamente.");
+        }
+        catch (HttpRequestException ex)
+        {
+            return (false, normalized, null, $"Falha de rede ao conectar ao servidor: {ex.Message}");
+        }
         catch (Exception ex)
         {
             return (false, normalized, null, ex.Message);

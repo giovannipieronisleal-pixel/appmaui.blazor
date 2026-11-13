@@ -344,46 +344,6 @@
             </a>
         </div>
     }
-
-    <details style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px dashed var(--adm-border); font-size: 0.82rem;">
-        <summary style="cursor: pointer; font-weight: 600; color: var(--adm-muted); user-select: none;">
-            🌐 Conectar ao Servidor Central / YouLink Admin (Opcional)
-        </summary>
-        <div style="margin-top: 0.65rem; display: flex; flex-direction: column; gap: 0.55rem;">
-            <p style="margin: 0; font-size: 0.77rem; color: var(--adm-muted); line-height: 1.4;">
-                Por padrão sua loja funciona 100% offline neste celular. Se você usa um servidor central no PC ou na nuvem para acompanhar contas no <strong>YouLink Admin</strong>, cole o endereço abaixo:
-            </p>
-            <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
-                <input type="url"
-                       class="adm-input"
-                       style="flex: 1; min-width: 190px; font-size: 0.82rem;"
-                       @bind="_serverUrlInput"
-                       placeholder="Ex.: http://192.168.0.15:5000 ou https://api.minhaloja.com" />
-                <button type="button"
-                        class="adm-btn adm-btn-outline"
-                        style="white-space: nowrap; font-size: 0.8rem;"
-                        disabled="@_connectingServer"
-                        @onclick="ConnectServerFromLoginAsync">
-                    @(_connectingServer ? "Conectando..." : "⚡ Conectar")
-                </button>
-            </div>
-            @if (Gateway.HasCustomServerUrl)
-            {
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.76rem; color: var(--adm-success);">
-                    <span>✓ Conectado a: <code>@Gateway.CurrentServerUrl</code></span>
-                    <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.2rem 0.45rem; font-size: 0.72rem;" @onclick="DisconnectServerFromLoginAsync">
-                        Usar apenas celular
-                    </button>
-                </div>
-            }
-            @if (!string.IsNullOrWhiteSpace(_serverConnectFeedback))
-            {
-                <div style="font-size: 0.77rem; color: @(_serverConnectOk ? "var(--adm-success)" : "var(--adm-danger)");">
-                    @_serverConnectFeedback
-                </div>
-            }
-        </div>
-    </details>
 </div>
 
 <!-- ============================================================== -->
@@ -569,14 +529,9 @@
     private CheckDomainAvailabilityResponse? _domainCheckResult;
     private string? _setupErrorMessage;
     private string? _setupSyncNotice;
-    private string _serverUrlInput = string.Empty;
-    private bool _connectingServer;
-    private bool _serverConnectOk;
-    private string? _serverConnectFeedback;
 
     protected override async Task OnInitializedAsync()
     {
-        _serverUrlInput = Gateway.CurrentServerUrl;
         try
         {
             var store = await CatalogService.GetPublicStoreSettingsAsync();
@@ -906,39 +861,5 @@
         {
             _isBusy = false;
         }
-    }
-
-    private async Task ConnectServerFromLoginAsync()
-    {
-        _connectingServer = true;
-        _serverConnectFeedback = null;
-        try
-        {
-            var result = await Gateway.ConfigureServerUrlAsync(_serverUrlInput);
-            _serverConnectOk = result.Reachable;
-            if (result.Reachable)
-            {
-                _serverUrlInput = result.NormalizedUrl;
-                _serverConnectFeedback = string.IsNullOrWhiteSpace(result.StoreName)
-                    ? $"Conectado ao servidor {result.NormalizedUrl}! Contas criadas serão sincronizadas com o YouLink Admin."
-                    : $"Conectado à loja '{result.StoreName}' em {result.NormalizedUrl}! Suas contas sincronizam com o YouLink Admin.";
-            }
-            else
-            {
-                _serverConnectFeedback = result.ErrorMessage ?? "Não foi possível alcançar o servidor informado.";
-            }
-        }
-        finally
-        {
-            _connectingServer = false;
-        }
-    }
-
-    private async Task DisconnectServerFromLoginAsync()
-    {
-        await Gateway.ConfigureServerUrlAsync(null);
-        _serverUrlInput = string.Empty;
-        _serverConnectOk = true;
-        _serverConnectFeedback = "Modo apenas celular restaurado.";
     }
 }

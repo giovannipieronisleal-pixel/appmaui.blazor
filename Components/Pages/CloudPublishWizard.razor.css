@@ -311,3 +311,58 @@
     background: #15803D;
     color: #FFFFFF;
 }
+
+.cpw-api-box {
+    margin-top: 0.45rem;
+    background: var(--adm-surface-subtle);
+    border: 1px dashed var(--adm-accent);
+    border-radius: 10px;
+    padding: 0.6rem 0.78rem;
+}
+
+.cpw-api-summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--adm-text);
+    user-select: none;
+}
+
+.cpw-api-body {
+    margin-top: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.cpw-api-note {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--adm-muted);
+}
+
+.cpw-api-key-link-btn {
+    font-size: 0.78rem;
+    padding: 0.4rem 0.75rem;
+}
+
+.cpw-api-feedback {
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.79rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.cpw-api-feedback-ok {
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid var(--adm-success);
+    color: var(--adm-success);
+}
+
+.cpw-api-feedback-err {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid var(--adm-danger);
+    color: var(--adm-danger);
+}

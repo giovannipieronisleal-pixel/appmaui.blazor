@@ -94,6 +94,18 @@ public sealed class GoogleCloudSyncService
     public static string NormalizePublicServerUrl(string? rawUrl) =>
         WhatsAppLinkBuilder.NormalizePublicServerUrl(rawUrl);
 
+    public Task<RenderServiceProvisionResult> ProvisionRenderServiceAsync(
+        string? rawApiKey,
+        string? storeNameOrSlug,
+        string? existingSyncSecret = null,
+        CancellationToken ct = default) =>
+        RenderProvisioningHelper.DiscoverOrCreateYouLinkServiceAsync(
+            rawApiKey,
+            storeNameOrSlug,
+            existingSyncSecret,
+            ExternalHttpClient,
+            ct);
+
     public async Task<OwnServerHealthCheckResult> TestOwnServerConnectionAsync(
         string? targetUrl,
         CancellationToken ct = default,

@@ -1,6 +1,8 @@
 @using Microsoft.Maui.ApplicationModel
 @using Microsoft.Maui.ApplicationModel.DataTransfer
+@using ClothingStore.Shared.Helpers
 @using appmaui.blazor.Services
+@inject GoogleCloudSyncService CloudSync
 
 <section id="publicar-site-24h" class="adm-card cpw-card @(IsOnlineConfigured && IsSiteActive ? "cpw-card-live" : string.Empty)">
     <div class="cpw-header">
@@ -116,6 +118,40 @@
                         <li>No topo da página do serviço <code>youlink-loja</code>, copie o endereço azul <code>https://...onrender.com</code>.</li>
                         <li>No menu esquerdo, abra <strong>Environment</strong>, revele <code>YOULINK_SYNC_SECRET</code> e clique em copiar.</li>
                     </ol>
+                </details>
+
+                <details class="cpw-api-box">
+                    <summary class="cpw-api-summary">⚡ Conectar automático via Chave API do Render (Opcional)</summary>
+                    <div class="cpw-api-body">
+                        <p class="cpw-api-note">
+                            No site do Render você entra com sua <strong>conta Google</strong> normalmente, mas a API do Render não aceita login Google direto — ela usa uma <strong>Chave API (<code>rnd_...</code>)</strong>. Gere uma vez lá e cole abaixo para buscarmos ou criarmos seu site sozinho:
+                        </p>
+                        <div class="cpw-step-actions">
+                            <button type="button"
+                                    class="adm-btn adm-btn-outline cpw-api-key-link-btn"
+                                    @onclick="OpenRenderApiKeysAsync">
+                                🔑 Criar Chave API no Render
+                            </button>
+                        </div>
+                        <div class="cpw-secret-row">
+                            <input type="password"
+                                   class="adm-input"
+                                   @bind="_renderApiKeyInput"
+                                   placeholder="Cole sua Chave API Render (rnd_...)" />
+                            <button type="button"
+                                    class="adm-btn adm-btn-accent cpw-toggle-secret-btn"
+                                    disabled="@_provisioningRender"
+                                    @onclick="ProvisionRenderByApiKeyAsync">
+                                @(_provisioningRender ? "⏳ Conectando..." : "🤖 Buscar / Criar")
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_renderApiFeedback))
+                        {
+                            <div class="cpw-api-feedback @(_renderApiSuccess ? "cpw-api-feedback-ok" : "cpw-api-feedback-err")">
+                                @_renderApiFeedback
+                            </div>
+                        }
+                    </div>
                 </details>
             </article>
 
@@ -234,6 +270,7 @@
     [Parameter] public string? StatusMessage { get; set; }
     [Parameter] public DateTimeOffset? LastSyncedAt { get; set; }
     [Parameter] public string? OfficialCatalogUrl { get; set; }
+    [Parameter] public string? StoreNameHint { get; set; }
 
     [Parameter] public EventCallback OnPublishRequested { get; set; }
     [Parameter] public EventCallback OnClearSecretRequested { get; set; }
@@ -245,6 +282,10 @@
     private bool _copiedBlueprint;
     private bool _step1Opened;
     private bool _editingSetup;
+    private string _renderApiKeyInput = string.Empty;
+    private bool _provisioningRender;
+    private bool _renderApiSuccess;
+    private string? _renderApiFeedback;
 
     private async Task OpenRenderBlueprintAsync()
     {
@@ -325,6 +366,60 @@
     private void ToggleShowSecret() => _showSecret = !_showSecret;
 
     private void ToggleEditingSetup() => _editingSetup = !_editingSetup;
+
+    private async Task OpenRenderApiKeysAsync()
+    {
+        var url = RenderProvisioningHelper.RenderApiKeysDashboardUrl;
+        try
+        {
+            await Browser.Default.OpenAsync(new Uri(url), BrowserLaunchMode.External);
+        }
+        catch
+        {
+            try
+            {
+                await Launcher.Default.OpenAsync(new Uri(url));
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task ProvisionRenderByApiKeyAsync()
+    {
+        _provisioningRender = true;
+        _renderApiFeedback = null;
+        _renderApiSuccess = false;
+        try
+        {
+            var result = await CloudSync.ProvisionRenderServiceAsync(
+                _renderApiKeyInput,
+                StoreNameHint,
+                SyncSecret);
+
+            _renderApiSuccess = result.Success;
+            _renderApiFeedback = result.Message;
+
+            if (result.Success)
+            {
+                _step1Opened = true;
+                if (!string.IsNullOrWhiteSpace(result.ServiceUrl))
+                {
+                    await RenderUrlChanged.InvokeAsync(result.ServiceUrl);
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.GeneratedSyncSecret))
+                {
+                    await SyncSecretChanged.InvokeAsync(result.GeneratedSyncSecret);
+                }
+            }
+        }
+        finally
+        {
+            _provisioningRender = false;
+        }
+    }
 
     private Task HandlePublishClickAsync() => OnPublishRequested.InvokeAsync();
 

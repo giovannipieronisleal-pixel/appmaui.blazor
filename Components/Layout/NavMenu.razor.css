@@ -133,66 +133,177 @@
         display: flex;
         align-items: flex-end;
         position: fixed;
-        inset: 0 0 68px 0;
-        background: rgba(10, 12, 16, 0.55);
-        backdrop-filter: blur(3px);
-        z-index: 45;
-        padding: 0.75rem;
+        inset: 0 0 calc(74px + env(safe-area-inset-bottom, 0px)) 0;
+        background: rgba(12, 12, 16, 0.68);
+        backdrop-filter: blur(4px);
+        z-index: 55;
+        padding: 0.75rem 0.75rem 0.5rem;
     }
 
     .adm-mobile-sheet {
         width: 100%;
-        background: var(--adm-card, #ffffff);
-        color: var(--adm-text, #18181b);
-        border: 1px solid var(--adm-border, #e4e4e7);
-        border-radius: 16px;
-        padding: 0.9rem;
-        box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
+        max-height: calc(100vh - 108px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        background: var(--adm-surface, var(--adm-card, #FAF8F5));
+        color: var(--adm-text, #18181B);
+        border: 1.5px solid var(--adm-border, #E7E2DA);
+        border-radius: 22px 22px 16px 16px;
+        padding: 0.65rem 1rem 1.15rem;
+        box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.38);
+    }
+
+    .adm-mobile-sheet-handle-wrap {
+        display: flex;
+        justify-content: center;
+        padding: 0.15rem 0 0.6rem;
+    }
+
+    .adm-mobile-sheet-handle {
+        width: 52px;
+        height: 5px;
+        border-radius: 999px;
+        background: var(--adm-border, #D6D0C5);
     }
 
     .adm-mobile-sheet-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 0.75rem;
-        font-size: 0.95rem;
+        gap: 0.75rem;
+        padding-bottom: 0.85rem;
+        margin-bottom: 0.85rem;
+        border-bottom: 1px solid var(--adm-border, #E7E2DA);
+    }
+
+    .adm-mobile-sheet-heading-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        min-width: 0;
+    }
+
+    .adm-mobile-sheet-title {
+        font-size: 1.35rem;
+        font-weight: 800;
+        line-height: 1.2;
+        color: var(--adm-text, #18181B);
+    }
+
+    .adm-mobile-sheet-subtitle {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--adm-muted, #57534E);
     }
 
     .adm-mobile-sheet-close {
-        background: var(--adm-surface-subtle, rgba(120, 120, 128, 0.12));
-        color: var(--adm-text, #18181b);
-        border: 1px solid var(--adm-border, #e4e4e7);
-        border-radius: 8px;
-        width: 34px;
-        height: 34px;
-        font-size: 0.95rem;
+        background: var(--adm-surface-subtle, rgba(182, 145, 88, 0.14));
+        color: var(--adm-text, #18181B);
+        border: 1.5px solid var(--adm-border, #E7E2DA);
+        border-radius: 50%;
+        width: 48px;
+        height: 48px;
+        flex-shrink: 0;
+        font-size: 1.25rem;
+        font-weight: 800;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         cursor: pointer;
     }
 
     .adm-mobile-sheet-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.55rem;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.65rem;
     }
 
-    .adm-mobile-sheet-link {
+    @media (min-width: 560px) {
+        .adm-mobile-sheet-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    .adm-mobile-sheet-grid ::deep a.adm-mobile-sheet-link,
+    .adm-mobile-sheet-grid ::deep .adm-mobile-sheet-link {
         display: flex;
         align-items: center;
-        gap: 0.55rem;
-        padding: 0.75rem 0.8rem;
-        border-radius: 10px;
-        border: 1px solid var(--adm-border, #e4e4e7);
-        background: var(--adm-surface-subtle, rgba(120, 120, 128, 0.08));
-        color: var(--adm-text, #18181b);
-        text-decoration: none;
-        font-weight: 600;
-        font-size: 0.85rem;
+        gap: 0.85rem;
+        min-height: 64px;
+        padding: 0.78rem 0.92rem;
+        border-radius: 14px;
+        border: 1.5px solid var(--adm-border, #E7E2DA);
+        background: var(--adm-card, #FFFFFF);
+        color: var(--adm-text, #18181B);
+        text-decoration: none !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        transition: transform 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
     }
 
-    .adm-mobile-sheet-link.active {
+    .adm-mobile-sheet-grid ::deep a.adm-mobile-sheet-link:hover,
+    .adm-mobile-sheet-grid ::deep a.adm-mobile-sheet-link:focus-visible {
         border-color: var(--adm-accent, #B69158);
-        background: color-mix(in srgb, var(--adm-accent, #B69158) 18%, var(--adm-card, #ffffff));
-        color: var(--adm-text, #18181b);
+        outline: none;
+    }
+
+    .adm-mobile-sheet-grid ::deep a.adm-mobile-sheet-link.active,
+    .adm-mobile-sheet-grid ::deep .adm-mobile-sheet-link.active {
+        border-color: var(--adm-accent, #B69158);
+        border-width: 2px;
+        background: color-mix(in srgb, var(--adm-accent, #B69158) 16%, var(--adm-card, #FFFFFF));
+        color: var(--adm-text, #18181B);
+    }
+
+    .adm-mobile-sheet-grid ::deep a.adm-mobile-sheet-link-storefront,
+    .adm-mobile-sheet-grid ::deep .adm-mobile-sheet-link-storefront {
+        border-color: var(--adm-accent, #B69158);
+        background: color-mix(in srgb, var(--adm-accent, #B69158) 12%, var(--adm-card, #FFFFFF));
+    }
+
+    .adm-mobile-sheet-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--adm-accent, #B69158) 16%, var(--adm-surface-subtle, #FAF4EB));
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.45rem;
+        flex-shrink: 0;
+    }
+
+    .adm-mobile-sheet-icon-storefront {
+        background: var(--adm-accent, #B69158);
+        color: #141416;
+    }
+
+    .adm-mobile-sheet-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 0.14rem;
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .adm-mobile-sheet-item-title {
+        font-size: 1.06rem;
+        font-weight: 800;
+        line-height: 1.25;
+        color: var(--adm-text, #18181B);
+    }
+
+    .adm-mobile-sheet-item-desc {
+        font-size: 0.84rem;
+        font-weight: 500;
+        line-height: 1.3;
+        color: var(--adm-muted, #57534E);
+    }
+
+    .adm-mobile-sheet-chevron {
+        font-size: 1.45rem;
         font-weight: 700;
+        color: var(--adm-muted, #78716C);
+        flex-shrink: 0;
+        line-height: 1;
     }
 }

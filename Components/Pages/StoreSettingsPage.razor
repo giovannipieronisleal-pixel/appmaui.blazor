@@ -471,6 +471,7 @@
                     StatusMessage="@_publishWizardMessage"
                     LastSyncedAt="@_form.LastOnlineSyncAt"
                     OfficialCatalogUrl="@storeCatalogUrl"
+                    StoreNameHint="@_form.StoreName"
                     OnPublishRequested="PublishOneClickAsync"
                     OnClearSecretRequested="ClearOwnServerSyncSecretAsync"
                     OnCopyCatalogUrl="() => CopyStoreUrlAsync(storeCatalogUrl)"

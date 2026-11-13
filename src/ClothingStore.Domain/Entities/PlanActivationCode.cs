@@ -8,12 +8,17 @@ namespace ClothingStore.Domain.Entities;
 /// </summary>
 public sealed class PlanActivationCode
 {
+    public const string BillingKindPaid = "Pago";
+    public const string BillingKindGiftedUnpaid = "CortesiaSemPagamento";
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Code { get; set; } = string.Empty;
     public string TargetPlanTier { get; set; } = StoreSettings.PlanTierPremium;
     public int? DurationDays { get; set; }
     public string? TargetStoreName { get; set; }
     public string? Notes { get; set; }
+    public string PlanBillingKind { get; set; } = BillingKindPaid;
+    public string? SuggestedDomainName { get; set; }
     public Guid? CreatedByEmployeeId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CodeExpiresAt { get; set; }
@@ -25,6 +30,7 @@ public sealed class PlanActivationCode
 
     public bool IsRedeemed => RedeemedAt.HasValue;
     public bool IsLifetime => !DurationDays.HasValue;
+    public bool IsGiftedUnpaid => string.Equals(PlanBillingKind, BillingKindGiftedUnpaid, StringComparison.OrdinalIgnoreCase);
 
     public bool CanRedeem(DateTimeOffset? now = null)
     {
@@ -56,7 +62,9 @@ public sealed class PlanActivationCode
         string? targetStoreName = null,
         string? notes = null,
         Guid? createdByEmployeeId = null,
-        DateTimeOffset? codeExpiresAt = null)
+        DateTimeOffset? codeExpiresAt = null,
+        bool isGiftedUnpaid = false,
+        string? suggestedDomainName = null)
     {
         var normalizedTier = StoreSettings.NormalizePlanTier(targetPlanTier);
 
@@ -77,6 +85,8 @@ public sealed class PlanActivationCode
             DurationDays = durationDays,
             TargetStoreName = string.IsNullOrWhiteSpace(targetStoreName) ? null : targetStoreName.Trim(),
             Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim(),
+            PlanBillingKind = isGiftedUnpaid ? BillingKindGiftedUnpaid : BillingKindPaid,
+            SuggestedDomainName = string.IsNullOrWhiteSpace(suggestedDomainName) ? null : suggestedDomainName.Trim(),
             CreatedByEmployeeId = createdByEmployeeId,
             CreatedAt = DateTimeOffset.UtcNow,
             CodeExpiresAt = codeExpiresAt

@@ -321,6 +321,14 @@ public sealed class EmployeeAndSettingsService
                 employeeId);
         }
 
+        if (request.DomainAcquisitionMode is not null || request.OnlineBaseUrl is not null)
+        {
+            settings.ConfigureDomainChoice(
+                request.DomainAcquisitionMode,
+                request.OnlineBaseUrl,
+                employeeId);
+        }
+
         await _repository.UpdateStoreSettingsAsync(settings, ct);
         return MapToAdminSettingsDto(settings);
     }
@@ -482,6 +490,11 @@ public sealed class EmployeeAndSettingsService
             _ => $"Gift Card {code.Code} resgatado! Plano Básico Minimalista Luxo ativado ({expiryMessage})."
         };
 
+        if (code.IsGiftedUnpaid)
+        {
+            message += " Como o plano foi liberado sem pagamento (cortesia), seu servidor fica hospedado na conta YouLink (Servidor Compartilhado) e você pode escolher um domínio grátis ou comprar um domínio próprio!";
+        }
+
         var dto = MapToAdminSettingsDto(settings);
         return new RedeemActivationCodeResponse(
             code.Code,
@@ -538,6 +551,8 @@ public sealed class EmployeeAndSettingsService
             s.GoogleDriveQuotaBytes,
             s.GoogleHostedDomain,
             s.GoogleAccountVerifiedAt,
-            s.QualifiesForDedicatedServerBenefit());
+            s.QualifiesForDedicatedServerBenefit(),
+            s.ActivePlanBillingKind,
+            s.DomainAcquisitionMode);
 }
 
