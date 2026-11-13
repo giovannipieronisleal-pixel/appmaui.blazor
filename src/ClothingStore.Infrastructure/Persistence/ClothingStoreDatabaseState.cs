@@ -57,8 +57,8 @@ public sealed class ClothingStoreDatabaseState
         state.Users.Add(adminUser);
         state.Employees.Add(adminEmployee);
 
-        // 3. Categorias Padrão de Loja de Roupas (para escolha imediata ao adicionar itens)
-        state.Categories.AddRange(CreateDefaultCategories());
+        // 3. Categorias iniciam vazias (sem exemplos) para serem criadas pelos clientes
+        // state.Categories permanece vazio até o cliente criar suas próprias categorias.
 
         // 4. Configurações Iniciais Limpas da Loja
         state.StoreSettings = new StoreSettings(
@@ -74,35 +74,5 @@ public sealed class ClothingStoreDatabaseState
         return state;
     }
 
-    public static List<Category> CreateDefaultCategories() =>
-    [
-        new Category("Camisetas & Blusas", "Camisetas, blusas, regatas e tops", 1)
-        {
-            Id = Guid.Parse("cccccccc-0001-0001-0001-000000000001")
-        },
-        new Category("Calças & Jeans", "Calças jeans, alfaiataria, pantalonas e joggers", 2)
-        {
-            Id = Guid.Parse("cccccccc-0002-0002-0002-000000000002")
-        },
-        new Category("Vestidos", "Vestidos curtos, midi e longos", 3)
-        {
-            Id = Guid.Parse("cccccccc-0003-0003-0003-000000000003")
-        },
-        new Category("Saias & Shorts", "Saias, shorts e bermudas", 4)
-        {
-            Id = Guid.Parse("cccccccc-0004-0004-0004-000000000004")
-        },
-        new Category("Casacos & Jaquetas", "Jaquetas, blazers, tricôs e moletons", 5)
-        {
-            Id = Guid.Parse("cccccccc-0005-0005-0005-000000000005")
-        },
-        new Category("Conjuntos", "Conjuntos e peças combinadas", 6)
-        {
-            Id = Guid.Parse("cccccccc-0006-0006-0006-000000000006")
-        },
-        new Category("Acessórios", "Bolsas, cintos, bonés e acessórios", 7)
-        {
-            Id = Guid.Parse("cccccccc-0007-0007-0007-000000000007")
-        }
-    ];
+    public static List<Category> CreateDefaultCategories() => [];
 }

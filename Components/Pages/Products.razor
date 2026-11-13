@@ -202,6 +202,33 @@
 }
 
 <!-- Barra de Busca e Filtros -->
+@if (_categories.Count == 0 && Gateway.CanManageProducts && !_showNewCategoryModal && !_showNewProductModal)
+{
+    <div class="adm-card" style="border-left: 4px solid var(--adm-accent); display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+        <div style="font-size: 0.88rem; color: var(--adm-text);">
+            <strong>Suas Categorias:</strong> Nenhuma categoria cadastrada ainda. Crie suas próprias categorias de loja para organizar seus produtos.
+        </div>
+        <button type="button" class="adm-btn adm-btn-accent" style="padding: 0.4rem 0.85rem; font-size: 0.82rem;" @onclick="ToggleNewCategoryModal">
+            + Criar Primeira Categoria
+        </button>
+    </div>
+}
+else if (_categories.Count > 0)
+{
+    <div style="display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.75rem;">
+        <span style="font-size: 0.78rem; font-weight: 700; color: var(--adm-muted);">Suas Categorias:</span>
+        @foreach (var cat in _categories)
+        {
+            <button type="button"
+                    class="pill-badge @(_selectedCategoryId == cat.Id.ToString() ? "pill-gold" : "pill-slate")"
+                    style="border: none; cursor: pointer;"
+                    @onclick="async () => { _selectedCategoryId = _selectedCategoryId == cat.Id.ToString() ? string.Empty : cat.Id.ToString(); await LoadProductsAsync(); }">
+                @cat.Name (@cat.ProductCount)
+            </button>
+        }
+    </div>
+}
+
 <div class="adm-card" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
     <div style="flex: 1 1 200px; min-width: 0;">
         <input type="text"
@@ -281,14 +308,43 @@
                         <span class="pill-badge pill-slate">@prod.Variants.Count cor/tam</span>
                     </td>
                     <td data-label="Estoque Total">
-                        @if (prod.TotalStockQuantity > 0)
-                        {
-                            <span class="pill-badge pill-green">@prod.TotalStockQuantity un.</span>
-                        }
-                        else
-                        {
-                            <span class="pill-badge pill-red">0 un. (Esgotado)</span>
-                        }
+                        <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+                            @if (prod.TotalStockQuantity > 0)
+                            {
+                                <span class="pill-badge pill-green">@prod.TotalStockQuantity un.</span>
+                            }
+                            else
+                            {
+                                <span class="pill-badge pill-red">0 un. (Esgotado)</span>
+                            }
+                            @if (Gateway.CanManageStock && prod.Variants.Count == 1)
+                            {
+                                var singleVar = prod.Variants[0];
+                                <button type="button"
+                                        class="adm-btn adm-btn-danger"
+                                        style="padding: 0.2rem 0.5rem; font-size: 0.78rem; min-height: 28px;"
+                                        disabled="@(singleVar.StockQuantity <= 0)"
+                                        title="Baixar 1 unidade"
+                                        @onclick='() => QuickMoveSingleVariantAsync(prod, singleVar, "OUT", 1)'>
+                                    −1
+                                </button>
+                                <button type="button"
+                                        class="adm-btn adm-btn-success"
+                                        style="padding: 0.2rem 0.5rem; font-size: 0.78rem; min-height: 28px;"
+                                        title="Somar 1 unidade"
+                                        @onclick='() => QuickMoveSingleVariantAsync(prod, singleVar, "IN", 1)'>
+                                    +1
+                                </button>
+                            }
+                            else if (Gateway.CanManageStock && prod.Variants.Count > 1)
+                            {
+                                <a href="/estoque?productId=@prod.Id"
+                                   class="pill-badge pill-blue"
+                                   style="text-decoration: none; font-size: 0.74rem;">
+                                    📦 Movimentar
+                                </a>
+                            }
+                        </div>
                     </td>
                     <td data-label="No Site">
                         @if (Gateway.CanManageProducts)
@@ -557,6 +613,28 @@
             _editingProductId = null;
             await LoadCategoriesAndProductsAsync();
             _success = $"Item '{updated.Name}' atualizado com sucesso!";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task QuickMoveSingleVariantAsync(ProductDetailDto prod, ProductVariantDto variant, string movementType, int quantity)
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            var mov = await Gateway.RegisterStockMovementAsync(new CreateStockMovementRequest
+            {
+                ProductVariantId = variant.Id,
+                MovementType = movementType,
+                Quantity = quantity,
+                Reason = movementType == "OUT" ? "Saída rápida na lista" : "Entrada rápida na lista"
+            });
+            await LoadProductsAsync();
+            _success = $"✓ Estoque de '{prod.Name}' ({variant.Color}/{variant.Size}) atualizado: {mov.PreviousQuantity} → {mov.NewQuantity} un.";
         }
         catch (Exception ex)
         {

@@ -114,11 +114,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
             }
         }
 
-        if (state.Categories.Count == 0)
-        {
-            state.Categories.AddRange(ClothingStoreDatabaseState.CreateDefaultCategories());
-        }
-
+        state.Categories ??= [];
         var categoriesById = state.Categories.ToDictionary(c => c.Id);
         foreach (var product in state.Products)
         {

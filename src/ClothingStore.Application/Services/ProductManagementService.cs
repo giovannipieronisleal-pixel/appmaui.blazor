@@ -142,12 +142,7 @@ public sealed class ProductManagementService
         if (allCategories.Count > 0)
             return allCategories[0];
 
-        var fallbackCategory = new Category("Geral", "Categoria geral de peças", 1)
-        {
-            IsActive = true
-        };
-        await _repository.AddCategoryAsync(fallbackCategory, ct);
-        return fallbackCategory;
+        throw new DomainException("Nenhuma categoria cadastrada ainda. Crie ou digite o nome da sua categoria ao adicionar o produto.");
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(

@@ -17,6 +17,7 @@ public sealed class GoogleCloudSyncService
     private readonly IClothingStoreRepository _repository;
     private readonly AdminApiClient _adminApiClient;
     private readonly HttpClient _httpClient;
+    private static readonly HttpClient PublicDnsClient = new() { Timeout = TimeSpan.FromSeconds(6) };
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     public event Action? OnSyncStatusChanged;
@@ -91,7 +92,7 @@ public sealed class GoogleCloudSyncService
     {
         return await GoogleCloudDomainChecker.EvaluateDomainAsync(
             rawDomain,
-            _httpClient,
+            PublicDnsClient,
             async domain =>
             {
                 var settings = await _repository.GetStoreSettingsAsync(ct);
@@ -100,6 +101,34 @@ public sealed class GoogleCloudSyncService
             },
             ct);
     }
+
+    public async Task<FreeDomainSearchResponse> SearchFreeDomainsAsync(
+        string? storeNameOrKeyword,
+        string? ownerCustomRootDomain = null,
+        CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var query = string.IsNullOrWhiteSpace(storeNameOrKeyword) ? settings.StoreName : storeNameOrKeyword;
+
+        return await FreeDomainFinder.SearchAvailableFreeDomainsAsync(
+            query,
+            PublicDnsClient,
+            async domain =>
+            {
+                var current = await _repository.GetStoreSettingsAsync(ct);
+                return string.Equals(current.OnlineBaseUrl, $"https://{domain}", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(current.StoreSlug, domain, StringComparison.OrdinalIgnoreCase);
+            },
+            ownerCustomRootDomain,
+            ct);
+    }
+
+    public Task<(bool Success, string Message)> UpdateDuckDnsAsync(
+        string subdomainOrDomain,
+        string token,
+        string? ipv4 = null,
+        CancellationToken ct = default) =>
+        FreeDomainFinder.UpdateDuckDnsIpAsync(subdomainOrDomain, token, ipv4, PublicDnsClient, ct);
 
     /// <summary>
     /// Sincroniza o catálogo local com o site 24h no Google Cloud.

@@ -50,7 +50,9 @@ public class PixCheckoutAndShippingTests
 
         var catService = new ProductManagementService(repo, storage);
         var categories = await catService.GetAllCategoriesAsync();
-        var catId = categories[0].Id;
+        var catId = categories.Count > 0
+            ? categories[0].Id
+            : (await catService.CreateCategoryAsync(new SaveCategoryRequest { Name = "Moda Feminina" })).Id;
 
         var product = new Product(catId, "Jaqueta Corta-Vento Linho", "Peça leve com acabamento premium", price, true);
         var variant = product.AddVariant("Preto", "M", "#18181B", "JAC-PRT-M", 2);

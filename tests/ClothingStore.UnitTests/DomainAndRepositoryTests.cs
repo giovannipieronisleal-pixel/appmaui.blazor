@@ -149,9 +149,9 @@ public class DomainAndRepositoryTests
             var categories = await repo.GetCategoriesAsync();
             var employees = await repo.GetEmployeesAsync();
 
-            // Nenhum produto de exemplo, mas categorias padrão prontas para uso
+            // Nenhum produto nem categoria de exemplo pré-cadastrada (clientes criam suas próprias categorias)
             Assert.AreEqual(0, products.Count);
-            Assert.IsTrue(categories.Count >= 7);
+            Assert.AreEqual(0, categories.Count);
             // Apenas o login Admin padrão (login: admin / senha: admin)
             Assert.AreEqual(1, employees.Count);
             Assert.AreEqual("admin", employees[0].User?.Email);

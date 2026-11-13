@@ -152,7 +152,45 @@ else
                             @onclick="CheckCheckoutDomainAsync">
                         @(_isCheckingDomain ? "Verificando..." : "🔍 Verificar Endereço")
                     </button>
+                    <button type="button"
+                            class="adm-btn adm-btn-accent"
+                            style="white-space: nowrap; flex: 0 1 auto;"
+                            disabled="@_searchingFreeDomains"
+                            @onclick="SearchFreeDomainsForCheckoutAsync">
+                        @(_searchingFreeDomains ? "Buscando..." : "🎁 Procurar Domínio Grátis")
+                    </button>
                 </div>
+
+                @if (_freeDomainSearch?.FeaturedOffer is not null)
+                {
+                    var freeOffer = _freeDomainSearch.FeaturedOffer;
+                    var cheaperPreview = FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(RegularMonthlyPrice);
+                    <div style="margin-top: 0.65rem; padding: 0.75rem 0.9rem; border-radius: 10px; background: rgba(22,163,74,0.1); border: 1.5px solid var(--adm-success);">
+                        <div style="font-weight: 800; font-size: 0.88rem; color: var(--adm-success);">
+                            🎁 Olha! Este domínio gratuito está disponível: <code>@freeOffer.Domain</code>
+                        </div>
+                        <div style="font-size: 0.8rem; color: var(--adm-text); margin-top: 0.2rem;">
+                            Deseja usar ele gratuitamente (<strong>@freeOffer.ProviderName</strong>) e ter um plano mais barato (de <s>@RegularMonthlyPrice.ToString("C")</s> por <strong>@cheaperPreview.CheaperMonthlyPrice.ToString("C")/mês</strong>)?
+                        </div>
+                        <div style="display: flex; gap: 0.45rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                            @foreach (var item in _freeDomainSearch.Candidates.Where(c => c.IsAvailable).Take(5))
+                            {
+                                var picked = _useFreeDomainCheaperPlan && string.Equals(_desiredDomain, item.Domain, StringComparison.OrdinalIgnoreCase);
+                                <button type="button"
+                                        class="pill-badge @(picked ? "pill-gold" : "pill-green")"
+                                        style="border: none; cursor: pointer; padding: 0.25rem 0.6rem; font-size: 0.76rem;"
+                                        @onclick="() => UseFreeDomainOfferInCheckout(item)">
+                                    @(picked ? "✓ " : "🎁 Usar ")@item.Domain
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <label style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; font-weight: 700; margin-top: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" @bind="_useFreeDomainCheaperPlan" />
+                    <span>Usar endereço/domínio gratuito e aplicar desconto de plano mais barato (-@FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(RegularMonthlyPrice).SavingsPerMonth.ToString("C", new System.Globalization.CultureInfo("pt-BR"))/mês)</span>
+                </label>
 
                 @if (_domainCheckResult is not null)
                 {
@@ -230,8 +268,15 @@ else
             <div style="background: var(--adm-surface-subtle); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.84rem;">
                 <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
                     <span style="color: var(--adm-muted);">@GetPlanTitle(_selectedTier) (@_durationMonths mes(es))</span>
-                    <strong>@TotalOrderAmount.ToString("C")</strong>
+                    <strong>@((RegularMonthlyPrice * _durationMonths).ToString("C"))</strong>
                 </div>
+                @if (_useFreeDomainCheaperPlan && MonthlyDiscount > 0m)
+                {
+                    <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
+                        <span style="color: var(--adm-success); font-weight: 700;">🎁 Desconto Domínio Grátis</span>
+                        <strong style="color: var(--adm-success);">-@((MonthlyDiscount * _durationMonths).ToString("C"))</strong>
+                    </div>
+                }
                 <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
                     <span style="color: var(--adm-muted);">☁️ Servidor 24h + Certificado HTTPS</span>
                     <strong style="color: var(--adm-success);">Incluso (R$ 0,00)</strong>
@@ -317,11 +362,20 @@ else
     [Parameter]
     public string? PlanTier { get; set; }
 
+    [SupplyParameterFromQuery(Name = "freeDomain")]
+    public string? FreeDomainQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "cheaper")]
+    public string? CheaperQuery { get; set; }
+
     private AdminStoreSettingsDto? _settings;
     private bool _loading = true;
     private bool _copiedPix;
     private bool _redeemingCode;
     private bool _isCheckingDomain;
+    private bool _searchingFreeDomains;
+    private bool _useFreeDomainCheaperPlan;
+    private FreeDomainSearchResponse? _freeDomainSearch;
     private CheckDomainAvailabilityResponse? _domainCheckResult;
     private string _selectedTier = StoreDesignPresets.PlanIntermediate;
     private int _durationMonths = 1;
@@ -332,12 +386,20 @@ else
     private string? _error;
     private string? _successMessage;
 
-    private decimal MonthlyPrice => _settings is null ? 0m : _selectedTier switch
+    private decimal RegularMonthlyPrice => _settings is null ? 0m : _selectedTier switch
     {
         StoreDesignPresets.PlanPremium => _settings.PremiumPlanMonthlyPrice,
         StoreDesignPresets.PlanIntermediate => _settings.IntermediaryPlanMonthlyPrice,
         _ => _settings.BasicPlanMonthlyPrice
     };
+
+    private decimal MonthlyDiscount => _useFreeDomainCheaperPlan
+        ? FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(RegularMonthlyPrice).SavingsPerMonth
+        : 0m;
+
+    private decimal MonthlyPrice => _useFreeDomainCheaperPlan
+        ? FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(RegularMonthlyPrice).CheaperMonthlyPrice
+        : RegularMonthlyPrice;
 
     private decimal TotalOrderAmount => MonthlyPrice * _durationMonths;
 
@@ -377,6 +439,11 @@ else
     protected override void OnParametersSet()
     {
         _selectedTier = NormalizeTier(PlanTier);
+        if (!string.IsNullOrWhiteSpace(FreeDomainQuery))
+        {
+            _desiredDomain = FreeDomainQuery.Trim();
+            _useFreeDomainCheaperPlan = string.Equals(CheaperQuery, "1", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(CheaperQuery);
+        }
     }
 
     protected override async Task OnInitializedAsync()
@@ -539,6 +606,32 @@ else
     {
         _desiredDomain = suggestion;
         await CheckCheckoutDomainAsync();
+    }
+
+    private async Task SearchFreeDomainsForCheckoutAsync()
+    {
+        _searchingFreeDomains = true;
+        _error = null;
+        try
+        {
+            var query = string.IsNullOrWhiteSpace(_customerStoreName) ? _desiredDomain : _customerStoreName;
+            _freeDomainSearch = await Gateway.SearchFreeDomainsAsync(query);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erro ao procurar domínios gratuitos: {ex.Message}";
+        }
+        finally
+        {
+            _searchingFreeDomains = false;
+        }
+    }
+
+    private void UseFreeDomainOfferInCheckout(FreeDomainCandidateDto candidate)
+    {
+        _desiredDomain = candidate.Domain;
+        _useFreeDomainCheaperPlan = true;
+        _successMessage = $"🎁 Olha! Domínio gratuito '{candidate.Domain}' aplicado e plano reduzido para {MonthlyPrice:C}/mês!";
     }
 
     private async Task RedeemGiftCardAsync()

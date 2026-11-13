@@ -3,6 +3,7 @@ using ClothingStore.Application.Services;
 using ClothingStore.Domain.Exceptions;
 using ClothingStore.Shared.Clients;
 using ClothingStore.Shared.DTOs;
+using ClothingStore.Shared.Helpers;
 
 namespace appmaui.blazor.Services;
 
@@ -14,6 +15,7 @@ namespace appmaui.blazor.Services;
 public sealed class MauiAdminGateway
 {
     private const string SessionStorageKey = "clothingstore_auth_session_v1";
+    private static readonly HttpClient FallbackDnsHttpClient = new() { Timeout = TimeSpan.FromSeconds(6) };
 
     private readonly AdminApiClient _apiClient;
     private readonly AuthService _authService;
@@ -625,6 +627,22 @@ public sealed class MauiAdminGateway
                 $"Domínio '{domain}' verificado para publicação no Google Cloud.",
                 $"https://{domain.Trim().TrimEnd('/')}",
                 [])));
+    }
+
+    public Task<FreeDomainSearchResponse> SearchFreeDomainsAsync(string? storeNameOrKeyword, CancellationToken ct = default)
+    {
+        if (_cloudSyncService is not null)
+            return _cloudSyncService.SearchFreeDomainsAsync(storeNameOrKeyword, ct: ct);
+
+        return FreeDomainFinder.SearchAvailableFreeDomainsAsync(storeNameOrKeyword, FallbackDnsHttpClient, ct: ct);
+    }
+
+    public Task<(bool Success, string Message)> UpdateDuckDnsAsync(string domainOrSubdomain, string token, string? ipv4 = null, CancellationToken ct = default)
+    {
+        if (_cloudSyncService is not null)
+            return _cloudSyncService.UpdateDuckDnsAsync(domainOrSubdomain, token, ipv4, ct);
+
+        return FreeDomainFinder.UpdateDuckDnsIpAsync(domainOrSubdomain, token, ipv4, FallbackDnsHttpClient, ct);
     }
 
     public async Task<CepAddressLookupDto> LookupCepAsync(string cep, CancellationToken ct = default)

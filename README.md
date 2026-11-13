@@ -31,6 +31,18 @@ Quando ativado explicitamente pelo administrador em **Configurações da Loja** 
 - **Alcance e Limite de Distância configuráveis pelo vendedor**: escolha entre enviar para **Todo o Brasil**, **Mesmo Estado (UF)**, **Mesma Cidade** ou **Raio Máximo em km** calculado a partir do CEP de origem.
 - **Estimativa de Custos nos Correios (PAC e SEDEX)**: cálculo automático de prazo em dias úteis, peso real vs. peso cubado e faixa tarifária dos Correios na loja, no simulador das configurações e na tela de gestão **Pedidos Pix** (`/pedidos`) para o vendedor confirmar o Pix, abater estoque e organizar o envio (Correios PAC/SEDEX, Motoboy, Transportadora ou Retirada).
 
+### Buscador de Domínios Gratuitos & Plano Mais Barato
+
+O aplicativo e os fluxos de plano (`/planos`, `/contratar-plano` e `/configuracoes-loja`) incluem um buscador automático ao vivo via DNS público (`dns.google` com fallback `cloudflare-dns.com`) que pesquisa alternativas **100% gratuitas** (`*.duckdns.org` com sincronização direta via API oficial DuckDNS, `*.dpdns.org`, `*.pages.dev`, `*.workers.dev`, `*.fly.dev` e endereço incluso `lojas.<slug>.com`):
+
+- Quando encontra um endereço livre, o app exibe a oferta destacada: *"Olha! Este domínio gratuito está disponível — deseja usar ele gratuitamente e ter um plano mais barato?"*
+- Ao aceitar usar o domínio gratuito, o valor mensal do plano cai automaticamente (**R$ 10,00/mês mais barato** nos planos Básico, Meia Versão e Premium).
+
+### Categorias Próprias & Movimentação Rápida em 1 Toque
+
+- **Zero categorias de exemplo pré-cadastradas**: a loja inicia limpa para cada cliente criar suas próprias categorias em `/produtos` (`+ Nova Categoria` ou inline ao cadastrar um item).
+- **Movimentação fácil de estoque (`/estoque` e `/produtos`)**: botões rápidos **−1 / +1 / +5 / +10** por variante (com filtro por peça, cor, tamanho, SKU e saldo baixo/zerado), motivos pré-prontos clicáveis e histórico auditável.
+
 ---
 
 ## Estrutura Pública da Solução (`appmaui.blazor.slnx`)
@@ -43,8 +55,8 @@ Quando ativado explicitamente pelo administrador em **Configurações da Loja** 
 | **ClothingStore.Application** | [ClothingStore.Application.csproj](src/ClothingStore.Application/ClothingStore.Application.csproj) | Regras de aplicação (`AuthService`, `CatalogService`, `ProductManagementService`, `StockManagementService`, `EmployeeAndSettingsService`, `OrderAndShippingService`). |
 | **ClothingStore.Domain** | [ClothingStore.Domain.csproj](src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`, `StoreOrder`, `PlanActivationCode`). |
 | **ClothingStore.Infrastructure** | [ClothingStore.Infrastructure.csproj](src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj) | Repositório transacional (`ClothingStoreRepository`), autenticação JWT/PBKDF2 e armazenamento de imagens. |
-| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens, `PixPayloadBuilder`, `BrazilShippingCalculator` e helper de links/domínios. |
-| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 58 testes automatizados de domínio, segurança, planos, domínios, Pix EMV, CEP/distância, cálculo dos Correios, pedidos, stress tests e validação Windows x64 / NTFS / API. |
+| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens, `PixPayloadBuilder`, `BrazilShippingCalculator`, `FreeDomainFinder` e helper de links/domínios. |
+| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 64 testes automatizados de domínio, segurança, planos, domínios gratuitos (DNS Google/Cloudflare) e plano mais barato, categorias limpas, Pix EMV, CEP/distância, cálculo dos Correios, pedidos, stress tests e validação Windows x64 / NTFS / API. |
 
 ---
 

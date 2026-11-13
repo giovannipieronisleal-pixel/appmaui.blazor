@@ -93,15 +93,80 @@ else
         </div>
     </section>
 
-    <!-- Destaque de Inclusão Total -->
-    <div style="background: var(--adm-surface-subtle); border: 1px solid var(--adm-accent); border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 1.15rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
-        <div style="font-size: 0.88rem; color: var(--adm-text); line-height: 1.45;">
-            <strong>✓ Tudo já incluso no valor do plano:</strong>
-            Servidor em nuvem 24h, certificado HTTPS e endereço/domínio da sua vitrine já fazem parte de qualquer plano escolhido —
-            sem aluguel de servidor à parte e sem obrigação de comprar domínio caro por fora.
+    <!-- Destaque de Inclusão Total + Buscador de Domínios Grátis com Plano Mais Barato -->
+    <section class="adm-card" style="margin-bottom: 1.25rem; border: 1.5px solid var(--adm-accent); background: linear-gradient(135deg, rgba(182,145,88,0.09), transparent 65%);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+            <div>
+                <h2 style="margin: 0; font-size: 1.06rem; font-weight: 800;">
+                    🎁 Procure um Domínio Grátis &amp; Deixe Seu Plano Mais Barato
+                </h2>
+                <p style="margin: 0.25rem 0 0; font-size: 0.85rem; color: var(--adm-muted);">
+                    Servidor 24h + HTTPS já estão inclusos. Se escolher um <strong>domínio gratuito disponível</strong> (<code>.duckdns.org</code>, <code>.dpdns.org</code>, <code>.pages.dev</code> ou endereço da plataforma), você economiza <strong>@FreeDomainFinder.DefaultMonthlyDiscountWithFreeDomain.ToString("C")/mês</strong> na mensalidade!
+                </p>
+            </div>
+            <span class="pill-badge pill-green">Domínio R$ 0,00 + Desconto no Plano</span>
         </div>
-        <span class="pill-badge pill-green">R$ 0,00 extra em servidor/domínio</span>
-    </div>
+
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+            <input type="text"
+                   class="adm-input"
+                   style="flex: 1 1 220px; min-width: 0;"
+                   @bind="_freeDomainQuery"
+                   placeholder="Digite o nome da sua loja (ex.: auramodas)" />
+            <button type="button"
+                    class="adm-btn adm-btn-accent"
+                    disabled="@_searchingFreeDomains"
+                    @onclick="SearchFreeDomainsAsync">
+                @(_searchingFreeDomains ? "Procurando..." : "🌐 Procurar Domínios Grátis")
+            </button>
+            @if (_useFreeDomainCheaperPlan)
+            {
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        @onclick="ClearFreeDomainOffer">
+                    ✕ Voltar ao preço padrão
+                </button>
+            }
+        </div>
+
+        @if (_freeDomainSearch?.FeaturedOffer is not null)
+        {
+            var featured = _freeDomainSearch.FeaturedOffer;
+            var sampleCheaper = FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(_settings.IntermediaryPlanMonthlyPrice);
+            <div style="margin-top: 0.85rem; padding: 0.85rem 1rem; border-radius: 10px; background: rgba(22,163,74,0.1); border: 1.5px solid var(--adm-success); display: flex; justify-content: space-between; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+                <div style="flex: 1 1 260px;">
+                    <div style="font-weight: 800; color: var(--adm-success); font-size: 0.94rem;">
+                        🎁 Olha! Este domínio está disponível gratuitamente: <code>@featured.Domain</code>
+                    </div>
+                    <div style="font-size: 0.83rem; color: var(--adm-text); margin-top: 0.25rem;">
+                        Deseja usar ele gratuitamente (<strong>@featured.ProviderName</strong>) e ter um <strong>plano mais barato</strong> (por ex. Meia Versão de <s>@_settings.IntermediaryPlanMonthlyPrice.ToString("C")</s> por <strong>@sampleCheaper.CheaperMonthlyPrice.ToString("C")/mês</strong>)?
+                    </div>
+                </div>
+                <button type="button"
+                        class="adm-btn @(_useFreeDomainCheaperPlan && _selectedFreeDomain == featured.Domain ? "adm-btn-primary" : "adm-btn-success")"
+                        @onclick="() => ApplyFreeDomainOffer(featured)">
+                    @(_useFreeDomainCheaperPlan && _selectedFreeDomain == featured.Domain ? "✓ Domínio Grátis Aplicado!" : "✓ Sim, Usar Domínio Grátis & Plano Mais Barato")
+                </button>
+            </div>
+
+            @if (_freeDomainSearch.Candidates.Count > 1)
+            {
+                <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.65rem; align-items: center;">
+                    <span style="font-size: 0.78rem; color: var(--adm-muted); font-weight: 700;">Outras opções grátis:</span>
+                    @foreach (var item in _freeDomainSearch.Candidates.Where(c => c.IsAvailable).Take(6))
+                    {
+                        var isPicked = _useFreeDomainCheaperPlan && string.Equals(_selectedFreeDomain, item.Domain, StringComparison.OrdinalIgnoreCase);
+                        <button type="button"
+                                class="pill-badge @(isPicked ? "pill-gold" : "pill-green")"
+                                style="cursor: pointer; border: none; padding: 0.28rem 0.65rem; font-size: 0.76rem;"
+                                @onclick="() => ApplyFreeDomainOffer(item)">
+                            @(isPicked ? "✓ " : "🌐 ")@item.Domain
+                        </button>
+                    }
+                </div>
+            }
+        }
+    </section>
 
     <!-- Comparativo dos 3 Planos (clique em qualquer card para contratar/vender o plano) -->
     <section class="plans-grid" style="margin-bottom: 1.4rem;">
@@ -118,7 +183,13 @@ else
                 }
             </div>
             <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Básico</h2>
-            <div class="plan-price">@_settings.BasicPlanMonthlyPrice.ToString("C") <small>/mês</small></div>
+            <div class="plan-price">
+                @if (_useFreeDomainCheaperPlan)
+                {
+                    <s style="font-size: 0.9rem; color: var(--adm-muted); font-weight: 500; margin-right: 0.35rem;">@_settings.BasicPlanMonthlyPrice.ToString("C")</s>
+                }
+                @GetDisplayPlanPrice(_settings.BasicPlanMonthlyPrice).ToString("C") <small>/mês</small>
+            </div>
             <p style="margin: 0; font-size: 0.85rem; color: var(--adm-muted);">
                 Visual oficial padrão pensado para leitura simples e compra direta pelo WhatsApp.
             </p>
@@ -130,7 +201,7 @@ else
                 <li>Catálogo simples com busca, categorias e estoque real</li>
                 <li>QR Code e botão direto de compra no WhatsApp</li>
             </ul>
-            <a href="/contratar-plano/@StoreDesignPresets.PlanBasic"
+            <a href="@GetCheckoutUrl(StoreDesignPresets.PlanBasic)"
                class="adm-btn @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "adm-btn-outline" : "adm-btn-primary")"
                style="margin-top: 0.35rem; text-align: center;"
                @onclick:stopPropagation="true">
@@ -155,7 +226,13 @@ else
                 }
             </div>
             <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Intermediário</h2>
-            <div class="plan-price">@_settings.IntermediaryPlanMonthlyPrice.ToString("C") <small>/mês</small></div>
+            <div class="plan-price">
+                @if (_useFreeDomainCheaperPlan)
+                {
+                    <s style="font-size: 0.9rem; color: var(--adm-muted); font-weight: 500; margin-right: 0.35rem;">@_settings.IntermediaryPlanMonthlyPrice.ToString("C")</s>
+                }
+                @GetDisplayPlanPrice(_settings.IntermediaryPlanMonthlyPrice).ToString("C") <small>/mês</small>
+            </div>
             <p style="margin: 0; font-size: 0.85rem; color: var(--adm-muted);">
                 Troque o visual da sua loja entre <strong>5 versões pré-prontas</strong> para combinar com seu público, sem precisar configurar nada.
             </p>
@@ -168,7 +245,7 @@ else
                 <li>Troca instantânea com 1 clique sem mexer em código</li>
                 <li>Ideal para destacar a identidade da coleção sem complexidade</li>
             </ul>
-            <a href="/contratar-plano/@StoreDesignPresets.PlanIntermediate"
+            <a href="@GetCheckoutUrl(StoreDesignPresets.PlanIntermediate)"
                class="adm-btn @(BrandState.IsIntermediatePlan ? "adm-btn-outline" : "adm-btn-primary")"
                style="margin-top: 0.35rem; text-align: center;"
                @onclick:stopPropagation="true">
@@ -189,7 +266,13 @@ else
                 }
             </div>
             <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Premium Sob Medida</h2>
-            <div class="plan-price">@_settings.PremiumPlanMonthlyPrice.ToString("C") <small>/mês</small></div>
+            <div class="plan-price">
+                @if (_useFreeDomainCheaperPlan)
+                {
+                    <s style="font-size: 0.9rem; color: var(--adm-muted); font-weight: 500; margin-right: 0.35rem;">@_settings.PremiumPlanMonthlyPrice.ToString("C")</s>
+                }
+                @GetDisplayPlanPrice(_settings.PremiumPlanMonthlyPrice).ToString("C") <small>/mês</small>
+            </div>
             <p style="margin: 0; font-size: 0.85rem; color: var(--adm-muted);">
                 Liberdade total para moldar cada cor, tipografia, borda, espaçamento e banner no Estúdio Visual.
             </p>
@@ -212,7 +295,7 @@ else
                         ✦ Abrir Estúdio Sob Medida
                     </a>
                 }
-                <a href="/contratar-plano/@StoreDesignPresets.PlanPremium"
+                <a href="@GetCheckoutUrl(StoreDesignPresets.PlanPremium)"
                    class="adm-btn @(BrandState.IsPremiumPlan ? "adm-btn-outline" : "adm-btn-accent")"
                    style="text-align: center;"
                    @onclick:stopPropagation="true">
@@ -368,6 +451,11 @@ else
     private string _selectedPresetKey = "minimalista-luxo";
     private string _activePresetKey = "minimalista-luxo";
     private string _giftCardCode = string.Empty;
+    private string _freeDomainQuery = string.Empty;
+    private bool _searchingFreeDomains;
+    private bool _useFreeDomainCheaperPlan;
+    private string? _selectedFreeDomain;
+    private FreeDomainSearchResponse? _freeDomainSearch;
     private string? _error;
     private string? _successMessage;
 
@@ -444,6 +532,8 @@ else
             var currentPreset = _settings.Design?.PresetKey;
             _activePresetKey = StoreDesignPresets.ResolveByPresetKey(currentPreset).PresetKey;
             _selectedPresetKey = _activePresetKey;
+            if (string.IsNullOrWhiteSpace(_freeDomainQuery))
+                _freeDomainQuery = _settings.StoreName;
         }
         catch (Exception ex)
         {
@@ -455,10 +545,57 @@ else
         }
     }
 
+    private string GetCheckoutUrl(string planTier)
+    {
+        if (_useFreeDomainCheaperPlan && !string.IsNullOrWhiteSpace(_selectedFreeDomain))
+            return $"/contratar-plano/{planTier}?freeDomain={Uri.EscapeDataString(_selectedFreeDomain)}&cheaper=1";
+        return $"/contratar-plano/{planTier}";
+    }
+
     private void GoToPlanCheckout(string planTier)
     {
-        Navigation.NavigateTo($"/contratar-plano/{planTier}");
+        Navigation.NavigateTo(GetCheckoutUrl(planTier));
     }
+
+    private async Task SearchFreeDomainsAsync()
+    {
+        if (_settings is null)
+            return;
+
+        _searchingFreeDomains = true;
+        _error = null;
+        try
+        {
+            var query = string.IsNullOrWhiteSpace(_freeDomainQuery) ? _settings.StoreName : _freeDomainQuery;
+            _freeDomainSearch = await Gateway.SearchFreeDomainsAsync(query);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erro ao buscar domínios gratuitos: {ex.Message}";
+        }
+        finally
+        {
+            _searchingFreeDomains = false;
+        }
+    }
+
+    private void ApplyFreeDomainOffer(FreeDomainCandidateDto candidate)
+    {
+        _selectedFreeDomain = candidate.Domain;
+        _useFreeDomainCheaperPlan = true;
+        _successMessage = $"🎁 Domínio gratuito '{candidate.Domain}' aplicado! Todos os planos ficaram {FreeDomainFinder.DefaultMonthlyDiscountWithFreeDomain:C}/mês mais baratos.";
+    }
+
+    private void ClearFreeDomainOffer()
+    {
+        _useFreeDomainCheaperPlan = false;
+        _selectedFreeDomain = null;
+    }
+
+    private decimal GetDisplayPlanPrice(decimal regularPrice) =>
+        _useFreeDomainCheaperPlan
+            ? FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(regularPrice).CheaperMonthlyPrice
+            : regularPrice;
 
     private void SelectPreset(string presetKey)
     {

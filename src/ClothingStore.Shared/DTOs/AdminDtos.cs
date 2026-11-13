@@ -298,3 +298,22 @@ public sealed record RedeemActivationCodeResponse(
     string Message,
     AdminStoreSettingsDto UpdatedSettings);
 
+public sealed record FreeDomainCandidateDto(
+    string Domain,
+    string NormalizedUrl,
+    string ProviderName,
+    string RegistrationMode,
+    string? SetupUrl,
+    bool IsAvailable,
+    bool VerifiedLiveDns,
+    decimal ExtraDomainCostPerYear,
+    decimal MonthlyPlanDiscount,
+    string OfferHeadline,
+    string StatusMessage);
+
+public sealed record FreeDomainSearchResponse(
+    string QuerySlug,
+    FreeDomainCandidateDto? FeaturedOffer,
+    IReadOnlyList<FreeDomainCandidateDto> Candidates);
+
+

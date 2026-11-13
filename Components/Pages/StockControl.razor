@@ -1,32 +1,192 @@
 @page "/estoque"
 @inject MauiAdminGateway Gateway
 
-<div style="margin-bottom: 1.5rem;">
-    <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Controle de Estoque e Movimentações</h1>
-    <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
-        Registre entradas, saídas e ajustes de inventário por variante. Todas as operações registram data, horário e funcionário responsável.
-    </p>
+<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+    <div>
+        <h1 style="font-size: 1.65rem; font-weight: 800; margin: 0;">Movimentação Rápida de Itens</h1>
+        <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
+            Dê entrada ou saída em <strong>1 toque</strong> direto na lista abaixo ou faça ajustes detalhados por cor e tamanho.
+        </p>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadAllDataAsync" disabled="@_isSubmitting">
+            🔄 Atualizar
+        </button>
+        <a href="/produtos" class="adm-btn adm-btn-primary">
+            🛍️ Ir para Produtos
+        </a>
+    </div>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(_error))
 {
-    <div class="alert-banner alert-error">@_error</div>
+    <div class="alert-banner alert-error" style="margin-bottom: 1rem;">@_error</div>
 }
 
 @if (!string.IsNullOrWhiteSpace(_success))
 {
-    <div class="alert-banner alert-success">@_success</div>
+    <div class="alert-banner alert-success" style="margin-bottom: 1rem;">@_success</div>
 }
 
 @if (Gateway.CanManageStock)
 {
-    <!-- Formulário de Registro de Movimentação -->
-    <section class="adm-card" style="border-left: 4px solid var(--adm-primary);">
-        <h2 style="font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 1rem;">
-            Registrar Nova Movimentação de Estoque
+    var visibleRows = GetFilteredVariantRows().ToList();
+    var allRowsCount = _products.Sum(p => p.Variants.Count(v => v.IsActive));
+    var lowCount = _products.Sum(p => p.Variants.Count(v => v.IsActive && v.StockQuantity > 0 && v.StockQuantity <= v.LowStockThreshold));
+    var zeroCount = _products.Sum(p => p.Variants.Count(v => v.IsActive && v.StockQuantity == 0));
+
+    <!-- 1. MOVIMENTAÇÃO RÁPIDA EM 1 TOQUE -->
+    <section class="adm-card" style="border-left: 4px solid var(--adm-success); margin-bottom: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.85rem;">
+            <div>
+                <h2 style="font-size: 1.12rem; font-weight: 800; margin: 0;">⚡ Movimentar em 1 Toque (@visibleRows.Count itens)</h2>
+                <p style="font-size: 0.82rem; color: var(--adm-muted); margin: 0.2rem 0 0;">
+                    Busque pelo nome, cor, tamanho ou SKU e toque em <strong>−1</strong>, <strong>+1</strong>, <strong>+5</strong> ou <strong>+10</strong>.
+                </p>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 0.55rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.85rem;">
+            <input type="text"
+                   class="adm-input"
+                   style="flex: 1 1 240px; min-width: 0;"
+                   value="@_quickSearch"
+                   @oninput='e => _quickSearch = e.Value?.ToString() ?? string.Empty'
+                   placeholder="🔎 Pesquisar peça, cor, tamanho ou SKU..." />
+
+            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                <button type="button"
+                        class="adm-btn @(_quickFilter == "all" ? "adm-btn-primary" : "adm-btn-outline")"
+                        style="padding: 0.4rem 0.75rem; font-size: 0.8rem;"
+                        @onclick='() => SetQuickFilter("all")'>
+                    Todos (@allRowsCount)
+                </button>
+                <button type="button"
+                        class="adm-btn @(_quickFilter == "low" ? "adm-btn-accent" : "adm-btn-outline")"
+                        style="padding: 0.4rem 0.75rem; font-size: 0.8rem;"
+                        @onclick='() => SetQuickFilter("low")'>
+                    ⚠️ Baixo (@lowCount)
+                </button>
+                <button type="button"
+                        class="adm-btn @(_quickFilter == "zero" ? "adm-btn-danger" : "adm-btn-outline")"
+                        style="padding: 0.4rem 0.75rem; font-size: 0.8rem;"
+                        @onclick='() => SetQuickFilter("zero")'>
+                    🚫 Zerados (@zeroCount)
+                </button>
+                @if (!string.IsNullOrWhiteSpace(_filterProductId) || !string.IsNullOrWhiteSpace(_quickSearch))
+                {
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="padding: 0.4rem 0.7rem; font-size: 0.8rem;"
+                            @onclick="ClearQuickFiltersAsync">
+                        ✕ Limpar filtros
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (_products.Count == 0)
+        {
+            <div style="padding: 1.25rem; text-align: center; color: var(--adm-muted); background: var(--adm-input-bg); border-radius: 10px;">
+                Nenhum produto cadastrado ainda. <a href="/produtos" style="font-weight: 700;">Cadastre o primeiro produto aqui &rarr;</a>
+            </div>
+        }
+        else if (visibleRows.Count == 0)
+        {
+            <div style="padding: 1.15rem; text-align: center; color: var(--adm-muted); background: var(--adm-input-bg); border-radius: 10px;">
+                @if (allRowsCount == 0)
+                {
+                    <span>Seus produtos ainda não têm variantes (Cor / Tamanho). <a href="/produtos" style="font-weight: 700;">Abra um produto para adicionar Cor e Tamanho &rarr;</a></span>
+                }
+                else
+                {
+                    <span>Nenhum item encontrado para esse filtro.</span>
+                }
+            </div>
+        }
+        else
+        {
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 0.75rem;">
+                @foreach (var item in visibleRows.Take(40))
+                {
+                    var isSelected = item.Variant.Id == _movementRequest.ProductVariantId;
+                    var isZero = item.Variant.StockQuantity <= 0;
+                    var isLow = item.Variant.IsLowStock && !isZero;
+
+                    <div style="border: 1.5px solid @(isSelected ? "var(--adm-primary)" : "var(--adm-border)"); background: var(--adm-input-bg); border-radius: 12px; padding: 0.8rem 0.9rem; display: flex; flex-direction: column; gap: 0.65rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem;">
+                            <div style="min-width: 0;">
+                                <div style="font-weight: 800; font-size: 0.96rem; line-height: 1.25;">@item.Product.Name</div>
+                                <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.25rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--adm-muted);">
+                                    @if (!string.IsNullOrWhiteSpace(item.Variant.ColorHex))
+                                    {
+                                        <span style="width: 11px; height: 11px; border-radius: 999px; display: inline-block; background: @item.Variant.ColorHex; border: 1px solid rgba(0,0,0,0.2);"></span>
+                                    }
+                                    <strong>@item.Variant.Color</strong> &bull; Tam <strong>@item.Variant.Size</strong>
+                                    <span style="font-family: monospace; font-size: 0.74rem;">(@item.Variant.Sku)</span>
+                                </div>
+                            </div>
+
+                            <span class="pill-badge @(isZero ? "pill-red" : isLow ? "pill-amber" : "pill-green")" style="white-space: nowrap; font-size: 0.8rem;">
+                                @item.Variant.StockQuantity un.
+                            </span>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem;">
+                            <button type="button"
+                                    class="adm-btn adm-btn-danger"
+                                    style="padding: 0.45rem 0.2rem; font-size: 0.84rem; font-weight: 800; min-height: 38px;"
+                                    disabled="@(_isSubmitting || isZero)"
+                                    title="Baixar 1 unidade do estoque"
+                                    @onclick='() => QuickMoveAsync(item.Product, item.Variant, "OUT", 1, "Saída rápida (-1 un.)")'>
+                                −1
+                            </button>
+                            <button type="button"
+                                    class="adm-btn adm-btn-success"
+                                    style="padding: 0.45rem 0.2rem; font-size: 0.84rem; font-weight: 800; min-height: 38px;"
+                                    disabled="@_isSubmitting"
+                                    title="Adicionar 1 unidade ao estoque"
+                                    @onclick='() => QuickMoveAsync(item.Product, item.Variant, "IN", 1, "Entrada rápida (+1 un.)")'>
+                                +1
+                            </button>
+                            <button type="button"
+                                    class="adm-btn adm-btn-success"
+                                    style="padding: 0.45rem 0.2rem; font-size: 0.84rem; font-weight: 800; min-height: 38px;"
+                                    disabled="@_isSubmitting"
+                                    title="Adicionar 5 unidades"
+                                    @onclick='() => QuickMoveAsync(item.Product, item.Variant, "IN", 5, "Reposição rápida (+5 un.)")'>
+                                +5
+                            </button>
+                            <button type="button"
+                                    class="adm-btn adm-btn-outline"
+                                    style="padding: 0.45rem 0.2rem; font-size: 0.84rem; font-weight: 800; min-height: 38px;"
+                                    disabled="@_isSubmitting"
+                                    title="Adicionar 10 unidades"
+                                    @onclick='() => QuickMoveAsync(item.Product, item.Variant, "IN", 10, "Reposição rápida (+10 un.)")'>
+                                +10
+                            </button>
+                            <button type="button"
+                                    class="adm-btn @(isSelected ? "adm-btn-primary" : "adm-btn-outline")"
+                                    style="padding: 0.45rem 0.25rem; font-size: 0.78rem; min-height: 38px;"
+                                    title="Ajustar outra quantidade abaixo"
+                                    @onclick="() => SelectVariantForDetailedForm(item.Product, item.Variant)">
+                                ✎ Mais
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <!-- 2. FORMULÁRIO DETALHADO (PARA OUTRAS QUANTIDADES OU AJUSTE DE SALDO) -->
+    <section class="adm-card" style="border-left: 4px solid var(--adm-primary); margin-bottom: 1.25rem;">
+        <h2 style="font-size: 1.08rem; font-weight: 700; margin-top: 0; margin-bottom: 0.9rem;">
+            🎛️ Movimentação Personalizada (Outra Quantidade / Novo Saldo)
         </h2>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 1rem; align-items: end;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 0.9rem; align-items: end;">
             <div>
                 <label class="adm-label">1. Produto</label>
                 <select class="adm-select" @bind="_selectedProductIdString" @bind:after="OnProductSelectionChanged">
@@ -42,49 +202,86 @@
                 <select class="adm-select" @bind="_selectedVariantIdString" @bind:after="OnVariantSelectionChanged">
                     @foreach (var v in GetVariantsOfSelectedProduct())
                     {
-                        <option value="@v.Id.ToString()">@v.Color - Tam @v.Size (SKU: @v.Sku | Saldo: @v.StockQuantity un.)</option>
+                        <option value="@v.Id.ToString()">@v.Color - Tam @v.Size (Saldo: @v.StockQuantity un.)</option>
                     }
                 </select>
             </div>
 
-            <div>
-                <label class="adm-label">3. Tipo de Movimentação</label>
-                <select class="adm-select" @bind="_movementRequest.MovementType">
-                    <option value="IN">Entrada de Mercadorias (+)</option>
-                    <option value="OUT">Saída / Baixa de Mercadorias (-)</option>
-                    <option value="ADJUSTMENT">Ajuste de Quantidade (Novo Saldo)</option>
-                </select>
+            <div style="grid-column: 1 / -1;">
+                <label class="adm-label">3. O que você deseja fazer?</label>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button"
+                            class="adm-btn @(_movementRequest.MovementType == "IN" ? "adm-btn-success" : "adm-btn-outline")"
+                            @onclick='() => _movementRequest.MovementType = "IN"'>
+                        ➕ Entrada (Somar ao estoque)
+                    </button>
+                    <button type="button"
+                            class="adm-btn @(_movementRequest.MovementType == "OUT" ? "adm-btn-danger" : "adm-btn-outline")"
+                            @onclick='() => _movementRequest.MovementType = "OUT"'>
+                        ➖ Saída (Dar baixa / Venda)
+                    </button>
+                    <button type="button"
+                            class="adm-btn @(_movementRequest.MovementType == "ADJUSTMENT" ? "adm-btn-primary" : "adm-btn-outline")"
+                            @onclick='() => _movementRequest.MovementType = "ADJUSTMENT"'>
+                        ⚖️ Definir Saldo Exato
+                    </button>
+                </div>
             </div>
 
             <div>
                 <label class="adm-label">
-                    @(_movementRequest.MovementType == "ADJUSTMENT" ? "4. Novo Saldo em Estoque" : "4. Quantidade")
+                    @(_movementRequest.MovementType == "ADJUSTMENT" ? "4. Novo Saldo Total (un.)" : "4. Quantidade (un.)")
                 </label>
                 <input type="number" min="0" class="adm-input" @bind="_movementRequest.Quantity" />
+                <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.4rem;">
+                    @foreach (var q in new[] { 1, 2, 5, 10, 20, 50 })
+                    {
+                        <button type="button"
+                                class="pill-badge @(_movementRequest.Quantity == q ? "pill-gold" : "pill-slate")"
+                                style="border: none; cursor: pointer;"
+                                @onclick="() => _movementRequest.Quantity = q">
+                            @q
+                        </button>
+                    }
+                </div>
             </div>
 
-            <div style="grid-column: 1 / -1;">
-                <label class="adm-label">Motivo / Observação da Movimentação</label>
+            <div>
+                <label class="adm-label">5. Motivo (toque para preencher ou digite)</label>
                 <input type="text"
                        class="adm-input"
                        @bind="_movementRequest.Reason"
-                       placeholder="Ex.: Reposição fornecedor, Venda pelo WhatsApp, Ajuste de inventário físico..." />
+                       placeholder="Ex.: Reposição fornecedor, Venda WhatsApp..." />
+                <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.4rem;">
+                    @foreach (var reasonOption in QuickReasonOptions)
+                    {
+                        <button type="button"
+                                class="pill-badge @(_movementRequest.Reason == reasonOption ? "pill-blue" : "pill-slate")"
+                                style="border: none; cursor: pointer; font-size: 0.72rem;"
+                                @onclick="() => _movementRequest.Reason = reasonOption">
+                            @reasonOption
+                        </button>
+                    }
+                </div>
             </div>
 
             <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-                <span style="font-size: 0.85rem; color: var(--adm-muted);">
+                <span style="font-size: 0.84rem; color: var(--adm-muted);">
                     Responsável registrado automaticamente: <strong>@Gateway.CurrentEmployee?.FullName</strong>
                 </span>
 
-                <button type="button" class="adm-btn adm-btn-success" @onclick="SubmitMovementAsync">
-                    Confirmar Movimentação de Estoque
+                <button type="button"
+                        class="adm-btn adm-btn-success"
+                        disabled="@(_isSubmitting || _movementRequest.ProductVariantId == Guid.Empty)"
+                        @onclick="SubmitMovementAsync">
+                    @(_isSubmitting ? "Registrando..." : "✓ Confirmar Movimentação")
                 </button>
             </div>
         </div>
     </section>
 }
 
-<!-- Histórico Auditável de Movimentações -->
+<!-- 3. HISTÓRICO AUDITÁVEL DE MOVIMENTAÇÕES -->
 <section class="adm-card" style="overflow-x: auto;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
         <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Histórico de Movimentações (@_movements.Count)</h2>
@@ -116,6 +313,14 @@
             </tr>
         </thead>
         <tbody>
+            @if (_movements.Count == 0)
+            {
+                <tr>
+                    <td colspan="9" style="text-align: center; padding: 1.5rem; color: var(--adm-muted);">
+                        Nenhuma movimentação registrada ainda. Use os botões rápidos acima para movimentar qualquer item em 1 toque!
+                    </td>
+                </tr>
+            }
             @foreach (var m in _movements)
             {
                 <tr>
@@ -157,6 +362,19 @@
 </section>
 
 @code {
+    private sealed record VariantQuickRow(ProductDetailDto Product, ProductVariantDto Variant);
+
+    private static readonly string[] QuickReasonOptions =
+    [
+        "Reposição de estoque",
+        "Venda WhatsApp / Balcão",
+        "Troca / Devolução",
+        "Conferência de inventário"
+    ];
+
+    [SupplyParameterFromQuery(Name = "productId")]
+    public Guid? ProductIdQuery { get; set; }
+
     private IReadOnlyList<ProductDetailDto> _products = [];
     private IReadOnlyList<StockMovementDto> _movements = [];
 
@@ -164,6 +382,10 @@
     private string _selectedProductIdString = string.Empty;
     private string _selectedVariantIdString = string.Empty;
     private string? _filterProductId;
+    private string _quickSearch = string.Empty;
+    private string _quickFilter = "all";
+    private bool _isSubmitting;
+
     private CreateStockMovementRequest _movementRequest = new()
     {
         MovementType = "IN",
@@ -176,6 +398,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (ProductIdQuery.HasValue && ProductIdQuery.Value != Guid.Empty)
+        {
+            _selectedProductId = ProductIdQuery.Value;
+            _selectedProductIdString = ProductIdQuery.Value.ToString();
+            _filterProductId = ProductIdQuery.Value.ToString();
+        }
+
         await LoadAllDataAsync();
     }
 
@@ -189,13 +418,105 @@
             {
                 _selectedProductId = _products[0].Id;
                 _selectedProductIdString = _selectedProductId.ToString();
+            }
+
+            if (_selectedProductId != Guid.Empty)
+            {
                 OnProductSelectionChanged();
             }
+
             await LoadMovementsAsync();
         }
         catch (Exception ex)
         {
             _error = ex.Message;
+        }
+    }
+
+    private IEnumerable<VariantQuickRow> GetFilteredVariantRows()
+    {
+        var query = _quickSearch.Trim();
+        Guid? productFilterGuid = Guid.TryParse(_filterProductId, out var pg) ? pg : null;
+
+        foreach (var prod in _products)
+        {
+            if (productFilterGuid.HasValue && prod.Id != productFilterGuid.Value)
+                continue;
+
+            foreach (var v in prod.Variants.Where(v => v.IsActive))
+            {
+                if (_quickFilter == "zero" && v.StockQuantity != 0)
+                    continue;
+
+                if (_quickFilter == "low" && !(v.StockQuantity > 0 && v.StockQuantity <= v.LowStockThreshold))
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(query))
+                {
+                    var haystack = $"{prod.Name} {prod.CategoryName} {v.Color} {v.Size} {v.Sku}";
+                    if (!haystack.Contains(query, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                }
+
+                yield return new VariantQuickRow(prod, v);
+            }
+        }
+    }
+
+    private void SetQuickFilter(string mode) => _quickFilter = mode;
+
+    private async Task ClearQuickFiltersAsync()
+    {
+        _quickSearch = string.Empty;
+        _quickFilter = "all";
+        _filterProductId = string.Empty;
+        await LoadMovementsAsync();
+    }
+
+    private void SelectVariantForDetailedForm(ProductDetailDto prod, ProductVariantDto variant)
+    {
+        _selectedProductId = prod.Id;
+        _selectedProductIdString = prod.Id.ToString();
+        _movementRequest.ProductVariantId = variant.Id;
+        _selectedVariantIdString = variant.Id.ToString();
+        _success = $"Item '{prod.Name} ({variant.Color}/{variant.Size})' selecionado no formulário abaixo.";
+    }
+
+    private async Task QuickMoveAsync(
+        ProductDetailDto product,
+        ProductVariantDto variant,
+        string movementType,
+        int quantity,
+        string reason)
+    {
+        if (_isSubmitting)
+            return;
+
+        _isSubmitting = true;
+        _error = null;
+        _success = null;
+        try
+        {
+            var mov = await Gateway.RegisterStockMovementAsync(new CreateStockMovementRequest
+            {
+                ProductVariantId = variant.Id,
+                MovementType = movementType,
+                Quantity = quantity,
+                Reason = reason
+            });
+
+            _products = await Gateway.GetProductsAsync();
+            await LoadMovementsAsync();
+            var opLabel = movementType == "OUT" ? $"-{quantity}" : $"+{quantity}";
+            _success = $"✓ {product.Name} ({mov.Color}/{mov.Size}) atualizado ({opLabel}): {mov.PreviousQuantity} → {mov.NewQuantity} un.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
         }
     }
 
@@ -206,11 +527,12 @@
             _selectedProductId = prodGuid;
         }
 
-        var firstVariant = GetVariantsOfSelectedProduct().FirstOrDefault();
-        if (firstVariant is not null)
+        var variants = GetVariantsOfSelectedProduct().ToList();
+        var current = variants.FirstOrDefault(v => v.Id == _movementRequest.ProductVariantId) ?? variants.FirstOrDefault();
+        if (current is not null)
         {
-            _movementRequest.ProductVariantId = firstVariant.Id;
-            _selectedVariantIdString = firstVariant.Id.ToString();
+            _movementRequest.ProductVariantId = current.Id;
+            _selectedVariantIdString = current.Id.ToString();
         }
         else
         {
@@ -248,6 +570,10 @@
 
     private async Task SubmitMovementAsync()
     {
+        if (_isSubmitting)
+            return;
+
+        _isSubmitting = true;
         _error = null;
         _success = null;
         try
@@ -255,12 +581,15 @@
             var mov = await Gateway.RegisterStockMovementAsync(_movementRequest);
             _products = await Gateway.GetProductsAsync();
             await LoadMovementsAsync();
-            _success = $"Movimentação registrada! Variante {mov.Color}/{mov.Size} atualizada de {mov.PreviousQuantity} para {mov.NewQuantity} unidades.";
+            _success = $"✓ Movimentação registrada! Variante {mov.Color}/{mov.Size} atualizada de {mov.PreviousQuantity} para {mov.NewQuantity} unidades.";
         }
         catch (Exception ex)
         {
             _error = ex.Message;
         }
+        finally
+        {
+            _isSubmitting = false;
+        }
     }
 }
-
