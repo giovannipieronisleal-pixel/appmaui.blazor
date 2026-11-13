@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using ClothingStore.Api.Security;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Application.Services;
@@ -525,6 +527,32 @@ app.MapPost("/api/settings/redeem-code", async (
     return Results.Ok(await service.RedeemActivationCodeAsync(request, employeeId, ct));
 }).RequireAuthorization(RoleNames.PolicyAdminOnly);
 
+app.MapPost("/api/settings/verify-google-account", async (
+    VerifyGoogleAccountTokenRequest request,
+    ClaimsPrincipal user,
+    IHttpClientFactory httpFactory,
+    EmployeeAndSettingsService service,
+    CancellationToken ct) =>
+{
+    var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
+    var httpClient = httpFactory.CreateClient();
+    return Results.Ok(await service.VerifyAndSaveGoogleAccountAsync(
+        employeeId,
+        request.AccessToken,
+        request.OAuthClientId,
+        httpClient,
+        ct));
+}).RequireAuthorization(RoleNames.PolicyAdminOnly);
+
+app.MapDelete("/api/settings/verify-google-account", async (
+    ClaimsPrincipal user,
+    EmployeeAndSettingsService service,
+    CancellationToken ct) =>
+{
+    var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
+    return Results.Ok(await service.ClearGoogleAccountVerificationAsync(employeeId, ct));
+}).RequireAuthorization(RoleNames.PolicyAdminOnly);
+
 // =============================================================================
 // 8.5. ENDPOINTS DE PEDIDOS PIX, RAIO DE ENTREGA E CALCULADORA CORREIOS
 // =============================================================================
@@ -585,13 +613,23 @@ app.MapGet("/api/shipping/simulate-correios", async (
 // =============================================================================
 // 9. ENDPOINTS DE STATUS E SINCRONIZAÇÃO EM NUVEM (Google Cloud Run / 24h Online)
 // =============================================================================
-app.MapGet("/api/cloud/status", () => Results.Ok(new
+app.MapGet("/api/cloud/status", async (
+    IClothingStoreRepository repository,
+    CancellationToken ct) =>
 {
-    status = "online",
-    provider = "Google Cloud Run",
-    service = "ClothingStore",
-    timestamp = DateTimeOffset.UtcNow
-})).AllowAnonymous();
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    var hasEnvSecret = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"));
+    return Results.Ok(new
+    {
+        status = "online",
+        provider = settings.OwnServerProvider,
+        hostingMode = settings.ServerHostingMode,
+        storeName = settings.StoreName,
+        service = "ClothingStore",
+        requiresSyncKey = hasEnvSecret || !string.IsNullOrWhiteSpace(settings.OwnServerSyncSecret),
+        timestamp = DateTimeOffset.UtcNow
+    });
+}).AllowAnonymous();
 
 app.MapPost("/api/cloud/check-domain", async (
     CheckDomainAvailabilityRequest request,
@@ -614,11 +652,39 @@ app.MapPost("/api/cloud/check-domain", async (
 }).AllowAnonymous();
 
 app.MapPost("/api/cloud/sync-state", async (
+    HttpContext httpContext,
     CloudCatalogSyncPayload payload,
+    IClothingStoreRepository repository,
     EmployeeAndSettingsService settingsService,
     ProductManagementService productService,
     CancellationToken ct) =>
 {
+    var hasJwtAccess = httpContext.User.Identity?.IsAuthenticated == true &&
+        (httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.HasClaim("can_manage_products", "true"));
+
+    var providedKey = httpContext.Request.Headers["X-YouLink-Sync-Key"].FirstOrDefault();
+    var hasValidSyncKey = false;
+    if (!string.IsNullOrWhiteSpace(providedKey))
+    {
+        var settings = await repository.GetStoreSettingsAsync(ct);
+        var expectedKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"))
+            ? Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET")!
+            : settings.OwnServerSyncSecret;
+
+        if (!string.IsNullOrWhiteSpace(expectedKey))
+        {
+            var expectedBytes = Encoding.UTF8.GetBytes(expectedKey.Trim());
+            var providedBytes = Encoding.UTF8.GetBytes(providedKey.Trim());
+            hasValidSyncKey = expectedBytes.Length == providedBytes.Length &&
+                              CryptographicOperations.FixedTimeEquals(expectedBytes, providedBytes);
+        }
+    }
+
+    if (!hasJwtAccess && !hasValidSyncKey)
+    {
+        return Results.Unauthorized();
+    }
+
     if (!string.IsNullOrWhiteSpace(payload.Settings.StoreName))
     {
         await settingsService.UpdateStoreSettingsAsync(null, payload.Settings, ct);
@@ -641,6 +707,6 @@ app.MapPost("/api/cloud/sync-state", async (
         categoriesCount = payload.Categories.Count,
         productsCount = payload.Products.Count
     });
-}).RequireAuthorization(RoleNames.PolicyCanManageProducts);
+}).AllowAnonymous();
 
 app.Run();

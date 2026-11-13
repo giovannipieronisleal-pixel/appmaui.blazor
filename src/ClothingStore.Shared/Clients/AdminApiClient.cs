@@ -380,6 +380,22 @@ public sealed class AdminApiClient
         return (await response.Content.ReadFromJsonAsync<RedeemActivationCodeResponse>(cancellationToken: ct))!;
     }
 
+    public async Task<GoogleAccountTierVerificationResult> VerifyGoogleAccountByTokenAsync(
+        VerifyGoogleAccountTokenRequest request,
+        CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/settings/verify-google-account", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<GoogleAccountTierVerificationResult>(cancellationToken: ct))!;
+    }
+
+    public async Task<AdminStoreSettingsDto> ClearGoogleAccountVerificationAsync(CancellationToken ct = default)
+    {
+        var response = await _httpClient.DeleteAsync("/api/settings/verify-google-account", ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<AdminStoreSettingsDto>(cancellationToken: ct))!;
+    }
+
     // Pedidos Pix, CEP e Simulador de Correios
     public async Task<IReadOnlyList<StoreOrderDto>> GetOrdersAsync(CancellationToken ct = default)
     {

@@ -57,6 +57,17 @@ public sealed class StoreSettings
     public int MaxDeliveryDistanceKm { get; set; } = 0;
     public int DefaultPackageWeightGrams { get; set; } = 450;
 
+    // Modo "Meu Servidor Próprio" (BYO Server) e Verificação de Nível da Conta Google
+    public string ServerHostingMode { get; set; } = "PlatformShared";
+    public string OwnServerProvider { get; set; } = "GoogleCloudRun";
+    public string? OwnServerSyncSecret { get; set; }
+    public string? GoogleOAuthClientId { get; set; }
+    public string? GoogleAccountEmail { get; set; }
+    public string GoogleAccountTier { get; set; } = "None";
+    public long? GoogleDriveQuotaBytes { get; set; }
+    public string? GoogleHostedDomain { get; set; }
+    public DateTimeOffset? GoogleAccountVerifiedAt { get; set; }
+
     public static string NormalizePlanTier(string? candidate)
     {
         if (string.IsNullOrWhiteSpace(candidate))
@@ -536,6 +547,99 @@ public sealed class StoreSettings
         MaxDeliveryDistanceKm = maxDeliveryDistanceKm;
         DefaultPackageWeightGrams = defaultPackageWeightGrams;
 
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public bool QualifiesForDedicatedServerBenefit() =>
+        string.Equals(GoogleAccountTier, "GoogleOneProOuSuperior", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(GoogleAccountTier, "GoogleWorkspace", StringComparison.OrdinalIgnoreCase);
+
+    public void ConfigureServerHosting(
+        string? hostingMode,
+        string? provider,
+        string? syncSecret,
+        bool clearSyncSecret,
+        string? googleOAuthClientId,
+        Guid? employeeId = null)
+    {
+        var normalizedMode = string.Equals((hostingMode ?? string.Empty).Trim(), "DedicatedOwnServer", StringComparison.OrdinalIgnoreCase)
+            ? "DedicatedOwnServer"
+            : "PlatformShared";
+
+        var cleanProvider = (provider ?? string.Empty).Trim();
+        var normalizedProvider = cleanProvider switch
+        {
+            var p when string.Equals(p, "Render", StringComparison.OrdinalIgnoreCase) => "Render",
+            var p when string.Equals(p, "FlyIo", StringComparison.OrdinalIgnoreCase) => "FlyIo",
+            var p when string.Equals(p, "VPSPropria", StringComparison.OrdinalIgnoreCase) => "VPSPropria",
+            var p when string.Equals(p, "Outro", StringComparison.OrdinalIgnoreCase) => "Outro",
+            _ => "GoogleCloudRun"
+        };
+
+        if (normalizedMode == "DedicatedOwnServer" && string.IsNullOrWhiteSpace(OnlineBaseUrl))
+        {
+            throw new DomainException(
+                "No modo 'Meu Servidor Próprio', informe a URL HTTPS do seu servidor (ex.: https://minhaloja.run.app ou Render/Fly.io).");
+        }
+
+        ServerHostingMode = normalizedMode;
+        OwnServerProvider = normalizedProvider;
+
+        if (clearSyncSecret)
+        {
+            OwnServerSyncSecret = null;
+        }
+        else if (!string.IsNullOrWhiteSpace(syncSecret))
+        {
+            OwnServerSyncSecret = syncSecret.Trim();
+        }
+
+        if (googleOAuthClientId is not null)
+        {
+            GoogleOAuthClientId = string.IsNullOrWhiteSpace(googleOAuthClientId)
+                ? null
+                : googleOAuthClientId.Trim();
+        }
+
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void SetGoogleAccountVerification(
+        string email,
+        string tier,
+        long? driveQuotaBytes,
+        string? hostedDomain,
+        DateTimeOffset verifiedAt,
+        string? googleOAuthClientId = null,
+        Guid? employeeId = null)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new DomainException("E-mail Google verificado não pode ser vazio.");
+
+        GoogleAccountEmail = email.Trim();
+        GoogleAccountTier = string.IsNullOrWhiteSpace(tier) ? "None" : tier.Trim();
+        GoogleDriveQuotaBytes = driveQuotaBytes;
+        GoogleHostedDomain = string.IsNullOrWhiteSpace(hostedDomain) ? null : hostedDomain.Trim();
+        GoogleAccountVerifiedAt = verifiedAt;
+
+        if (!string.IsNullOrWhiteSpace(googleOAuthClientId))
+        {
+            GoogleOAuthClientId = googleOAuthClientId.Trim();
+        }
+
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void ClearGoogleAccountVerification(Guid? employeeId = null)
+    {
+        GoogleAccountEmail = null;
+        GoogleAccountTier = "None";
+        GoogleDriveQuotaBytes = null;
+        GoogleHostedDomain = null;
+        GoogleAccountVerifiedAt = null;
         UpdatedByEmployeeId = employeeId;
         UpdatedAt = DateTimeOffset.UtcNow;
     }

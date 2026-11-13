@@ -192,6 +192,18 @@ else
                     <span>Usar endereço/domínio gratuito e aplicar desconto de plano mais barato (-@FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(RegularMonthlyPrice).SavingsPerMonth.ToString("C", new System.Globalization.CultureInfo("pt-BR"))/mês)</span>
                 </label>
 
+                <label style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; font-weight: 700; margin-top: 0.4rem; cursor: pointer;">
+                    <input type="checkbox" @bind="_useOwnDedicatedServer" />
+                    <span>☁️ Vou hospedar no Meu Servidor Próprio (Google Cloud Run / Render / Fly.io: -R$ 10,00/mês)</span>
+                </label>
+
+                @if (_settings.QualifiesForDedicatedServerBenefit)
+                {
+                    <div style="margin-top: 0.45rem; padding: 0.5rem 0.75rem; border-radius: 8px; background: rgba(22,163,74,0.1); border: 1px solid var(--adm-success); font-size: 0.79rem; color: var(--adm-success); font-weight: 700;">
+                        👑 Conta Google Pro / Workspace verificada (@_settings.GoogleAccountEmail): desconto automático extra de -R$ 5,00/mês aplicado!
+                    </div>
+                }
+
                 @if (_domainCheckResult is not null)
                 {
                     <div style="margin-top: 0.5rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_domainCheckResult.IsAvailable ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
@@ -270,11 +282,25 @@ else
                     <span style="color: var(--adm-muted);">@GetPlanTitle(_selectedTier) (@_durationMonths mes(es))</span>
                     <strong>@((RegularMonthlyPrice * _durationMonths).ToString("C"))</strong>
                 </div>
-                @if (_useFreeDomainCheaperPlan && MonthlyDiscount > 0m)
+                @if (CurrentBenefits.FreeDomainDiscount > 0m)
                 {
                     <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
                         <span style="color: var(--adm-success); font-weight: 700;">🎁 Desconto Domínio Grátis</span>
-                        <strong style="color: var(--adm-success);">-@((MonthlyDiscount * _durationMonths).ToString("C"))</strong>
+                        <strong style="color: var(--adm-success);">-@((CurrentBenefits.FreeDomainDiscount * _durationMonths).ToString("C"))</strong>
+                    </div>
+                }
+                @if (CurrentBenefits.OwnServerDiscount > 0m)
+                {
+                    <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
+                        <span style="color: var(--adm-success); font-weight: 700;">☁️ Desconto Meu Servidor Próprio</span>
+                        <strong style="color: var(--adm-success);">-@((CurrentBenefits.OwnServerDiscount * _durationMonths).ToString("C"))</strong>
+                    </div>
+                }
+                @if (CurrentBenefits.GoogleTierDiscount > 0m)
+                {
+                    <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
+                        <span style="color: var(--adm-success); font-weight: 700;">👑 Desconto Conta Google Pro / Workspace</span>
+                        <strong style="color: var(--adm-success);">-@((CurrentBenefits.GoogleTierDiscount * _durationMonths).ToString("C"))</strong>
                     </div>
                 }
                 <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
@@ -368,6 +394,9 @@ else
     [SupplyParameterFromQuery(Name = "cheaper")]
     public string? CheaperQuery { get; set; }
 
+    [SupplyParameterFromQuery(Name = "ownServer")]
+    public string? OwnServerQuery { get; set; }
+
     private AdminStoreSettingsDto? _settings;
     private bool _loading = true;
     private bool _copiedPix;
@@ -375,6 +404,7 @@ else
     private bool _isCheckingDomain;
     private bool _searchingFreeDomains;
     private bool _useFreeDomainCheaperPlan;
+    private bool _useOwnDedicatedServer;
     private FreeDomainSearchResponse? _freeDomainSearch;
     private CheckDomainAvailabilityResponse? _domainCheckResult;
     private string _selectedTier = StoreDesignPresets.PlanIntermediate;
@@ -393,13 +423,16 @@ else
         _ => _settings.BasicPlanMonthlyPrice
     };
 
-    private decimal MonthlyDiscount => _useFreeDomainCheaperPlan
-        ? FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(RegularMonthlyPrice).SavingsPerMonth
-        : 0m;
+    private GoogleAccountTierVerifier.PlanBenefitsBreakdown CurrentBenefits =>
+        GoogleAccountTierVerifier.CalculatePlanBenefits(
+            RegularMonthlyPrice,
+            _useFreeDomainCheaperPlan,
+            _settings?.GoogleAccountTier,
+            _useOwnDedicatedServer);
 
-    private decimal MonthlyPrice => _useFreeDomainCheaperPlan
-        ? FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(RegularMonthlyPrice).CheaperMonthlyPrice
-        : RegularMonthlyPrice;
+    private decimal MonthlyDiscount => CurrentBenefits.TotalMonthlyDiscount;
+
+    private decimal MonthlyPrice => CurrentBenefits.FinalMonthlyPrice;
 
     private decimal TotalOrderAmount => MonthlyPrice * _durationMonths;
 
@@ -424,11 +457,19 @@ else
             var store = string.IsNullOrWhiteSpace(_customerStoreName) ? _settings.StoreName : _customerStoreName.Trim();
             var domainText = string.IsNullOrWhiteSpace(_desiredDomain) ? "a definir" : _desiredDomain.Trim();
             var contactText = string.IsNullOrWhiteSpace(_customerContact) ? "-" : _customerContact.Trim();
+            var hostingText = _useOwnDedicatedServer
+                ? $"Meu Servidor Próprio ({_settings.OwnServerProvider})"
+                : "Servidor 24h da Plataforma";
+            var googleText = _settings.QualifiesForDedicatedServerBenefit
+                ? $"Conta Google Pro verificada ({_settings.GoogleAccountEmail})"
+                : "Padrão";
+
             var msg =
                 $"Olá! Quero contratar o {GetPlanTitle(_selectedTier)} ({DurationLabel}) — Total: {TotalOrderAmount:C}.\n" +
                 $"Loja: {store}\n" +
                 $"Endereço/Domínio (incluso no plano): {domainText}\n" +
-                $"Servidor 24h + HTTPS + Domínio: já inclusos no valor do plano (R$ 0,00 extra)\n" +
+                $"Infraestrutura: {hostingText}\n" +
+                $"Conta Google: {googleText}\n" +
                 $"Usuário/Gmail: {contactText}\n" +
                 $"Chave Pix informada: {_settings.PicpayPixKey}";
 
@@ -443,6 +484,11 @@ else
         {
             _desiredDomain = FreeDomainQuery.Trim();
             _useFreeDomainCheaperPlan = string.Equals(CheaperQuery, "1", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(CheaperQuery);
+        }
+
+        if (string.Equals(OwnServerQuery, "1", StringComparison.OrdinalIgnoreCase))
+        {
+            _useOwnDedicatedServer = true;
         }
     }
 
@@ -526,6 +572,9 @@ else
 
             if (string.IsNullOrWhiteSpace(_customerContact) && Gateway.CurrentEmployee is not null)
                 _customerContact = Gateway.CurrentEmployee.Email ?? Gateway.CurrentEmployee.EffectiveUsername;
+
+            if (string.Equals(_settings.ServerHostingMode, GoogleAccountTierVerifier.HostingModeDedicatedOwnServer, StringComparison.OrdinalIgnoreCase))
+                _useOwnDedicatedServer = true;
         }
         catch (Exception ex)
         {

@@ -222,6 +222,13 @@ public sealed class UpdateStoreSettingsRequest
     public string? DeliveryScopeMode { get; set; }
     public int? MaxDeliveryDistanceKm { get; set; }
     public int? DefaultPackageWeightGrams { get; set; }
+
+    // Modo Meu Servidor Próprio (BYO Server) e Verificação de Nível da Conta Google
+    public string? ServerHostingMode { get; set; }
+    public string? OwnServerProvider { get; set; }
+    public string? OwnServerSyncSecret { get; set; }
+    public bool ClearOwnServerSyncSecret { get; set; } = false;
+    public string? GoogleOAuthClientId { get; set; }
 }
 
 public sealed record AdminStoreSettingsDto(
@@ -259,7 +266,17 @@ public sealed record AdminStoreSettingsDto(
     string? OriginState = null,
     string DeliveryScopeMode = "TodoBrasil",
     int MaxDeliveryDistanceKm = 0,
-    int DefaultPackageWeightGrams = 450);
+    int DefaultPackageWeightGrams = 450,
+    string ServerHostingMode = "PlatformShared",
+    string OwnServerProvider = "GoogleCloudRun",
+    bool HasOwnServerSyncSecret = false,
+    string? GoogleOAuthClientId = null,
+    string? GoogleAccountEmail = null,
+    string GoogleAccountTier = "None",
+    long? GoogleDriveQuotaBytes = null,
+    string? GoogleHostedDomain = null,
+    DateTimeOffset? GoogleAccountVerifiedAt = null,
+    bool QualifiesForDedicatedServerBenefit = false);
 
 public sealed class CloudCatalogSyncPayload
 {
@@ -315,5 +332,33 @@ public sealed record FreeDomainSearchResponse(
     string QuerySlug,
     FreeDomainCandidateDto? FeaturedOffer,
     IReadOnlyList<FreeDomainCandidateDto> Candidates);
+
+public sealed record GoogleAccountTierVerificationResult(
+    bool Success,
+    string? Email,
+    string? DisplayName,
+    string? HostedDomain,
+    long? DriveQuotaBytes,
+    long? DriveUsageBytes,
+    string DetectedTier,
+    bool IsPaidGoogleAccount,
+    bool QualifiesForDedicatedServerBenefit,
+    string QuotaSummary,
+    string Message,
+    DateTimeOffset? VerifiedAt);
+
+public sealed class VerifyGoogleAccountTokenRequest
+{
+    [Required(ErrorMessage = "Informe o Access Token Google OAuth.")]
+    public string AccessToken { get; set; } = string.Empty;
+    public string? OAuthClientId { get; set; }
+}
+
+public sealed record OwnServerHealthCheckResult(
+    bool IsOnline,
+    string CheckedUrl,
+    string? StoreNameDetected,
+    long LatencyMs,
+    string StatusMessage);
 
 

@@ -645,6 +645,61 @@ public sealed class MauiAdminGateway
         return FreeDomainFinder.UpdateDuckDnsIpAsync(domainOrSubdomain, token, ipv4, FallbackDnsHttpClient, ct);
     }
 
+    public Task<OwnServerHealthCheckResult> TestOwnServerConnectionAsync(string? targetUrl, CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is not null)
+            return _cloudSyncService.TestOwnServerConnectionAsync(targetUrl, ct);
+
+        return Task.FromResult(new OwnServerHealthCheckResult(
+            false,
+            targetUrl ?? string.Empty,
+            null,
+            0,
+            "Serviço de nuvem indisponível para teste neste ambiente."));
+    }
+
+    public Task<GoogleAccountTierVerificationResult> VerifyGoogleAccountByTokenAsync(
+        string accessToken,
+        string? googleOAuthClientId = null,
+        CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is not null)
+            return _cloudSyncService.VerifyGoogleAccountByTokenAsync(accessToken, googleOAuthClientId, ct);
+
+        return _employeeAndSettingsService.VerifyAndSaveGoogleAccountAsync(
+            CurrentEmployee?.EmployeeId,
+            accessToken,
+            googleOAuthClientId,
+            FallbackDnsHttpClient,
+            ct);
+    }
+
+    public Task<GoogleAccountTierVerificationResult> VerifyGoogleAccountViaBrowserOAuthAsync(
+        string googleOAuthClientId,
+        CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is not null)
+            return _cloudSyncService.VerifyGoogleAccountViaBrowserOAuthAsync(googleOAuthClientId, ct);
+
+        return Task.FromResult(new GoogleAccountTierVerificationResult(
+            false, null, null, null, null, null,
+            GoogleAccountTierVerifier.TierNone, false, false, "Indisponível",
+            "Login via navegador Google só está disponível no app Windows/Mobile. Cole o Access Token Google manualmente.",
+            null));
+    }
+
+    public Task<AdminStoreSettingsDto> ClearGoogleAccountVerificationAsync(CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is not null)
+            return _cloudSyncService.ClearGoogleAccountVerificationAsync(ct);
+
+        return _employeeAndSettingsService.ClearGoogleAccountVerificationAsync(CurrentEmployee?.EmployeeId, ct);
+    }
+
     public async Task<CepAddressLookupDto> LookupCepAsync(string cep, CancellationToken ct = default)
     {
         if (_orderAndShippingService is null)

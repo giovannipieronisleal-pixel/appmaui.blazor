@@ -413,6 +413,242 @@
     </div>
 </div>
 
+<!-- Card: Meu Servidor Próprio (BYO Server — Google Cloud Run / Render / Fly.io) -->
+<section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid #2563EB;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+        <div>
+            <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #2563EB;">
+                Infraestrutura Dedicada (Opcional)
+            </div>
+            <h2 style="font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0; color: var(--adm-text);">
+                ☁️ Meu Servidor Próprio (Google Cloud Run / Render / Fly.io)
+            </h2>
+            <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0.25rem 0 0; line-height: 1.45;">
+                Conecte uma instância exclusiva da sua loja rodando na <strong>sua própria conta Google Cloud Run</strong>, Render ou Fly.io. Reduz em <strong>-R$ 10,00/mês</strong> os planos pagos!
+            </p>
+        </div>
+        <div>
+            @if (string.Equals(_serverHostingMode, "DedicatedOwnServer", StringComparison.OrdinalIgnoreCase))
+            {
+                <span class="pill-badge pill-green">✓ Servidor Próprio Ativo (@_ownServerProvider)</span>
+            }
+            else
+            {
+                <span class="pill-badge pill-gold">Modo Padrão da Plataforma</span>
+            }
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.85rem;">
+        <div class="adm-field">
+            <label class="adm-label">Modo de Hospedagem do Catálogo</label>
+            <select class="adm-input" @bind="_serverHostingMode">
+                <option value="PlatformShared">Servidor da Plataforma (Já Incluso)</option>
+                <option value="DedicatedOwnServer">Meu Servidor Próprio Exclusivo (-R$ 10/mês)</option>
+            </select>
+        </div>
+
+        <div class="adm-field">
+            <label class="adm-label">Provedor do Servidor Próprio</label>
+            <select class="adm-input" @bind="_ownServerProvider">
+                <option value="GoogleCloudRun">Google Cloud Run (Nível Gratuito)</option>
+                <option value="Render">Render Web Service (Free Tier)</option>
+                <option value="FlyIo">Fly.io App</option>
+                <option value="VPSPropria">VPS Própria / Docker</option>
+                <option value="Outro">Outro Provedor HTTPS</option>
+            </select>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.85rem; margin-top: 0.75rem;">
+        <div class="adm-field">
+            <label class="adm-label">URL HTTPS do Seu Servidor</label>
+            <input type="text" class="adm-input" @bind="_form.OnlineBaseUrl"
+                   placeholder="https://minhaloja-xxxxxx.a.run.app" />
+            <span style="font-size: 0.73rem; color: var(--adm-muted);">
+                Endpoint usado para publicar o catálogo público e receber sincronizações em <code>/api/cloud/sync-state</code>.
+            </span>
+        </div>
+
+        <div class="adm-field">
+            <label class="adm-label">
+                Chave Secreta de Sincronização (X-YouLink-Sync-Key)
+                @if (_hasOwnServerSyncSecret)
+                {
+                    <span class="pill-badge pill-green" style="margin-left: 0.35rem; font-size: 0.68rem;">Salva</span>
+                }
+            </label>
+            <input type="password" class="adm-input" @bind="_ownServerSyncSecretInput"
+                   placeholder="@(_hasOwnServerSyncSecret ? "•••••••• (preencha só se quiser trocar)" : "Defina igual à env YOULINK_SYNC_SECRET")" />
+            <span style="font-size: 0.73rem; color: var(--adm-muted);">
+                Obrigatória para o app enviar produtos ao seu servidor remoto sem precisar de senha admin.
+            </span>
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-top: 0.85rem;">
+        <button type="button"
+                class="adm-btn adm-btn-primary"
+                disabled="@_savingHosting"
+                @onclick="SaveHostingAndGoogleSettingsAsync">
+            @(_savingHosting ? "⏳ Salvando..." : "💾 Salvar Servidor Próprio")
+        </button>
+
+        <button type="button"
+                class="adm-btn adm-btn-outline"
+                disabled="@_testingOwnServer"
+                @onclick="TestOwnServerNowAsync">
+            @(_testingOwnServer ? "⏳ Testando..." : "⚡ Testar Conexão Agora")
+        </button>
+
+        @if (_hasOwnServerSyncSecret)
+        {
+            <button type="button"
+                    class="adm-btn adm-btn-outline"
+                    style="color: var(--adm-danger);"
+                    disabled="@_savingHosting"
+                    @onclick="ClearOwnServerSyncSecretAsync">
+                ✕ Limpar Sync Key
+            </button>
+        }
+    </div>
+
+    @if (_ownServerTestResult is not null)
+    {
+        <div style="margin-top: 0.75rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_ownServerTestResult.IsOnline ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
+            <strong>@(_ownServerTestResult.IsOnline ? "✓ " : "✕ ")@_ownServerTestResult.StatusMessage</strong>
+        </div>
+    }
+
+    <details style="margin-top: 0.85rem; font-size: 0.8rem; color: var(--adm-muted);">
+        <summary style="cursor: pointer; font-weight: 700; color: var(--adm-text);">
+            📖 Passo a passo rápido: como subir seu servidor gratuito em 3 minutos
+        </summary>
+        <ol style="margin: 0.5rem 0 0; padding-left: 1.25rem; line-height: 1.55;">
+            <li><strong>Google Cloud Run (Cota Gratuita mensal):</strong> No repositório oficial, rode <code>.\deploy-google-cloud.ps1</code> escolhendo uma chave em <code>YOULINK_SYNC_SECRET</code> e cole a URL <code>https://...run.app</code> acima.</li>
+            <li><strong>Render ou Fly.io:</strong> Faça deploy do container <code>Dockerfile</code> (projeto <code>ClothingStore.Api</code>) com a variável <code>YOULINK_SYNC_SECRET</code> e cole o endereço HTTPS gerado.</li>
+            <li>Clique em <strong>Testar Conexão Agora</strong> e depois em <strong>Forçar Sincronização com Nuvem</strong> para enviar suas roupas!</li>
+        </ol>
+    </details>
+</section>
+
+<!-- Card: Verificação de Conta Google (Google One Pro / Workspace) -->
+<section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid #7C3AED;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+        <div>
+            <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #7C3AED;">
+                Identidade &amp; Benefícios Google OAuth 2.0
+            </div>
+            <h2 style="font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0; color: var(--adm-text);">
+                🔐 Verificar Nível da Conta Google (Google Pro / Workspace)
+            </h2>
+            <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0.25rem 0 0; line-height: 1.45;">
+                Conecte sua conta Google via OAuth 2.0 oficial para comprovar cota do Google Drive (&gt; 15 GB / 1 TB+ do Google One Pro / AI Pro) ou domínio Google Workspace e liberar <strong>-R$ 5,00/mês extras</strong> + selo Pro.
+            </p>
+        </div>
+        <div>
+            @if (_qualifiesForDedicatedBenefit)
+            {
+                <span class="pill-badge pill-green">✓ Benefício Conta Pro Ativo (-R$ 5/mês)</span>
+            }
+            else if (!string.IsNullOrWhiteSpace(_googleAccountEmail))
+            {
+                <span class="pill-badge pill-gold">@GoogleAccountTierVerifier.GetTierFriendlyLabel(_googleAccountTier)</span>
+            }
+            else
+            {
+                <span class="pill-badge">Não verificada</span>
+            }
+        </div>
+    </div>
+
+    <div style="padding: 0.7rem 0.9rem; border-radius: 8px; background: var(--adm-surface-subtle); border: 1px solid var(--adm-border); font-size: 0.79rem; color: var(--adm-muted); line-height: 1.45; margin-bottom: 0.9rem;">
+        <strong>Transparência técnica:</strong> O Google não possui uma API de consumidor para ler o nome do plano "Google AI Pro" nem libera servidores de hospedagem dentro da assinatura Google One. A verificação lê de forma real o e-mail/domínio Workspace (<code>userinfo</code>) e a cota total do Google Drive (<code>drive/v3/about</code>). Contas com <strong>1 TB+ no Drive</strong> ou <strong>Google Workspace</strong> qualificam para o selo Pro.
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_googleAccountEmail))
+    {
+        <div style="padding: 0.85rem 1rem; border-radius: 10px; margin-bottom: 0.9rem; @(_qualifiesForDedicatedBenefit ? "background: rgba(22,163,74,0.1); border: 1.5px solid var(--adm-success);" : "background: var(--adm-surface-subtle); border: 1px solid var(--adm-border);")">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <div>
+                    <div style="font-weight: 800; font-size: 0.95rem; color: var(--adm-text);">
+                        @(_qualifiesForDedicatedBenefit ? "👑 Conta Google Pro / Workspace Verificada" : "✓ Conta Google Verificada")
+                    </div>
+                    <div style="font-size: 0.83rem; margin-top: 0.2rem;">
+                        <strong>E-mail:</strong> @_googleAccountEmail
+                        @if (!string.IsNullOrWhiteSpace(_googleHostedDomain))
+                        {
+                            <span> • <strong>Workspace:</strong> @_googleHostedDomain</span>
+                        }
+                    </div>
+                    <div style="font-size: 0.81rem; color: var(--adm-muted); margin-top: 0.15rem;">
+                        <strong>Nível:</strong> @GoogleAccountTierVerifier.GetTierFriendlyLabel(_googleAccountTier)
+                        • <strong>Cota Drive:</strong> @GoogleAccountTierVerifier.FormatStorageQuota(_googleDriveQuotaBytes, !string.IsNullOrWhiteSpace(_googleHostedDomain))
+                        @if (_googleAccountVerifiedAt.HasValue)
+                        {
+                            <span> • Verificada em @_googleAccountVerifiedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        }
+                    </div>
+                </div>
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        style="color: var(--adm-danger); font-size: 0.78rem;"
+                        disabled="@_verifyingGoogle"
+                        @onclick="ClearGoogleVerificationAsync">
+                    ✕ Remover Verificação
+                </button>
+            </div>
+        </div>
+    }
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.9rem;">
+        <!-- Modo 1: Login via Navegador (OAuth PKCE) -->
+        <div style="padding: 0.85rem; border-radius: 10px; border: 1px solid var(--adm-border); background: var(--adm-surface-subtle); display: flex; flex-direction: column; gap: 0.55rem;">
+            <div style="font-weight: 700; font-size: 0.86rem;">Opção 1 — Login Google no Navegador (PKCE)</div>
+            <input type="text" class="adm-input" @bind="_googleOAuthClientId"
+                   placeholder="Seu Google OAuth Client ID (Desktop/App)" />
+            <span style="font-size: 0.73rem; color: var(--adm-muted);">
+                Abre a tela oficial de login do Google e recebe o retorno automático neste aparelho.
+            </span>
+            <div>
+                <button type="button"
+                        class="adm-btn adm-btn-primary"
+                        style="font-size: 0.82rem;"
+                        disabled="@_verifyingGoogle"
+                        @onclick="VerifyGoogleViaBrowserAsync">
+                    @(_verifyingGoogle ? "⏳ Aguardando Google..." : "🌐 Verificar via Login Google")
+                </button>
+            </div>
+        </div>
+
+        <!-- Modo 2: Access Token direto (OAuth Playground / Celular) -->
+        <div style="padding: 0.85rem; border-radius: 10px; border: 1px solid var(--adm-border); background: var(--adm-surface-subtle); display: flex; flex-direction: column; gap: 0.55rem;">
+            <div style="font-weight: 700; font-size: 0.86rem;">Opção 2 — Colar Access Token Google (Rápido / Mobile)</div>
+            <input type="password" class="adm-input" @bind="_googleAccessTokenInput"
+                   placeholder="Cole aqui o Access Token (ya29....)" />
+            <span style="font-size: 0.73rem; color: var(--adm-muted);">
+                Sem Client ID? Gere em <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener">Google OAuth Playground</a> com escopos <code>userinfo.email</code> e <code>drive.readonly</code>.
+            </span>
+            <div>
+                <button type="button"
+                        class="adm-btn adm-btn-accent"
+                        style="font-size: 0.82rem;"
+                        disabled="@_verifyingGoogle"
+                        @onclick="VerifyGoogleByTokenAsync">
+                    @(_verifyingGoogle ? "⏳ Verificando..." : "🔍 Verificar Token Agora")
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @if (_googleVerifyResult is not null)
+    {
+        <div style="margin-top: 0.75rem; padding: 0.7rem 0.9rem; border-radius: 8px; font-size: 0.82rem; @(_googleVerifyResult.Success ? (_googleVerifyResult.QualifiesForDedicatedServerBenefit ? "background: rgba(22,163,74,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(59,130,246,0.1); border: 1px solid #3B82F6; color: var(--adm-text);") : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
+            <strong>@(_googleVerifyResult.Success ? "✓ " : "✕ ")@_googleVerifyResult.Message</strong>
+        </div>
+    }
+</section>
+
 <!-- Card: Vendas por Pix no App, Raio de Distância e Calculadora Correios -->
 <section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid #16A34A;">
     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
@@ -706,6 +942,25 @@
     private bool _isSyncingDuckDns;
     private CheckDomainAvailabilityResponse? _domainCheckResult;
 
+    // Servidor Próprio + Verificação de Conta Google
+    private string _serverHostingMode = "PlatformShared";
+    private string _ownServerProvider = "GoogleCloudRun";
+    private string _ownServerSyncSecretInput = string.Empty;
+    private bool _hasOwnServerSyncSecret;
+    private string _googleOAuthClientId = string.Empty;
+    private string _googleAccessTokenInput = string.Empty;
+    private string? _googleAccountEmail;
+    private string _googleAccountTier = "None";
+    private long? _googleDriveQuotaBytes;
+    private string? _googleHostedDomain;
+    private DateTimeOffset? _googleAccountVerifiedAt;
+    private bool _qualifiesForDedicatedBenefit;
+    private bool _savingHosting;
+    private bool _testingOwnServer;
+    private bool _verifyingGoogle;
+    private OwnServerHealthCheckResult? _ownServerTestResult;
+    private GoogleAccountTierVerificationResult? _googleVerifyResult;
+
     protected override async Task OnInitializedAsync()
     {
         Theme.OnThemeChanged += StateHasChanged;
@@ -754,6 +1009,7 @@
             _premiumPlanPrice = current.PremiumPlanMonthlyPrice;
             _designDraft = (current.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
             ApplyPixAndShippingFields(current);
+            ApplyHostingAndGoogleFields(current);
             BrandState.ApplyFromAdminSettings(current);
         }
         catch (Exception ex)
@@ -873,6 +1129,14 @@
             }
 
             _form.PlanTier = _planTier;
+            _form.ServerHostingMode = _serverHostingMode;
+            _form.OwnServerProvider = _ownServerProvider;
+            _form.GoogleOAuthClientId = _googleOAuthClientId;
+            if (!string.IsNullOrWhiteSpace(_ownServerSyncSecretInput))
+            {
+                _form.OwnServerSyncSecret = _ownServerSyncSecretInput.Trim();
+            }
+
             if (BrandState.IsPremiumPlan)
             {
                 _form.Design = _designDraft.Clone();
@@ -883,6 +1147,9 @@
             }
 
             var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            _form.OwnServerSyncSecret = null;
+            _ownServerSyncSecretInput = string.Empty;
+            ApplyHostingAndGoogleFields(updated);
             _form.StoreSlug = updated.StoreSlug;
             _form.WhatsappNumber = updated.WhatsappNumber;
             _form.LogoPublicUrl = updated.LogoPublicUrl;
@@ -1296,6 +1563,173 @@
         finally
         {
             _simulatingCorreios = false;
+        }
+    }
+
+    private void ApplyHostingAndGoogleFields(AdminStoreSettingsDto s)
+    {
+        _serverHostingMode = string.IsNullOrWhiteSpace(s.ServerHostingMode) ? "PlatformShared" : s.ServerHostingMode;
+        _ownServerProvider = string.IsNullOrWhiteSpace(s.OwnServerProvider) ? "GoogleCloudRun" : s.OwnServerProvider;
+        _hasOwnServerSyncSecret = s.HasOwnServerSyncSecret;
+        _googleOAuthClientId = s.GoogleOAuthClientId ?? string.Empty;
+        _googleAccountEmail = s.GoogleAccountEmail;
+        _googleAccountTier = string.IsNullOrWhiteSpace(s.GoogleAccountTier) ? "None" : s.GoogleAccountTier;
+        _googleDriveQuotaBytes = s.GoogleDriveQuotaBytes;
+        _googleHostedDomain = s.GoogleHostedDomain;
+        _googleAccountVerifiedAt = s.GoogleAccountVerifiedAt;
+        _qualifiesForDedicatedBenefit = s.QualifiesForDedicatedServerBenefit;
+
+        _form.ServerHostingMode = _serverHostingMode;
+        _form.OwnServerProvider = _ownServerProvider;
+        _form.GoogleOAuthClientId = _googleOAuthClientId;
+    }
+
+    private async Task SaveHostingAndGoogleSettingsAsync()
+    {
+        _error = null;
+        _success = null;
+        _savingHosting = true;
+        try
+        {
+            _form.ServerHostingMode = _serverHostingMode;
+            _form.OwnServerProvider = _ownServerProvider;
+            _form.GoogleOAuthClientId = _googleOAuthClientId;
+            _form.ClearOwnServerSyncSecret = false;
+            _form.OwnServerSyncSecret = string.IsNullOrWhiteSpace(_ownServerSyncSecretInput)
+                ? null
+                : _ownServerSyncSecretInput.Trim();
+
+            var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            _form.OwnServerSyncSecret = null;
+            _ownServerSyncSecretInput = string.Empty;
+            ApplyHostingAndGoogleFields(updated);
+            BrandState.ApplyFromAdminSettings(updated);
+
+            _success = string.Equals(updated.ServerHostingMode, "DedicatedOwnServer", StringComparison.OrdinalIgnoreCase)
+                ? $"✅ Modo 'Meu Servidor Próprio' ({updated.OwnServerProvider}) salvo! Lembre de testar e sincronizar o catálogo."
+                : "✅ Preferências de servidor e OAuth salvas.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingHosting = false;
+        }
+    }
+
+    private async Task ClearOwnServerSyncSecretAsync()
+    {
+        _error = null;
+        _savingHosting = true;
+        try
+        {
+            _form.ServerHostingMode = _serverHostingMode;
+            _form.OwnServerProvider = _ownServerProvider;
+            _form.OwnServerSyncSecret = null;
+            _form.ClearOwnServerSyncSecret = true;
+
+            var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            _form.ClearOwnServerSyncSecret = false;
+            ApplyHostingAndGoogleFields(updated);
+            _success = "Chave secreta de sincronização removida.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingHosting = false;
+        }
+    }
+
+    private async Task TestOwnServerNowAsync()
+    {
+        _ownServerTestResult = null;
+        _testingOwnServer = true;
+        try
+        {
+            _ownServerTestResult = await Gateway.TestOwnServerConnectionAsync(_form.OnlineBaseUrl);
+        }
+        catch (Exception ex)
+        {
+            _ownServerTestResult = new OwnServerHealthCheckResult(false, _form.OnlineBaseUrl ?? string.Empty, null, 0, ex.Message);
+        }
+        finally
+        {
+            _testingOwnServer = false;
+        }
+    }
+
+    private async Task VerifyGoogleViaBrowserAsync()
+    {
+        _googleVerifyResult = null;
+        _verifyingGoogle = true;
+        try
+        {
+            var res = await Gateway.VerifyGoogleAccountViaBrowserOAuthAsync(_googleOAuthClientId);
+            _googleVerifyResult = res;
+            if (res.Success)
+            {
+                await LoadSettingsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _googleVerifyResult = new GoogleAccountTierVerificationResult(
+                false, null, null, null, null, null, "None", false, false, "Erro", ex.Message, null);
+        }
+        finally
+        {
+            _verifyingGoogle = false;
+        }
+    }
+
+    private async Task VerifyGoogleByTokenAsync()
+    {
+        _googleVerifyResult = null;
+        _verifyingGoogle = true;
+        try
+        {
+            var res = await Gateway.VerifyGoogleAccountByTokenAsync(_googleAccessTokenInput, _googleOAuthClientId);
+            _googleVerifyResult = res;
+            if (res.Success)
+            {
+                _googleAccessTokenInput = string.Empty;
+                await LoadSettingsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _googleVerifyResult = new GoogleAccountTierVerificationResult(
+                false, null, null, null, null, null, "None", false, false, "Erro", ex.Message, null);
+        }
+        finally
+        {
+            _verifyingGoogle = false;
+        }
+    }
+
+    private async Task ClearGoogleVerificationAsync()
+    {
+        _error = null;
+        _verifyingGoogle = true;
+        try
+        {
+            var updated = await Gateway.ClearGoogleAccountVerificationAsync();
+            ApplyHostingAndGoogleFields(updated);
+            _googleVerifyResult = null;
+            _success = "Verificação da conta Google removida.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _verifyingGoogle = false;
         }
     }
 

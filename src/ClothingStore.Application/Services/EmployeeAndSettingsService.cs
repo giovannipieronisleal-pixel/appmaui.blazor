@@ -306,6 +306,83 @@ public sealed class EmployeeAndSettingsService
                 employeeId);
         }
 
+        if (request.ServerHostingMode is not null ||
+            request.OwnServerProvider is not null ||
+            request.OwnServerSyncSecret is not null ||
+            request.ClearOwnServerSyncSecret ||
+            request.GoogleOAuthClientId is not null)
+        {
+            settings.ConfigureServerHosting(
+                request.ServerHostingMode ?? settings.ServerHostingMode,
+                request.OwnServerProvider ?? settings.OwnServerProvider,
+                request.OwnServerSyncSecret,
+                request.ClearOwnServerSyncSecret,
+                request.GoogleOAuthClientId,
+                employeeId);
+        }
+
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        return MapToAdminSettingsDto(settings);
+    }
+
+    public async Task<GoogleAccountTierVerificationResult> VerifyAndSaveGoogleAccountAsync(
+        Guid? employeeId,
+        string accessToken,
+        string? googleOAuthClientId,
+        HttpClient httpClient,
+        CancellationToken ct = default)
+    {
+        var result = await ClothingStore.Shared.Helpers.GoogleAccountTierVerifier
+            .VerifyWithAccessTokenAsync(accessToken, httpClient, ct);
+
+        if (!result.Success || string.IsNullOrWhiteSpace(result.Email))
+        {
+            return result;
+        }
+
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.SetGoogleAccountVerification(
+            result.Email,
+            result.DetectedTier,
+            result.DriveQuotaBytes,
+            result.HostedDomain,
+            result.VerifiedAt ?? DateTimeOffset.UtcNow,
+            googleOAuthClientId,
+            employeeId);
+
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        return result;
+    }
+
+    public async Task<AdminStoreSettingsDto> SaveGoogleAccountVerificationResultAsync(
+        Guid? employeeId,
+        GoogleAccountTierVerificationResult verification,
+        string? googleOAuthClientId = null,
+        CancellationToken ct = default)
+    {
+        if (!verification.Success || string.IsNullOrWhiteSpace(verification.Email))
+            throw new DomainException(verification.Message);
+
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.SetGoogleAccountVerification(
+            verification.Email,
+            verification.DetectedTier,
+            verification.DriveQuotaBytes,
+            verification.HostedDomain,
+            verification.VerifiedAt ?? DateTimeOffset.UtcNow,
+            googleOAuthClientId,
+            employeeId);
+
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        return MapToAdminSettingsDto(settings);
+    }
+
+    public async Task<AdminStoreSettingsDto> ClearGoogleAccountVerificationAsync(
+        Guid? employeeId,
+        CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.ClearGoogleAccountVerification(employeeId);
         await _repository.UpdateStoreSettingsAsync(settings, ct);
         return MapToAdminSettingsDto(settings);
     }
@@ -451,6 +528,16 @@ public sealed class EmployeeAndSettingsService
             s.OriginState,
             s.DeliveryScopeMode,
             s.MaxDeliveryDistanceKm,
-            s.DefaultPackageWeightGrams);
+            s.DefaultPackageWeightGrams,
+            s.ServerHostingMode,
+            s.OwnServerProvider,
+            !string.IsNullOrWhiteSpace(s.OwnServerSyncSecret),
+            s.GoogleOAuthClientId,
+            s.GoogleAccountEmail,
+            s.GoogleAccountTier,
+            s.GoogleDriveQuotaBytes,
+            s.GoogleHostedDomain,
+            s.GoogleAccountVerifiedAt,
+            s.QualifiesForDedicatedServerBenefit());
 }
 

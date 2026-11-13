@@ -166,6 +166,26 @@ else
                 </div>
             }
         }
+
+        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--adm-border); display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.83rem; font-weight: 700; cursor: pointer;">
+                <input type="checkbox" @bind="_useOwnDedicatedServerDiscount" />
+                <span>☁️ Vou usar Meu Servidor Próprio (Google Cloud Run / Render / Fly.io: <strong>-R$ 10,00/mês</strong>)</span>
+            </label>
+
+            @if (_settings.QualifiesForDedicatedServerBenefit)
+            {
+                <span class="pill-badge pill-green">
+                    👑 Conta Google Pro / Workspace (@GoogleAccountTierVerifier.GetTierFriendlyLabel(_settings.GoogleAccountTier)): -R$ 5,00/mês extra automático!
+                </span>
+            }
+            else if (Gateway.IsAdmin)
+            {
+                <a href="/configuracoes-loja" class="pill-badge pill-gold" style="text-decoration: none; font-size: 0.76rem;">
+                    🔐 Verificar Conta Google Pro (-R$ 5/mês) ou Servidor Próprio →
+                </a>
+            }
+        </div>
     </section>
 
     <!-- Comparativo dos 3 Planos (clique em qualquer card para contratar/vender o plano) -->
@@ -184,7 +204,7 @@ else
             </div>
             <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Básico</h2>
             <div class="plan-price">
-                @if (_useFreeDomainCheaperPlan)
+                @if (HasAnyPlanDiscount && GetDisplayPlanPrice(_settings.BasicPlanMonthlyPrice) < _settings.BasicPlanMonthlyPrice)
                 {
                     <s style="font-size: 0.9rem; color: var(--adm-muted); font-weight: 500; margin-right: 0.35rem;">@_settings.BasicPlanMonthlyPrice.ToString("C")</s>
                 }
@@ -227,7 +247,7 @@ else
             </div>
             <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Intermediário</h2>
             <div class="plan-price">
-                @if (_useFreeDomainCheaperPlan)
+                @if (HasAnyPlanDiscount && GetDisplayPlanPrice(_settings.IntermediaryPlanMonthlyPrice) < _settings.IntermediaryPlanMonthlyPrice)
                 {
                     <s style="font-size: 0.9rem; color: var(--adm-muted); font-weight: 500; margin-right: 0.35rem;">@_settings.IntermediaryPlanMonthlyPrice.ToString("C")</s>
                 }
@@ -267,7 +287,7 @@ else
             </div>
             <h2 style="margin: 0; font-size: 1.2rem; font-weight: 800;">Plano Premium Sob Medida</h2>
             <div class="plan-price">
-                @if (_useFreeDomainCheaperPlan)
+                @if (HasAnyPlanDiscount && GetDisplayPlanPrice(_settings.PremiumPlanMonthlyPrice) < _settings.PremiumPlanMonthlyPrice)
                 {
                     <s style="font-size: 0.9rem; color: var(--adm-muted); font-weight: 500; margin-right: 0.35rem;">@_settings.PremiumPlanMonthlyPrice.ToString("C")</s>
                 }
@@ -454,10 +474,16 @@ else
     private string _freeDomainQuery = string.Empty;
     private bool _searchingFreeDomains;
     private bool _useFreeDomainCheaperPlan;
+    private bool _useOwnDedicatedServerDiscount;
     private string? _selectedFreeDomain;
     private FreeDomainSearchResponse? _freeDomainSearch;
     private string? _error;
     private string? _successMessage;
+
+    private bool HasAnyPlanDiscount =>
+        _useFreeDomainCheaperPlan ||
+        _useOwnDedicatedServerDiscount ||
+        (_settings?.QualifiesForDedicatedServerBenefit == true);
 
     protected override async Task OnInitializedAsync()
     {
@@ -534,6 +560,9 @@ else
             _selectedPresetKey = _activePresetKey;
             if (string.IsNullOrWhiteSpace(_freeDomainQuery))
                 _freeDomainQuery = _settings.StoreName;
+
+            if (string.Equals(_settings.ServerHostingMode, GoogleAccountTierVerifier.HostingModeDedicatedOwnServer, StringComparison.OrdinalIgnoreCase))
+                _useOwnDedicatedServerDiscount = true;
         }
         catch (Exception ex)
         {
@@ -547,9 +576,21 @@ else
 
     private string GetCheckoutUrl(string planTier)
     {
+        var queryParts = new List<string>();
         if (_useFreeDomainCheaperPlan && !string.IsNullOrWhiteSpace(_selectedFreeDomain))
-            return $"/contratar-plano/{planTier}?freeDomain={Uri.EscapeDataString(_selectedFreeDomain)}&cheaper=1";
-        return $"/contratar-plano/{planTier}";
+        {
+            queryParts.Add($"freeDomain={Uri.EscapeDataString(_selectedFreeDomain)}");
+            queryParts.Add("cheaper=1");
+        }
+
+        if (_useOwnDedicatedServerDiscount)
+        {
+            queryParts.Add("ownServer=1");
+        }
+
+        return queryParts.Count == 0
+            ? $"/contratar-plano/{planTier}"
+            : $"/contratar-plano/{planTier}?{string.Join("&", queryParts)}";
     }
 
     private void GoToPlanCheckout(string planTier)
@@ -593,9 +634,11 @@ else
     }
 
     private decimal GetDisplayPlanPrice(decimal regularPrice) =>
-        _useFreeDomainCheaperPlan
-            ? FreeDomainFinder.CalculateCheaperPlanWithFreeDomain(regularPrice).CheaperMonthlyPrice
-            : regularPrice;
+        GoogleAccountTierVerifier.CalculatePlanBenefits(
+            regularPrice,
+            _useFreeDomainCheaperPlan,
+            _settings?.GoogleAccountTier,
+            _useOwnDedicatedServerDiscount).FinalMonthlyPrice;
 
     private void SelectPreset(string presetKey)
     {

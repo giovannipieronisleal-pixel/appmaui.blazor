@@ -43,6 +43,11 @@ O aplicativo e os fluxos de plano (`/planos`, `/contratar-plano` e `/configuraco
 - **Zero categorias de exemplo pré-cadastradas**: a loja inicia limpa para cada cliente criar suas próprias categorias em `/produtos` (`+ Nova Categoria` ou inline ao cadastrar um item).
 - **Movimentação fácil de estoque (`/estoque` e `/produtos`)**: botões rápidos **−1 / +1 / +5 / +10** por variante (com filtro por peça, cor, tamanho, SKU e saldo baixo/zerado), motivos pré-prontos clicáveis e histórico auditável.
 
+### Meu Servidor Próprio (Cloud Run / Render / Fly.io) & Verificação Conta Google Pro
+
+- **Modo "Meu Servidor Próprio" (`/configuracoes-loja`)**: conecte uma instância exclusiva da API YouLink hospedada na sua própria conta Google Cloud Run ([deploy-google-cloud.ps1](deploy-google-cloud.ps1)), Render, Fly.io ou VPS Docker com teste de latência em 1 clique (`GET /api/cloud/status`) e chave de sincronização segura (`X-YouLink-Sync-Key` / variável `YOULINK_SYNC_SECRET` em `POST /api/cloud/sync-state`). Reduz a mensalidade dos planos pagos em **−R$ 10,00/mês**.
+- **Verificação de Nível da Conta Google (`GoogleAccountTierVerifier`)**: conexão via Google OAuth 2.0 (PKCE no navegador ou Access Token direto) consultando `userinfo` (`email`, `hd`) e `drive/v3/about` (`storageQuota.limit`). Como o Google não expõe API de consumidor para ler planos comerciais "Google One / AI Pro" nem libera Cloud Run dentro do Google One, contas com **1 TB+** no Drive ou domínio **Google Workspace (`hd`)** desbloqueiam automaticamente o selo Pro e **−R$ 5,00/mês extras** nos planos (podendo acumular até **−R$ 25,00/mês** com Domínio Grátis + Servidor Próprio + Conta Google Pro).
+
 ---
 
 ## Estrutura Pública da Solução (`appmaui.blazor.slnx`)
@@ -55,8 +60,8 @@ O aplicativo e os fluxos de plano (`/planos`, `/contratar-plano` e `/configuraco
 | **ClothingStore.Application** | [ClothingStore.Application.csproj](src/ClothingStore.Application/ClothingStore.Application.csproj) | Regras de aplicação (`AuthService`, `CatalogService`, `ProductManagementService`, `StockManagementService`, `EmployeeAndSettingsService`, `OrderAndShippingService`). |
 | **ClothingStore.Domain** | [ClothingStore.Domain.csproj](src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`, `StoreOrder`, `PlanActivationCode`). |
 | **ClothingStore.Infrastructure** | [ClothingStore.Infrastructure.csproj](src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj) | Repositório transacional (`ClothingStoreRepository`), autenticação JWT/PBKDF2 e armazenamento de imagens. |
-| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens, `PixPayloadBuilder`, `BrazilShippingCalculator`, `FreeDomainFinder` e helper de links/domínios. |
-| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 64 testes automatizados de domínio, segurança, planos, domínios gratuitos (DNS Google/Cloudflare) e plano mais barato, categorias limpas, Pix EMV, CEP/distância, cálculo dos Correios, pedidos, stress tests e validação Windows x64 / NTFS / API. |
+| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens, `PixPayloadBuilder`, `BrazilShippingCalculator`, `FreeDomainFinder`, `GoogleAccountTierVerifier` e helper de links/domínios. |
+| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 70 testes automatizados de domínio, segurança, planos, domínios gratuitos (DNS Google/Cloudflare) e plano mais barato, verificação Google OAuth/Drive Pro e servidor próprio (`X-YouLink-Sync-Key`), categorias limpas, Pix EMV, CEP/distância, cálculo dos Correios, pedidos, stress tests e validação Windows x64 / NTFS / API. |
 
 ---
 

@@ -11,6 +11,7 @@ using ClothingStore.Infrastructure.Persistence;
 using ClothingStore.Infrastructure.Security;
 using ClothingStore.Infrastructure.Storage;
 using ClothingStore.Shared.DTOs;
+using ClothingStore.Shared.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -378,6 +379,7 @@ public class WindowsPlatformTests
         psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
         psi.Environment["Database__FilePath"] = tempDb;
         psi.Environment["Jwt__SecretKey"] = "WindowsIntegrationTestSecretKey_1234567890_!@#";
+        psi.Environment["YOULINK_SYNC_SECRET"] = "test-own-server-sync-key";
         psi.Environment["DOTNET_PRINT_TELEMETRY_MESSAGE"] = "false";
 
         using var process = Process.Start(psi)
@@ -419,6 +421,7 @@ public class WindowsPlatformTests
 
             var statusJson = await healthResponse.Content.ReadAsStringAsync();
             Assert.IsTrue(statusJson.Contains("\"online\""), statusJson);
+            Assert.IsTrue(statusJson.Contains("\"requiresSyncKey\":true"), statusJson);
 
             var publicStore = await http.GetAsync("/api/public/store-info");
             Assert.AreEqual(HttpStatusCode.OK, publicStore.StatusCode);
@@ -442,6 +445,39 @@ public class WindowsPlatformTests
             authedReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResult!.AccessToken);
             var dashboardResp = await http.SendAsync(authedReq);
             Assert.AreEqual(HttpStatusCode.OK, dashboardResp.StatusCode);
+
+            // Valida proteção e aceitação do X-YouLink-Sync-Key em /api/cloud/sync-state (Modo Servidor Próprio)
+            var emptySyncPayload = new CloudCatalogSyncPayload
+            {
+                Settings = new UpdateStoreSettingsRequest
+                {
+                    StoreName = "Loja Windows Test",
+                    WhatsappNumber = "5511999999999",
+                    StoreDescription = "Catálogo de teste sincronizado via Sync Key",
+                    OnlineBaseUrl = baseUrl,
+                    ServerHostingMode = GoogleAccountTierVerifier.HostingModeDedicatedOwnServer,
+                    OwnServerProvider = "GoogleCloudRun"
+                }
+            };
+
+            var anonSyncResp = await http.PostAsJsonAsync("/api/cloud/sync-state", emptySyncPayload);
+            Assert.AreEqual(HttpStatusCode.Unauthorized, anonSyncResp.StatusCode);
+
+            using var wrongKeyReq = new HttpRequestMessage(HttpMethod.Post, "/api/cloud/sync-state")
+            {
+                Content = JsonContent.Create(emptySyncPayload)
+            };
+            wrongKeyReq.Headers.Add("X-YouLink-Sync-Key", "wrong-key");
+            var wrongKeyResp = await http.SendAsync(wrongKeyReq);
+            Assert.AreEqual(HttpStatusCode.Unauthorized, wrongKeyResp.StatusCode);
+
+            using var validKeyReq = new HttpRequestMessage(HttpMethod.Post, "/api/cloud/sync-state")
+            {
+                Content = JsonContent.Create(emptySyncPayload)
+            };
+            validKeyReq.Headers.Add("X-YouLink-Sync-Key", "test-own-server-sync-key");
+            var validKeyResp = await http.SendAsync(validKeyReq);
+            Assert.AreEqual(HttpStatusCode.OK, validKeyResp.StatusCode);
 
             Assert.IsTrue(File.Exists(tempDb), "O executável da API precisa persistir o banco isolado em tempDb.");
         }

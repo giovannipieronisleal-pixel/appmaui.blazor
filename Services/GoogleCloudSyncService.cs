@@ -1,4 +1,9 @@
+using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Application.Services;
 using ClothingStore.Domain.Entities;
@@ -9,15 +14,15 @@ using ClothingStore.Shared.Helpers;
 namespace appmaui.blazor.Services;
 
 /// <summary>
-/// Serviço de sincronização e publicação 24h online do catálogo no Google Cloud Run.
-/// Executa sincronização sob demanda (botão "Criar/Atualizar Site") e automática toda vez que itens são salvos.
+/// Serviço de sincronização e publicação 24h online do catálogo no Google Cloud Run,
+/// servidor próprio (Cloud Run / Render / Fly.io) e verificação OAuth de conta Google.
 /// </summary>
 public sealed class GoogleCloudSyncService
 {
     private readonly IClothingStoreRepository _repository;
     private readonly AdminApiClient _adminApiClient;
     private readonly HttpClient _httpClient;
-    private static readonly HttpClient PublicDnsClient = new() { Timeout = TimeSpan.FromSeconds(6) };
+    private static readonly HttpClient ExternalHttpClient = new() { Timeout = TimeSpan.FromSeconds(15) };
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     public event Action? OnSyncStatusChanged;
@@ -58,16 +63,16 @@ public sealed class GoogleCloudSyncService
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(5));
 
-            // Testa endpoint de status ou health check do Google Cloud Run
+            // Testa endpoint de status ou health check do Google Cloud Run / servidor próprio
             var checkUrl = $"{cleanUrl}/api/cloud/status";
-            var resp = await _httpClient.GetAsync(checkUrl, cts.Token);
+            var resp = await ExternalHttpClient.GetAsync(checkUrl, cts.Token);
             var isOk = resp.IsSuccessStatusCode;
 
             if (!isOk)
             {
                 // Fallback para rota pública da loja
                 var publicUrl = $"{cleanUrl}/api/public/store-info";
-                var resp2 = await _httpClient.GetAsync(publicUrl, cts.Token);
+                var resp2 = await ExternalHttpClient.GetAsync(publicUrl, cts.Token);
                 isOk = resp2.IsSuccessStatusCode;
             }
 
@@ -83,6 +88,247 @@ public sealed class GoogleCloudSyncService
         }
     }
 
+    public async Task<OwnServerHealthCheckResult> TestOwnServerConnectionAsync(
+        string? targetUrl,
+        CancellationToken ct = default)
+    {
+        var raw = (targetUrl ?? string.Empty).Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(raw) ||
+            (!raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+             !raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+        {
+            return new OwnServerHealthCheckResult(
+                false,
+                raw,
+                null,
+                0,
+                "Informe uma URL válida começando com https:// (ex.: https://sualoja.run.app ou onrender.com).");
+        }
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            using var statusResp = await ExternalHttpClient.GetAsync($"{raw}/api/cloud/status", cts.Token);
+            if (statusResp.IsSuccessStatusCode)
+            {
+                sw.Stop();
+                var json = await statusResp.Content.ReadAsStringAsync(cts.Token);
+                string? detectedStore = null;
+                var requiresSyncKey = false;
+                try
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("storeName", out var sn))
+                        detectedStore = sn.GetString();
+                    if (doc.RootElement.TryGetProperty("requiresSyncKey", out var rsk) &&
+                        rsk.ValueKind == JsonValueKind.True)
+                        requiresSyncKey = true;
+                }
+                catch
+                {
+                }
+
+                IsCloudOnline = true;
+                OnSyncStatusChanged?.Invoke();
+
+                var keyText = requiresSyncKey ? " • protegido com Sync Key" : string.Empty;
+                var label = string.IsNullOrWhiteSpace(detectedStore) ? "Servidor YouLink" : $"Loja \"{detectedStore}\"";
+                return new OwnServerHealthCheckResult(
+                    true,
+                    raw,
+                    detectedStore,
+                    sw.ElapsedMilliseconds,
+                    $"Online em {sw.ElapsedMilliseconds} ms — {label} respondeu normalmente{keyText}!");
+            }
+
+            using var fallbackResp = await ExternalHttpClient.GetAsync($"{raw}/api/public/store-info", cts.Token);
+            sw.Stop();
+            if (fallbackResp.IsSuccessStatusCode)
+            {
+                IsCloudOnline = true;
+                OnSyncStatusChanged?.Invoke();
+                return new OwnServerHealthCheckResult(
+                    true,
+                    raw,
+                    null,
+                    sw.ElapsedMilliseconds,
+                    $"Online em {sw.ElapsedMilliseconds} ms (via /api/public/store-info)!");
+            }
+
+            IsCloudOnline = false;
+            OnSyncStatusChanged?.Invoke();
+            return new OwnServerHealthCheckResult(
+                false,
+                raw,
+                null,
+                sw.ElapsedMilliseconds,
+                $"Servidor respondeu HTTP {(int)statusResp.StatusCode}. Verifique se a API do YouLink está rodando nessa URL.");
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            IsCloudOnline = false;
+            OnSyncStatusChanged?.Invoke();
+            return new OwnServerHealthCheckResult(
+                false,
+                raw,
+                null,
+                sw.ElapsedMilliseconds,
+                $"Não foi possível conectar ao servidor: {ex.Message}");
+        }
+    }
+
+    public async Task<GoogleAccountTierVerificationResult> VerifyGoogleAccountByTokenAsync(
+        string accessToken,
+        string? googleOAuthClientId = null,
+        CancellationToken ct = default)
+    {
+        var result = await GoogleAccountTierVerifier.VerifyWithAccessTokenAsync(
+            accessToken,
+            ExternalHttpClient,
+            ct);
+
+        if (!result.Success || string.IsNullOrWhiteSpace(result.Email))
+            return result;
+
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.SetGoogleAccountVerification(
+            result.Email,
+            result.DetectedTier,
+            result.DriveQuotaBytes,
+            result.HostedDomain,
+            result.VerifiedAt ?? DateTimeOffset.UtcNow,
+            googleOAuthClientId);
+
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        OnSyncStatusChanged?.Invoke();
+        return result;
+    }
+
+    public async Task<GoogleAccountTierVerificationResult> VerifyGoogleAccountViaBrowserOAuthAsync(
+        string googleOAuthClientId,
+        CancellationToken ct = default)
+    {
+        var clientId = (googleOAuthClientId ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            return new GoogleAccountTierVerificationResult(
+                false, null, null, null, null, null,
+                GoogleAccountTierVerifier.TierNone, false, false, "Client ID ausente",
+                "Informe o Google OAuth Client ID (Desktop/Aplicativo Web) ou cole um Access Token do Google OAuth Playground.",
+                null);
+        }
+
+        if (!HttpListener.IsSupported)
+        {
+            return new GoogleAccountTierVerificationResult(
+                false, null, null, null, null, null,
+                GoogleAccountTierVerifier.TierNone, false, false, "Não suportado no dispositivo",
+                "Login via servidor local não suportado nesta plataforma. Use a opção de colar o Access Token Google.",
+                null);
+        }
+
+        try
+        {
+            using var probe = new TcpListener(IPAddress.Loopback, 0);
+            probe.Start();
+            var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+
+            var redirectUri = $"http://127.0.0.1:{port}/callback/";
+            var pkce = GoogleAccountTierVerifier.CreatePkcePair();
+            var authUrl = GoogleAccountTierVerifier.BuildAuthorizationUrl(
+                clientId,
+                redirectUri,
+                pkce.CodeChallenge,
+                pkce.State);
+
+            using var listener = new HttpListener();
+            listener.Prefixes.Add(redirectUri);
+            listener.Start();
+
+            await Launcher.Default.OpenAsync(new Uri(authUrl));
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromMinutes(2));
+
+            var contextTask = listener.GetContextAsync();
+            var completed = await Task.WhenAny(contextTask, Task.Delay(Timeout.Infinite, timeoutCts.Token));
+            if (completed != contextTask)
+            {
+                return new GoogleAccountTierVerificationResult(
+                    false, null, null, null, null, null,
+                    GoogleAccountTierVerifier.TierNone, false, false, "Tempo esgotado",
+                    "Tempo limite de 2 minutos aguardando login Google no navegador. Tente novamente.",
+                    null);
+            }
+
+            var context = await contextTask;
+            var query = context.Request.QueryString;
+            var error = query["error"];
+            var code = query["code"];
+            var returnedState = query["state"];
+
+            var html = string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(code)
+                ? "<html><body style='font-family:sans-serif;text-align:center;padding:48px'><h2>&#10004; Conta Google conectada ao YouLink!</h2><p>Você já pode fechar esta aba e voltar para o aplicativo.</p></body></html>"
+                : "<html><body style='font-family:sans-serif;text-align:center;padding:48px'><h2>Autorização Google cancelada</h2><p>Feche esta aba e tente novamente no YouLink.</p></body></html>";
+
+            var buffer = Encoding.UTF8.GetBytes(html);
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.ContentLength64 = buffer.Length;
+            await context.Response.OutputStream.WriteAsync(buffer, ct);
+            context.Response.OutputStream.Close();
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                return new GoogleAccountTierVerificationResult(
+                    false, null, null, null, null, null,
+                    GoogleAccountTierVerifier.TierNone, false, false, "Acesso negado",
+                    $"O Google retornou erro de autorização: {error}",
+                    null);
+            }
+
+            if (string.IsNullOrWhiteSpace(code) || !string.Equals(returnedState, pkce.State, StringComparison.Ordinal))
+            {
+                return new GoogleAccountTierVerificationResult(
+                    false, null, null, null, null, null,
+                    GoogleAccountTierVerifier.TierNone, false, false, "Falha de segurança state",
+                    "Retorno OAuth inválido ou state divergente. Tente novamente.",
+                    null);
+            }
+
+            var accessToken = await GoogleAccountTierVerifier.ExchangeCodeForAccessTokenAsync(
+                clientId,
+                code,
+                pkce.CodeVerifier,
+                redirectUri,
+                ExternalHttpClient,
+                ct: ct);
+
+            return await VerifyGoogleAccountByTokenAsync(accessToken, clientId, ct);
+        }
+        catch (Exception ex)
+        {
+            return new GoogleAccountTierVerificationResult(
+                false, null, null, null, null, null,
+                GoogleAccountTierVerifier.TierNone, false, false, "Erro OAuth",
+                $"Erro no fluxo OAuth Google: {ex.Message}",
+                null);
+        }
+    }
+
+    public async Task<AdminStoreSettingsDto> ClearGoogleAccountVerificationAsync(CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.ClearGoogleAccountVerification();
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        OnSyncStatusChanged?.Invoke();
+        return EmployeeAndSettingsService.MapToAdminSettingsDto(settings);
+    }
+
     /// <summary>
     /// Consulta se o domínio desejado para o site está disponível no Google Cloud.
     /// </summary>
@@ -92,7 +338,7 @@ public sealed class GoogleCloudSyncService
     {
         return await GoogleCloudDomainChecker.EvaluateDomainAsync(
             rawDomain,
-            PublicDnsClient,
+            ExternalHttpClient,
             async domain =>
             {
                 var settings = await _repository.GetStoreSettingsAsync(ct);
@@ -112,7 +358,7 @@ public sealed class GoogleCloudSyncService
 
         return await FreeDomainFinder.SearchAvailableFreeDomainsAsync(
             query,
-            PublicDnsClient,
+            ExternalHttpClient,
             async domain =>
             {
                 var current = await _repository.GetStoreSettingsAsync(ct);
@@ -128,7 +374,7 @@ public sealed class GoogleCloudSyncService
         string token,
         string? ipv4 = null,
         CancellationToken ct = default) =>
-        FreeDomainFinder.UpdateDuckDnsIpAsync(subdomainOrDomain, token, ipv4, PublicDnsClient, ct);
+        FreeDomainFinder.UpdateDuckDnsIpAsync(subdomainOrDomain, token, ipv4, ExternalHttpClient, ct);
 
     /// <summary>
     /// Sincroniza o catálogo local com o site 24h no Google Cloud.
@@ -178,7 +424,9 @@ public sealed class GoogleCloudSyncService
                     OriginState = settings.OriginState,
                     DeliveryScopeMode = settings.DeliveryScopeMode,
                     MaxDeliveryDistanceKm = settings.MaxDeliveryDistanceKm,
-                    DefaultPackageWeightGrams = settings.DefaultPackageWeightGrams
+                    DefaultPackageWeightGrams = settings.DefaultPackageWeightGrams,
+                    ServerHostingMode = settings.ServerHostingMode,
+                    OwnServerProvider = settings.OwnServerProvider
                 },
                 Categories = categories.Select(c => new SaveCategoryRequest
                 {
@@ -204,16 +452,15 @@ public sealed class GoogleCloudSyncService
                 Content = JsonContent.Create(payload)
             };
 
-            // Se houver token na sessão administrativa, inclui
-            if (!string.IsNullOrWhiteSpace(_adminApiClient.CurrentEmployee?.Email))
+            if (!string.IsNullOrWhiteSpace(settings.OwnServerSyncSecret))
             {
-                // Token ou cabeçalho de sincronização
+                request.Headers.TryAddWithoutValidation("X-YouLink-Sync-Key", settings.OwnServerSyncSecret.Trim());
             }
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(15));
 
-            var response = await _httpClient.SendAsync(request, cts.Token);
+            var response = await ExternalHttpClient.SendAsync(request, cts.Token);
             if (response.IsSuccessStatusCode)
             {
                 settings.LastOnlineSyncAt = DateTimeOffset.UtcNow;
