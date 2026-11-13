@@ -463,6 +463,9 @@ public sealed class StoreSettings
     public bool CanUseDirectPixSales(DateTimeOffset? now = null) =>
         IsEffectiveIntermediatePlan(now) || IsEffectivePremiumPlan(now);
 
+    public bool CanViewSalesAnalytics(DateTimeOffset? now = null) =>
+        IsEffectiveIntermediatePlan(now) || IsEffectivePremiumPlan(now);
+
     public bool IsDirectPixCheckoutReady(DateTimeOffset? now = null) =>
         CanUseDirectPixSales(now) &&
         DirectPixSalesEnabled &&

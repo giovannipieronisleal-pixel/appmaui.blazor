@@ -774,6 +774,29 @@ public sealed class MauiAdminGateway
         return updated;
     }
 
+    public async Task<SalesReportDto> GetSalesReportAsync(string period = "30d", CancellationToken ct = default)
+    {
+        EnsureAuthenticated();
+        return await ExecuteWithFallbackAsync(
+            () => _apiClient.GetSalesReportAsync(period, ct),
+            () => _orderAndShippingService is not null
+                ? _orderAndShippingService.GetSalesReportAsync(period, ct)
+                : throw new DomainException("Serviço de vendas e pedidos indisponível."));
+    }
+
+    public async Task<StoreOrderDto> RegisterManualSaleAsync(RegisterManualSaleRequest request, CancellationToken ct = default)
+    {
+        EnsureStockPermission();
+        var created = await ExecuteWithFallbackAsync(
+            () => _apiClient.RegisterManualSaleAsync(request, ct),
+            () => _orderAndShippingService is not null
+                ? _orderAndShippingService.RegisterManualSaleAsync(CurrentEmployee!.EmployeeId, request, ct)
+                : throw new DomainException("Serviço de vendas e pedidos indisponível."));
+
+        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        return created;
+    }
+
     private void EnsureAuthenticated()
     {
         if (!IsAuthenticated)

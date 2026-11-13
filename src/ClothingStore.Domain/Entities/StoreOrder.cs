@@ -10,6 +10,9 @@ namespace ClothingStore.Domain.Entities;
 public sealed class StoreOrder
 {
     public const string PaymentMethodPixOnly = "Pix";
+    public const string PaymentMethodCash = "Dinheiro";
+    public const string PaymentMethodWhatsapp = "WhatsApp";
+    public const string PaymentMethodCardOrLink = "Cartão / Link";
 
     public const string StatusAwaitingPix = "AguardandoPix";
     public const string StatusPaidPreparing = "PagoSeparandoEnvio";
@@ -175,6 +178,106 @@ public sealed class StoreOrder
             UpdatedAt = now
         };
     }
+
+    public static StoreOrder CreateManualPaidSale(
+        Guid id,
+        string orderNumber,
+        Product product,
+        ProductVariant variant,
+        int quantity,
+        string customerName,
+        string? customerWhatsapp = null,
+        string? paymentMethod = null,
+        decimal? agreedShippingCost = null,
+        string? sellerNotes = null,
+        DateTimeOffset? soldAt = null)
+    {
+        if (quantity <= 0)
+            throw new DomainException("A quantidade vendida deve ser maior que zero.");
+
+        if (!variant.IsActive || variant.StockQuantity < quantity)
+        {
+            throw new DomainException(
+                $"Estoque insuficiente para {product.Name} ({variant.Color}/{variant.Size}). Disponível: {variant.StockQuantity}.");
+        }
+
+        if (agreedShippingCost.HasValue && agreedShippingCost.Value < 0)
+            throw new DomainException("O valor de frete não pode ser negativo.");
+
+        var normalizedMethod = NormalizeManualPaymentMethod(paymentMethod);
+        var cleanCustomer = string.IsNullOrWhiteSpace(customerName)
+            ? "Cliente Balcão / WhatsApp"
+            : customerName.Trim();
+
+        var cleanWhatsapp = string.IsNullOrWhiteSpace(customerWhatsapp)
+            ? string.Empty
+            : StoreSettings.SanitizeWhatsappNumber(customerWhatsapp);
+
+        var timestamp = soldAt ?? DateTimeOffset.UtcNow;
+        var unitPrice = Math.Round(product.BasePrice, 2);
+        var itemsTotal = Math.Round(unitPrice * quantity, 2);
+        var roundedShipping = agreedShippingCost.HasValue && agreedShippingCost.Value > 0
+            ? Math.Round(agreedShippingCost.Value, 2)
+            : (decimal?)null;
+        var totalAmount = Math.Round(itemsTotal + (roundedShipping ?? 0m), 2);
+
+        var item = new StoreOrderItem
+        {
+            ProductId = product.Id,
+            ProductVariantId = variant.Id,
+            ProductName = product.Name,
+            Sku = variant.Sku,
+            Color = variant.Color,
+            Size = variant.Size,
+            Quantity = quantity,
+            UnitPrice = unitPrice,
+            Subtotal = itemsTotal
+        };
+
+        return new StoreOrder
+        {
+            Id = id == Guid.Empty ? Guid.NewGuid() : id,
+            OrderNumber = orderNumber,
+            PaymentMethod = normalizedMethod,
+            Status = StatusDelivered,
+            Items = [item],
+            ItemsTotal = itemsTotal,
+            AgreedShippingCost = roundedShipping,
+            TotalPixAmount = totalAmount,
+            CustomerName = cleanCustomer,
+            CustomerWhatsapp = cleanWhatsapp,
+            ShippingZoneLabel = "Venda Registrada no Painel",
+            FulfillmentMethod = "Retirada / Venda Direta",
+            SellerNotes = string.IsNullOrWhiteSpace(sellerNotes) ? null : sellerNotes.Trim(),
+            CreatedAt = timestamp,
+            PixConfirmedAt = timestamp,
+            ShippedAt = timestamp,
+            DeliveredAt = timestamp,
+            UpdatedAt = timestamp
+        };
+    }
+
+    public static string NormalizeManualPaymentMethod(string? rawMethod)
+    {
+        if (string.IsNullOrWhiteSpace(rawMethod))
+            return PaymentMethodWhatsapp;
+
+        var trimmed = rawMethod.Trim();
+        if (trimmed.Equals(PaymentMethodPixOnly, StringComparison.OrdinalIgnoreCase))
+            return PaymentMethodPixOnly;
+        if (trimmed.Equals(PaymentMethodCash, StringComparison.OrdinalIgnoreCase))
+            return PaymentMethodCash;
+        if (trimmed.Equals(PaymentMethodWhatsapp, StringComparison.OrdinalIgnoreCase))
+            return PaymentMethodWhatsapp;
+        if (trimmed.Equals(PaymentMethodCardOrLink, StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Contains("cart", StringComparison.OrdinalIgnoreCase))
+            return PaymentMethodCardOrLink;
+
+        return trimmed.Length > 40 ? trimmed[..40] : trimmed;
+    }
+
+    public bool IsConfirmedSale() =>
+        Status is StatusPaidPreparing or StatusShipped or StatusDelivered;
 
     public string FormatDeliveryAddress()
     {

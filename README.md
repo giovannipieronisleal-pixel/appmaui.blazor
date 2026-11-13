@@ -20,8 +20,8 @@ Os instaladores prontos (**Android `.apk`** e **Windows `win-x64 .zip`**) são g
 O **YouLink** conta com três níveis de vitrine selecionáveis no app (`/planos` e `/configuracoes-loja`), **todos já com Servidor 24h + Certificado HTTPS + Endereço/Domínio da loja inclusos sem custo adicional**:
 
 - **Plano Básico (`Basico`)**: tema fixo *Minimalista Luxo* + servidor 24h + HTTPS + endereço da vitrine inclusos, pronto para vender via WhatsApp, com QR Code e estoque em tempo real.
-- **Meia Versão (`Intermediario`)**: **5 versões de site pré-prontas** não configuráveis para troca instantânea em 1 clique + servidor 24h + HTTPS + domínio/endereço incluso + **opção ativável de vendas diretas pelo app/site apenas via Pix** (sem cartão e sem necessidade de CNPJ).
-- **Premium Sob Medida (`Premium`)**: Estúdio Visual completo (paleta, fontes, cantos, densidade, destaque e grade configurável) + servidor 24h + HTTPS + endereço incluso (com opção de domínio próprio sem taxa extra da plataforma) + **vendas diretas via Pix ativáveis** com vitrine personalizada.
+- **Meia Versão (`Intermediario`)**: **5 versões de site pré-prontas** não configuráveis para troca instantânea em 1 clique + servidor 24h + HTTPS + domínio/endereço incluso + **painel Vendas & Quanto Vendeu** (`/vendas`: faturamento por período, peças mais vendidas e vendas WhatsApp/balcão) + **opção ativável de vendas diretas pelo app/site apenas via Pix** (sem cartão e sem necessidade de CNPJ).
+- **Premium Sob Medida (`Premium`)**: Estúdio Visual completo (paleta, fontes, cantos, densidade, destaque e grade configurável) + servidor 24h + HTTPS + endereço incluso (com opção de domínio próprio sem taxa extra da plataforma) + **painel Vendas & Quanto Vendeu** (`/vendas`) + **vendas diretas via Pix ativáveis** com vitrine personalizada.
 
 ### Vendas Diretas via Pix, Limite de Distância e Cálculo dos Correios (Meia Versão e Premium)
 
@@ -61,7 +61,7 @@ O aplicativo e os fluxos de plano (`/planos`, `/contratar-plano` e `/configuraco
 | **ClothingStore.Domain** | [ClothingStore.Domain.csproj](src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`, `StoreOrder`, `PlanActivationCode`). |
 | **ClothingStore.Infrastructure** | [ClothingStore.Infrastructure.csproj](src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj) | Repositório transacional (`ClothingStoreRepository`), autenticação JWT/PBKDF2 e armazenamento de imagens. |
 | **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens, `PixPayloadBuilder`, `BrazilShippingCalculator`, `FreeDomainFinder`, `GoogleAccountTierVerifier` e helper de links/domínios. |
-| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 70 testes automatizados de domínio, segurança, planos, domínios gratuitos (DNS Google/Cloudflare) e plano mais barato, verificação Google OAuth/Drive Pro e servidor próprio (`X-YouLink-Sync-Key`), categorias limpas, Pix EMV, CEP/distância, cálculo dos Correios, pedidos, stress tests e validação Windows x64 / NTFS / API. |
+| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 74 testes automatizados de domínio, segurança, planos, relatórios de vendas (`/vendas`) e baixa automática no estoque, domínios gratuitos (DNS Google/Cloudflare) e plano mais barato, verificação Google OAuth/Drive Pro e servidor próprio (`X-YouLink-Sync-Key`), categorias limpas, Pix EMV, CEP/distância, cálculo dos Correios, pedidos, stress tests e validação Windows x64 / NTFS / API. |
 
 ---
 

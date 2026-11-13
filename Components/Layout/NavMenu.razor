@@ -1,6 +1,7 @@
 @using ClothingStore.Application.Services
 @inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
+@inject StoreBrandStateService BrandState
 @inject NavigationManager Navigation
 @implements IDisposable
 
@@ -19,6 +20,15 @@
         <span class="adm-nav-icon">📦</span>
         <span>Estoque</span>
     </NavLink>
+
+    @if (Gateway.IsAdmin || Gateway.CanManageStock)
+    {
+        var hasPaidSales = BrandState.IsIntermediatePlan || BrandState.IsPremiumPlan;
+        <NavLink class="adm-nav-item" href="/vendas">
+            <span class="adm-nav-icon">💰</span>
+            <span>Vendas@(hasPaidSales ? string.Empty : " 🔒")</span>
+        </NavLink>
+    }
 
     @if (Gateway.IsAdmin)
     {
@@ -77,6 +87,7 @@
         {
             var info = await CatalogService.GetPublicStoreSettingsAsync();
             _storeSlug = info.StoreSlug;
+            BrandState.ApplyFromPublicSettings(info);
         }
         catch
         {

@@ -1,4 +1,5 @@
 @page "/"
+@using System.Globalization
 @inject MauiAdminGateway Gateway
 @inject NavigationManager Navigation
 @inject ClothingStore.Application.Services.CatalogService CatalogService
@@ -112,6 +113,48 @@
                             <a href="/configuracoes-loja" class="adm-btn adm-btn-primary">
                                 🌍 Gerenciar Visibilidade
                             </a>
+                        }
+                    </div>
+                </div>
+            </section>
+        }
+
+        @if (_salesReport is not null)
+        {
+            <section class="adm-card" style="border-left: 4px solid @(_salesReport.IsUnlocked ? "var(--adm-success)" : "var(--brand-accent, #B69158)");">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                            <span class="pill-badge @(_salesReport.IsUnlocked ? "pill-green" : "pill-gold")">
+                                @(_salesReport.IsUnlocked ? "💰 Vendas & Faturamento" : "🔒 Vendas nas Versões Pagas")
+                            </span>
+                        </div>
+                        @if (_salesReport.IsUnlocked)
+                        {
+                            <div style="font-size: 1.35rem; font-weight: 800; color: var(--adm-success);">
+                                @_salesReport.Last30DaysConfirmedRevenue.ToString("C", PtBr)
+                                <span style="font-size: 0.78rem; color: var(--adm-muted); font-weight: 600;">nos últimos 30 dias</span>
+                            </div>
+                            <p style="margin: 0; font-size: 0.84rem; color: var(--adm-muted);">
+                                Hoje: <strong>@_salesReport.TodayConfirmedRevenue.ToString("C", PtBr)</strong> &bull;
+                                Histórico total: <strong>@_salesReport.TotalConfirmedRevenue.ToString("C", PtBr)</strong> (@_salesReport.ConfirmedOrdersCount venda(s))
+                            </p>
+                        }
+                        else
+                        {
+                            <p style="margin: 0; font-size: 0.85rem; color: var(--adm-muted);">
+                                @_salesReport.LockMessage
+                            </p>
+                        }
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="/vendas" class="adm-btn @(_salesReport.IsUnlocked ? "adm-btn-success" : "adm-btn-primary")">
+                            @(_salesReport.IsUnlocked ? "💰 Ver Quanto Vendeu" : "🔒 Desbloquear Vendas")
+                        </a>
+                        @if (!_salesReport.IsUnlocked && Gateway.IsAdmin)
+                        {
+                            <a href="/planos" class="adm-btn adm-btn-outline">💎 Ver Planos</a>
                         }
                     </div>
                 </div>
@@ -245,8 +288,10 @@
 }
 
 @code {
+    private static readonly CultureInfo PtBr = new("pt-BR");
     private DashboardSummaryDto? _summary;
     private PublicStoreSettingsDto? _publicStore;
+    private SalesReportDto? _salesReport;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -268,6 +313,7 @@
         {
             _summary = null;
             _publicStore = null;
+            _salesReport = null;
             _error = null;
         }
         await InvokeAsync(StateHasChanged);
@@ -284,6 +330,7 @@
             {
                 BrandState.ApplyFromPublicSettings(_publicStore);
             }
+            _salesReport = await Gateway.GetSalesReportAsync("30d");
         }
         catch (Exception ex)
         {

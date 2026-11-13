@@ -18,6 +18,7 @@
     @if (Gateway.IsAuthenticated)
     {
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="/vendas" class="adm-btn adm-btn-success">💰 Ver Quanto Vendeu</a>
             <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _showCorreiosSimulator = !_showCorreiosSimulator">
                 @(_showCorreiosSimulator ? "Ocultar Simulador Correios" : "📦 Simulador Correios")
             </button>
@@ -153,6 +154,13 @@ else
             <div style="font-size: 0.74rem; font-weight: 700; color: var(--adm-muted); text-transform: uppercase;">Enviados / Entregues</div>
             <div style="font-size: 1.4rem; font-weight: 800; color: var(--adm-success); margin-top: 0.2rem;">@_orders.Count(o => o.Status is BrazilShippingCalculator.OrderStatuses.Shipped or BrazilShippingCalculator.OrderStatuses.Delivered)</div>
         </div>
+        @if (_salesReport?.IsUnlocked == true)
+        {
+            <div class="adm-card" style="padding: 0.9rem 1rem; border-left: 3px solid var(--adm-success);">
+                <div style="font-size: 0.74rem; font-weight: 700; color: var(--adm-muted); text-transform: uppercase;">Quanto Vendeu (Total)</div>
+                <div style="font-size: 1.35rem; font-weight: 800; color: var(--adm-success); margin-top: 0.2rem;">@_salesReport.TotalConfirmedRevenue.ToString("C", PtBr)</div>
+            </div>
+        }
     </div>
 
     <!-- Filtros por Status -->
@@ -384,6 +392,7 @@ else
 
     private AdminStoreSettingsDto? _settings;
     private IReadOnlyList<StoreOrderDto> _orders = [];
+    private SalesReportDto? _salesReport;
     private readonly Dictionary<Guid, UpdateOrderFulfillmentRequest> _drafts = new();
     private string _statusFilter = "Todos";
     private bool _loading = true;
@@ -435,6 +444,7 @@ else
             }
 
             _orders = await Gateway.GetOrdersAsync();
+            _salesReport = await Gateway.GetSalesReportAsync("all");
             _drafts.Clear();
         }
         catch (Exception ex)

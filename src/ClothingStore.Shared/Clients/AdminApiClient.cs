@@ -428,6 +428,21 @@ public sealed class AdminApiClient
         return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
     }
 
+    public async Task<SalesReportDto> GetSalesReportAsync(string period = "30d", CancellationToken ct = default)
+    {
+        var qs = Uri.EscapeDataString(string.IsNullOrWhiteSpace(period) ? "30d" : period.Trim());
+        var response = await _httpClient.GetAsync($"/api/orders/sales-report?period={qs}", ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<SalesReportDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<StoreOrderDto> RegisterManualSaleAsync(RegisterManualSaleRequest request, CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/orders/manual-sale", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
+    }
+
     public async Task<CorreiosQuoteDto> SimulateCorreiosAsync(
         string? originCep,
         string destCep,

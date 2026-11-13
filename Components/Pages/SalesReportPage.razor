@@ -1,0 +1,576 @@
+@page "/vendas"
+@using System.Globalization
+@using System.Text
+@inject MauiAdminGateway Gateway
+@inject ClothingStore.Application.Services.CatalogService CatalogService
+@inject StoreBrandStateService BrandState
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageTitle>Vendas &amp; Faturamento — YouLink</PageTitle>
+
+<div class="sales-header">
+    <div>
+        <h1 class="adm-page-title" style="margin: 0;">💰 Vendas &amp; Quanto Vendeu</h1>
+        <p class="adm-page-subtitle" style="margin: 0.25rem 0 0;">
+            Acompanhe o faturamento confirmado por período, ranking das peças mais vendidas e vendas registradas no WhatsApp ou balcão.
+        </p>
+    </div>
+
+    @if (Gateway.IsAuthenticated)
+    {
+        <div class="sales-header-actions">
+            @if (_report?.IsUnlocked == true && Gateway.CanManageStock)
+            {
+                <button type="button"
+                        class="adm-btn adm-btn-success"
+                        @onclick="() => _showManualSaleForm = !_showManualSaleForm">
+                    @(_showManualSaleForm ? "Fechar Registro" : "+ Registrar Venda")
+                </button>
+            }
+            @if (_report?.IsUnlocked == true)
+            {
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        @onclick="CopyCsvReportAsync">
+                    @(_copiedCsv ? "✓ CSV Copiado!" : "📋 Copiar Resumo CSV")
+                </button>
+            }
+            <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadReportAsync">
+                🔄 Atualizar
+            </button>
+            <a href="/pedidos" class="adm-btn adm-btn-primary">🧾 Pedidos Pix</a>
+        </div>
+    }
+</div>
+
+@if (!Gateway.IsAuthenticated)
+{
+    <div class="adm-card">
+        <p style="margin: 0 0 0.75rem;">Faça login no painel para acompanhar suas vendas e faturamento.</p>
+        <button type="button" class="adm-btn adm-btn-primary" @onclick='() => Navigation.NavigateTo("/")'>Ir para o Login</button>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="adm-alert adm-alert-error">@_error</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_success))
+    {
+        <div class="adm-alert adm-alert-success">@_success</div>
+    }
+
+    @if (_loading)
+    {
+        <div class="adm-card">
+            <p style="margin: 0; color: var(--adm-muted);">Carregando relatório de vendas...</p>
+        </div>
+    }
+    else if (_report is not null && !_report.IsUnlocked)
+    {
+        <section class="adm-card sales-lock-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                <span class="pill-badge pill-gold">🔒 Exclusivo das Versões Pagas</span>
+                <span class="pill-badge pill-slate">Plano Atual: @_report.EffectivePlanTier</span>
+            </div>
+
+            <h2 class="sales-lock-title">Veja exatamente quanto você vendeu — peça por peça e dia a dia</h2>
+            <p class="sales-lock-copy">
+                @_report.LockMessage
+                No <strong>Plano Básico</strong> sua vitrine funciona normalmente com pedidos diretos no WhatsApp; a partir da <strong>Meia Versão</strong> e do <strong>Plano Premium</strong>, você desbloqueia o painel financeiro completo da sua loja.
+            </p>
+
+            <div class="sales-lock-features">
+                <div class="sales-lock-feature">💵 Quanto vendeu hoje, em 7 dias, 30 dias e total histórico</div>
+                <div class="sales-lock-feature">📊 Gráfico diário e Ticket Médio automático por pedido</div>
+                <div class="sales-lock-feature">🏆 Ranking das roupas mais vendidas e faturamento por peça</div>
+                <div class="sales-lock-feature">📝 Registro rápido de vendas pelo WhatsApp / balcão com baixa no estoque</div>
+            </div>
+
+            <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+                <a href="/planos" class="adm-btn adm-btn-primary">💎 Ver Planos (Meia Versão &amp; Premium)</a>
+                @if (Gateway.IsAdmin)
+                {
+                    <a href="/configuracoes-loja" class="adm-btn adm-btn-outline">🎁 Ativar Gift Card / Licença</a>
+                }
+            </div>
+        </section>
+    }
+    else if (_report is not null)
+    {
+        <div class="sales-toolbar">
+            <div class="sales-period-tabs">
+                @foreach (var tab in PeriodTabs)
+                {
+                    var isActive = string.Equals(_periodKey, tab.Key, StringComparison.OrdinalIgnoreCase);
+                    <button type="button"
+                            class="adm-btn @(isActive ? "adm-btn-primary" : "adm-btn-outline")"
+                            @onclick="() => ChangePeriodAsync(tab.Key)">
+                        @tab.Label
+                    </button>
+                }
+            </div>
+
+            <span class="pill-badge @(BrandState.IsPremiumPlan ? "pill-gold" : "pill-green")">
+                ✓ Liberado no Plano @_report.EffectivePlanTier
+            </span>
+        </div>
+
+        @if (_showManualSaleForm && Gateway.CanManageStock)
+        {
+            <section class="adm-card" style="margin-bottom: 1.15rem; border-left: 4px solid var(--adm-success);">
+                <h2 style="font-size: 1.05rem; font-weight: 800; margin: 0 0 0.3rem;">
+                    📝 Registrar Venda (WhatsApp, Balcão ou Pix Direto)
+                </h2>
+                <p style="font-size: 0.83rem; color: var(--adm-muted); margin: 0 0 0.85rem;">
+                    Dá baixa automática no estoque da variante escolhida e soma imediatamente no seu total vendido.
+                </p>
+
+                <div class="sales-manual-grid">
+                    <div>
+                        <label class="adm-label">Peça / Produto</label>
+                        <select class="adm-input" @bind="_selectedProductId" @bind:after="OnProductChanged">
+                            <option value="">Selecione um produto...</option>
+                            @foreach (var product in _products)
+                            {
+                                <option value="@product.Id">@product.Name (@product.BasePrice.ToString("C", PtBr))</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="adm-label">Cor / Tamanho (Estoque)</label>
+                        <select class="adm-input" @bind="_selectedVariantId">
+                            <option value="">Selecione a variante...</option>
+                            @foreach (var variant in SelectedVariants)
+                            {
+                                <option value="@variant.Id" disabled="@(variant.StockQuantity <= 0)">
+                                    @variant.Color / @variant.Size — @variant.StockQuantity un.
+                                </option>
+                            }
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="adm-label">Quantidade</label>
+                        <input type="number" min="1" max="500" class="adm-input" @bind="_saleQuantity" />
+                    </div>
+
+                    <div>
+                        <label class="adm-label">Forma de Pagamento</label>
+                        <select class="adm-input" @bind="_salePaymentMethod">
+                            <option value="WhatsApp">WhatsApp</option>
+                            <option value="Pix">Pix</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Cartão / Link">Cartão / Link</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="adm-label">Nome do Cliente</label>
+                        <input class="adm-input" @bind="_saleCustomerName" placeholder="Ex.: Ana Paula ou Balcão" />
+                    </div>
+
+                    <div>
+                        <label class="adm-label">WhatsApp do Cliente (opcional)</label>
+                        <input class="adm-input" @bind="_saleCustomerWhatsapp" placeholder="11999999999" />
+                    </div>
+
+                    <div>
+                        <label class="adm-label">Frete Cobrado R$ (opcional)</label>
+                        <input type="number" step="0.01" min="0" class="adm-input" @bind="_saleShippingCost" placeholder="0,00" />
+                    </div>
+
+                    <div>
+                        <label class="adm-label">Observação (opcional)</label>
+                        <input class="adm-input" @bind="_saleNotes" placeholder="Entrega em mãos, sacola M..." />
+                    </div>
+                </div>
+
+                @if (EstimatedManualSaleTotal > 0m)
+                {
+                    <div style="margin-top: 0.75rem; font-size: 0.9rem; font-weight: 700;">
+                        Total desta venda: <span class="sales-value-green">@EstimatedManualSaleTotal.ToString("C", PtBr)</span>
+                    </div>
+                }
+
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.85rem; flex-wrap: wrap;">
+                    <button type="button"
+                            class="adm-btn adm-btn-success"
+                            disabled="@_savingManualSale"
+                            @onclick="SubmitManualSaleAsync">
+                        @(_savingManualSale ? "Registrando..." : "✓ Confirmar Venda e Atualizar Faturamento")
+                    </button>
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            @onclick="() => _showManualSaleForm = false">
+                        Cancelar
+                    </button>
+                </div>
+            </section>
+        }
+
+        <!-- KPIs de Vendas -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Quanto Vendeu (@GetPeriodFriendlyName())</div>
+                <div class="kpi-value sales-value-green">@_report.SelectedPeriodConfirmedRevenue.ToString("C", PtBr)</div>
+                <div class="sales-kpi-sub">
+                    @_report.SelectedPeriodOrdersCount venda(s) confirmada(s) &bull; @_report.TotalUnitsSold peça(s)
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">Vendido Hoje</div>
+                <div class="kpi-value">@_report.TodayConfirmedRevenue.ToString("C", PtBr)</div>
+                <div class="sales-kpi-sub">Últimos 7 dias: @_report.Last7DaysConfirmedRevenue.ToString("C", PtBr)</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">Total Histórico Confirmado</div>
+                <div class="kpi-value">@_report.TotalConfirmedRevenue.ToString("C", PtBr)</div>
+                <div class="sales-kpi-sub">@_report.ConfirmedOrdersCount venda(s) pagas no total</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">Ticket Médio (@GetPeriodFriendlyName())</div>
+                <div class="kpi-value">@_report.AverageTicket.ToString("C", PtBr)</div>
+                <div class="sales-kpi-sub">
+                    Pix aguardando: <span class="sales-value-amber">@_report.AwaitingPixRevenue.ToString("C", PtBr)</span> (@_report.AwaitingPixOrdersCount)
+                </div>
+            </div>
+        </div>
+
+        <div class="sales-grid-two">
+            <!-- Gráfico Diário -->
+            <section class="adm-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <h2 style="font-size: 1.05rem; font-weight: 800; margin: 0;">📈 Evolução Diária (@GetPeriodFriendlyName())</h2>
+                    <span style="font-size: 0.8rem; color: var(--adm-muted);">@_report.DailySeries.Count dia(s)</span>
+                </div>
+
+                @if (_report.DailySeries.Count == 0 || _report.DailySeries.All(d => d.ConfirmedRevenue <= 0m))
+                {
+                    <p style="color: var(--adm-muted); font-size: 0.9rem; margin: 0;">
+                        Nenhuma venda confirmada neste período ainda. Confirme um pedido Pix em Pedidos Pix ou clique em <strong>+ Registrar Venda</strong>.
+                    </p>
+                }
+                else
+                {
+                    var maxRevenue = _report.DailySeries.Max(d => d.ConfirmedRevenue);
+                    var safeMax = maxRevenue > 0m ? maxRevenue : 1m;
+                    <div class="sales-chart-shell">
+                        @foreach (var point in _report.DailySeries)
+                        {
+                            var heightPercent = point.ConfirmedRevenue > 0m
+                                ? Math.Max(8, (int)Math.Round(point.ConfirmedRevenue / safeMax * 100m))
+                                : 0;
+                            <div class="sales-bar-col" title="@($"{point.DateLabel}: {point.ConfirmedRevenue.ToString("C", PtBr)} ({point.OrdersCount} venda(s), {point.UnitsSold} un.)")">
+                                @if (heightPercent > 0)
+                                {
+                                    <div class="sales-bar-fill" style="height: @($"{heightPercent}%")"></div>
+                                }
+                                else
+                                {
+                                    <div class="sales-bar-empty"></div>
+                                }
+                                <span class="sales-bar-label">@point.DateLabel</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
+            <!-- Top Peças Mais Vendidas -->
+            <section class="adm-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <h2 style="font-size: 1.05rem; font-weight: 800; margin: 0;">🏆 Roupas Mais Vendidas</h2>
+                    <span style="font-size: 0.8rem; color: var(--adm-muted);">@_report.TopProducts.Count produto(s)</span>
+                </div>
+
+                @if (_report.TopProducts.Count == 0)
+                {
+                    <p style="color: var(--adm-muted); font-size: 0.9rem; margin: 0;">
+                        As peças com maior faturamento e saída aparecerão automaticamente aqui assim que houver vendas confirmadas.
+                    </p>
+                }
+                else
+                {
+                    <table class="adm-table">
+                        <thead>
+                            <tr>
+                                <th>Peça</th>
+                                <th>Unid.</th>
+                                <th>Vendido</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _report.TopProducts)
+                            {
+                                <tr>
+                                    <td data-label="Peça">
+                                        <div style="font-weight: 700;">@item.ProductName</div>
+                                        <div class="sales-share-track">
+                                            <div class="sales-share-fill" style="width: @($"{Math.Clamp(item.SharePercent, 3m, 100m).ToString(CultureInfo.InvariantCulture)}%")"></div>
+                                        </div>
+                                    </td>
+                                    <td data-label="Unid."><strong>@item.UnitsSold</strong> un.</td>
+                                    <td data-label="Vendido" class="sales-value-green" style="font-weight: 800;">
+                                        @item.ConfirmedRevenue.ToString("C", PtBr)
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        </div>
+
+        <!-- Histórico de Vendas Confirmadas -->
+        <section class="adm-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem;">
+                <h2 style="font-size: 1.05rem; font-weight: 800; margin: 0;">
+                    🧾 Vendas Confirmadas no Período (@_report.RecentConfirmedSales.Count)
+                </h2>
+                <span style="font-size: 0.82rem; color: var(--adm-muted);">
+                    Cancelados no histórico: @_report.CancelledOrdersCount (@_report.CancelledRevenue.ToString("C", PtBr) não somados)
+                </span>
+            </div>
+
+            @if (_report.RecentConfirmedSales.Count == 0)
+            {
+                <p style="color: var(--adm-muted); font-size: 0.9rem; margin: 0;">
+                    Nenhuma venda confirmada encontrada no filtro selecionado.
+                </p>
+            }
+            else
+            {
+                <table class="adm-table">
+                    <thead>
+                        <tr>
+                            <th>Pedido</th>
+                            <th>Data</th>
+                            <th>Cliente</th>
+                            <th>Peças</th>
+                            <th>Pagamento</th>
+                            <th>Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var sale in _report.RecentConfirmedSales)
+                        {
+                            var saleDate = (sale.PixConfirmedAt ?? sale.DeliveredAt ?? sale.CreatedAt).ToLocalTime();
+                            <tr>
+                                <td data-label="Pedido" style="font-weight: 800;">@sale.OrderNumber</td>
+                                <td data-label="Data" style="font-size: 0.82rem; color: var(--adm-muted);">@saleDate.ToString("dd/MM HH:mm")</td>
+                                <td data-label="Cliente">@sale.CustomerName</td>
+                                <td data-label="Peças" style="font-size: 0.84rem;">
+                                    @string.Join(", ", sale.Items.Select(i => $"{i.Quantity}x {i.ProductName} ({i.Color}/{i.Size})"))
+                                </td>
+                                <td data-label="Pagamento">
+                                    <span class="pill-badge pill-green">@sale.PaymentMethod</span>
+                                </td>
+                                <td data-label="Valor" class="sales-value-green" style="font-weight: 800;">
+                                    @((sale.TotalPixAmount > 0m ? sale.TotalPixAmount : sale.ItemsTotal).ToString("C", PtBr))
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+}
+
+@code {
+    private static readonly CultureInfo PtBr = new("pt-BR");
+
+    private static readonly (string Key, string Label)[] PeriodTabs =
+    [
+        ("today", "Hoje"),
+        ("7d", "7 Dias"),
+        ("30d", "30 Dias"),
+        ("all", "Tudo")
+    ];
+
+    private SalesReportDto? _report;
+    private IReadOnlyList<ProductDetailDto> _products = [];
+    private string _periodKey = "30d";
+    private bool _loading = true;
+    private bool _showManualSaleForm;
+    private bool _savingManualSale;
+    private bool _copiedCsv;
+    private string? _error;
+    private string? _success;
+
+    private string _selectedProductId = string.Empty;
+    private string _selectedVariantId = string.Empty;
+    private int _saleQuantity = 1;
+    private string _salePaymentMethod = "WhatsApp";
+    private string _saleCustomerName = string.Empty;
+    private string _saleCustomerWhatsapp = string.Empty;
+    private decimal? _saleShippingCost;
+    private string _saleNotes = string.Empty;
+
+    private IReadOnlyList<ProductVariantDto> SelectedVariants
+    {
+        get
+        {
+            if (!Guid.TryParse(_selectedProductId, out var pid))
+                return [];
+            return _products.FirstOrDefault(p => p.Id == pid)?.Variants.Where(v => v.IsActive).ToList() ?? [];
+        }
+    }
+
+    private decimal EstimatedManualSaleTotal
+    {
+        get
+        {
+            if (!Guid.TryParse(_selectedProductId, out var pid))
+                return 0m;
+            var product = _products.FirstOrDefault(p => p.Id == pid);
+            if (product is null || _saleQuantity <= 0)
+                return 0m;
+            return Math.Round(product.BasePrice * _saleQuantity + Math.Max(0m, _saleShippingCost ?? 0m), 2);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        BrandState.OnBrandChanged += OnBrandStateChanged;
+        if (Gateway.IsAuthenticated)
+        {
+            await LoadReportAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnBrandStateChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadReportAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var publicStore = await CatalogService.GetPublicStoreSettingsAsync();
+            BrandState.ApplyFromPublicSettings(publicStore);
+
+            _report = await Gateway.GetSalesReportAsync(_periodKey);
+            if (_report.IsUnlocked && Gateway.CanManageStock)
+            {
+                _products = await Gateway.GetProductsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ChangePeriodAsync(string periodKey)
+    {
+        _periodKey = periodKey;
+        await LoadReportAsync();
+    }
+
+    private void OnProductChanged()
+    {
+        var firstAvailable = SelectedVariants.FirstOrDefault(v => v.StockQuantity > 0);
+        _selectedVariantId = firstAvailable?.Id.ToString() ?? string.Empty;
+    }
+
+    private async Task SubmitManualSaleAsync()
+    {
+        _error = null;
+        _success = null;
+        _savingManualSale = true;
+        try
+        {
+            if (!Guid.TryParse(_selectedProductId, out var productId) || !Guid.TryParse(_selectedVariantId, out var variantId))
+            {
+                _error = "Selecione o produto e a variante (cor/tamanho) vendidos.";
+                return;
+            }
+
+            var created = await Gateway.RegisterManualSaleAsync(new RegisterManualSaleRequest(
+                ProductId: productId,
+                ProductVariantId: variantId,
+                Quantity: _saleQuantity,
+                CustomerName: string.IsNullOrWhiteSpace(_saleCustomerName) ? "Cliente Balcão / WhatsApp" : _saleCustomerName.Trim(),
+                CustomerWhatsapp: _saleCustomerWhatsapp,
+                PaymentMethod: _salePaymentMethod,
+                AgreedShippingCost: _saleShippingCost,
+                SellerNotes: _saleNotes));
+
+            _success = $"Venda {created.OrderNumber} registrada ({created.TotalPixAmount.ToString("C", PtBr)}) e estoque atualizado!";
+            _saleQuantity = 1;
+            _saleCustomerName = string.Empty;
+            _saleCustomerWhatsapp = string.Empty;
+            _saleShippingCost = null;
+            _saleNotes = string.Empty;
+            _showManualSaleForm = false;
+            await LoadReportAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingManualSale = false;
+        }
+    }
+
+    private async Task CopyCsvReportAsync()
+    {
+        if (_report is null)
+            return;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Pedido;Data;Cliente;Pagamento;Itens;Total");
+        foreach (var sale in _report.RecentConfirmedSales)
+        {
+            var dateStr = (sale.PixConfirmedAt ?? sale.DeliveredAt ?? sale.CreatedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            var itemsStr = string.Join(" | ", sale.Items.Select(i => $"{i.Quantity}x {i.ProductName} ({i.Color}/{i.Size})"));
+            var total = (sale.TotalPixAmount > 0m ? sale.TotalPixAmount : sale.ItemsTotal).ToString("0.00", CultureInfo.InvariantCulture);
+            sb.AppendLine($"{sale.OrderNumber};{dateStr};{sale.CustomerName};{sale.PaymentMethod};{itemsStr};{total}");
+        }
+
+        try
+        {
+            await Clipboard.Default.SetTextAsync(sb.ToString());
+            _copiedCsv = true;
+        }
+        catch
+        {
+            _error = "Não foi possível copiar o CSV para a área de transferência neste dispositivo.";
+        }
+    }
+
+    private string GetPeriodFriendlyName() => _periodKey switch
+    {
+        "today" => "Hoje",
+        "7d" => "7 Dias",
+        "all" => "Tudo",
+        _ => "30 Dias"
+    };
+
+    public void Dispose()
+    {
+        BrandState.OnBrandChanged -= OnBrandStateChanged;
+    }
+}

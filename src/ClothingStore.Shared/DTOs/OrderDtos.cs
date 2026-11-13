@@ -131,3 +131,49 @@ public sealed record StoreOrderDto(
     DateTimeOffset? DeliveredAt,
     DateTimeOffset? CancelledAt,
     IReadOnlyList<StoreOrderItemDto> Items);
+
+public sealed record RegisterManualSaleRequest(
+    Guid ProductId,
+    Guid ProductVariantId,
+    int Quantity,
+    string CustomerName,
+    string? CustomerWhatsapp = null,
+    string PaymentMethod = "WhatsApp",
+    decimal? AgreedShippingCost = null,
+    string? SellerNotes = null);
+
+public sealed record DailySalesPointDto(
+    string DateLabel,
+    string DateIso,
+    decimal ConfirmedRevenue,
+    int OrdersCount,
+    int UnitsSold);
+
+public sealed record TopSellingProductDto(
+    Guid ProductId,
+    string ProductName,
+    int UnitsSold,
+    decimal ConfirmedRevenue,
+    decimal SharePercent);
+
+public sealed record SalesReportDto(
+    bool IsUnlocked,
+    string EffectivePlanTier,
+    string LockMessage,
+    string PeriodKey,
+    decimal TotalConfirmedRevenue,
+    decimal TodayConfirmedRevenue,
+    decimal Last7DaysConfirmedRevenue,
+    decimal Last30DaysConfirmedRevenue,
+    decimal SelectedPeriodConfirmedRevenue,
+    decimal AwaitingPixRevenue,
+    decimal CancelledRevenue,
+    int ConfirmedOrdersCount,
+    int SelectedPeriodOrdersCount,
+    int AwaitingPixOrdersCount,
+    int CancelledOrdersCount,
+    int TotalUnitsSold,
+    decimal AverageTicket,
+    IReadOnlyList<TopSellingProductDto> TopProducts,
+    IReadOnlyList<DailySalesPointDto> DailySeries,
+    IReadOnlyList<StoreOrderDto> RecentConfirmedSales);

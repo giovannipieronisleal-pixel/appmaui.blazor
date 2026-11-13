@@ -560,6 +560,23 @@ app.MapGet("/api/orders", async (OrderAndShippingService orderService, Cancellat
     Results.Ok(await orderService.GetOrdersAsync(ct)))
     .RequireAuthorization();
 
+app.MapGet("/api/orders/sales-report", async (
+    string? period,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+    Results.Ok(await orderService.GetSalesReportAsync(period, ct)))
+    .RequireAuthorization();
+
+app.MapPost("/api/orders/manual-sale", async (
+    RegisterManualSaleRequest request,
+    ClaimsPrincipal user,
+    OrderAndShippingService orderService,
+    CancellationToken ct) =>
+{
+    var employeeId = Guid.Parse(user.FindFirstValue("employee_id")!);
+    return Results.Ok(await orderService.RegisterManualSaleAsync(employeeId, request, ct));
+}).RequireAuthorization(RoleNames.PolicyCanManageStock);
+
 app.MapPost("/api/orders/{id:guid}/confirm-pix", async (
     Guid id,
     ClaimsPrincipal user,

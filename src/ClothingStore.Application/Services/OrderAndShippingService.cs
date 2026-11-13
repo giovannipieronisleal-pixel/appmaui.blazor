@@ -275,24 +275,11 @@ public sealed class OrderAndShippingService
 
         if (!order.StockDeducted)
         {
-            foreach (var item in order.Items)
-            {
-                var product = await _repository.GetProductBySlugOrIdAsync(item.ProductId.ToString(), ct)
-                    ?? throw new DomainException($"Produto '{item.ProductName}' não encontrado para baixa de estoque.");
-
-                var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
-                    ?? throw new DomainException($"Variante {item.Color}/{item.Size} não encontrada.");
-
-                var movement = variant.ApplyStockMovement(
-                    employeeId,
-                    StockMovementType.Out,
-                    item.Quantity,
-                    $"Venda Pix #{order.OrderNumber} — {order.CustomerName}");
-
-                await _repository.RecordStockMovementAsync(variant, movement, ct);
-                await _repository.UpdateProductAsync(product, ct);
-            }
-
+            await DeductStockForOrderItemsAsync(
+                order,
+                employeeId,
+                $"Venda Pix #{order.OrderNumber} — {order.CustomerName}",
+                ct);
             order.StockDeducted = true;
         }
 
@@ -303,6 +290,288 @@ public sealed class OrderAndShippingService
         await _repository.UpdateStoreSettingsAsync(settings, ct);
 
         return MapToDto(order);
+    }
+
+    public async Task<SalesReportDto> GetSalesReportAsync(
+        string? periodKey = "30d",
+        CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var normalizedPeriod = NormalizeSalesPeriodKey(periodKey);
+
+        if (!settings.CanViewSalesAnalytics())
+        {
+            return new SalesReportDto(
+                IsUnlocked: false,
+                EffectivePlanTier: settings.GetEffectivePlanTier(),
+                LockMessage: "O relatório de vendas e o total vendido estão disponíveis nas versões pagas (Meia Versão e Premium).",
+                PeriodKey: normalizedPeriod,
+                TotalConfirmedRevenue: 0m,
+                TodayConfirmedRevenue: 0m,
+                Last7DaysConfirmedRevenue: 0m,
+                Last30DaysConfirmedRevenue: 0m,
+                SelectedPeriodConfirmedRevenue: 0m,
+                AwaitingPixRevenue: 0m,
+                CancelledRevenue: 0m,
+                ConfirmedOrdersCount: 0,
+                SelectedPeriodOrdersCount: 0,
+                AwaitingPixOrdersCount: 0,
+                CancelledOrdersCount: 0,
+                TotalUnitsSold: 0,
+                AverageTicket: 0m,
+                TopProducts: [],
+                DailySeries: [],
+                RecentConfirmedSales: []);
+        }
+
+        var brazilOffset = TimeSpan.FromHours(-3);
+        var nowBrazil = DateTimeOffset.UtcNow.ToOffset(brazilOffset);
+        var todayDate = nowBrazil.Date;
+        var start7Days = todayDate.AddDays(-6);
+        var start30Days = todayDate.AddDays(-29);
+
+        var orders = await _repository.GetOrdersAsync(ct);
+
+        var awaitingOrders = orders.Where(o => o.Status == StoreOrder.StatusAwaitingPix).ToList();
+        var cancelledOrders = orders.Where(o => o.Status == StoreOrder.StatusCancelled).ToList();
+        var confirmedOrders = orders
+            .Where(o => o.IsConfirmedSale())
+            .OrderByDescending(GetConfirmedSaleTimestamp)
+            .ToList();
+
+        static decimal GetOrderRevenue(StoreOrder order) =>
+            order.TotalPixAmount > 0m ? order.TotalPixAmount : order.ItemsTotal;
+
+        var totalConfirmedRevenue = Math.Round(confirmedOrders.Sum(GetOrderRevenue), 2);
+        var todayConfirmedRevenue = Math.Round(
+            confirmedOrders
+                .Where(o => GetConfirmedSaleTimestamp(o).ToOffset(brazilOffset).Date == todayDate)
+                .Sum(GetOrderRevenue),
+            2);
+        var last7DaysRevenue = Math.Round(
+            confirmedOrders
+                .Where(o => GetConfirmedSaleTimestamp(o).ToOffset(brazilOffset).Date >= start7Days)
+                .Sum(GetOrderRevenue),
+            2);
+        var last30DaysRevenue = Math.Round(
+            confirmedOrders
+                .Where(o => GetConfirmedSaleTimestamp(o).ToOffset(brazilOffset).Date >= start30Days)
+                .Sum(GetOrderRevenue),
+            2);
+
+        var selectedOrders = confirmedOrders
+            .Where(o => MatchesSalesPeriod(GetConfirmedSaleTimestamp(o).ToOffset(brazilOffset).Date, normalizedPeriod, todayDate, start7Days, start30Days))
+            .ToList();
+
+        var selectedRevenue = Math.Round(selectedOrders.Sum(GetOrderRevenue), 2);
+        var totalUnitsSold = selectedOrders.SelectMany(o => o.Items).Sum(i => i.Quantity);
+        var averageTicket = selectedOrders.Count > 0
+            ? Math.Round(selectedRevenue / selectedOrders.Count, 2)
+            : 0m;
+
+        var topProducts = BuildTopSellingProducts(selectedOrders);
+        var dailySeries = BuildDailySalesSeries(selectedOrders, normalizedPeriod, todayDate, brazilOffset);
+
+        return new SalesReportDto(
+            IsUnlocked: true,
+            EffectivePlanTier: settings.GetEffectivePlanTier(),
+            LockMessage: string.Empty,
+            PeriodKey: normalizedPeriod,
+            TotalConfirmedRevenue: totalConfirmedRevenue,
+            TodayConfirmedRevenue: todayConfirmedRevenue,
+            Last7DaysConfirmedRevenue: last7DaysRevenue,
+            Last30DaysConfirmedRevenue: last30DaysRevenue,
+            SelectedPeriodConfirmedRevenue: selectedRevenue,
+            AwaitingPixRevenue: Math.Round(awaitingOrders.Sum(GetOrderRevenue), 2),
+            CancelledRevenue: Math.Round(cancelledOrders.Sum(GetOrderRevenue), 2),
+            ConfirmedOrdersCount: confirmedOrders.Count,
+            SelectedPeriodOrdersCount: selectedOrders.Count,
+            AwaitingPixOrdersCount: awaitingOrders.Count,
+            CancelledOrdersCount: cancelledOrders.Count,
+            TotalUnitsSold: totalUnitsSold,
+            AverageTicket: averageTicket,
+            TopProducts: topProducts,
+            DailySeries: dailySeries,
+            RecentConfirmedSales: selectedOrders.Take(50).Select(MapToDto).ToList());
+    }
+
+    public async Task<StoreOrderDto> RegisterManualSaleAsync(
+        Guid employeeId,
+        RegisterManualSaleRequest request,
+        CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        if (!settings.CanViewSalesAnalytics())
+        {
+            throw new DomainException(
+                "O registro de vendas diretas e o painel de quanto vendeu exigem o plano Meia Versão (Intermediário) ou Premium.");
+        }
+
+        if (employeeId == Guid.Empty)
+            throw new DomainException("Usuário inválido para registrar a venda.");
+
+        var product = await _repository.GetProductBySlugOrIdAsync(request.ProductId.ToString(), ct)
+            ?? throw new DomainException("Produto selecionado não encontrado.");
+
+        var variant = product.Variants.FirstOrDefault(v => v.Id == request.ProductVariantId)
+            ?? throw new DomainException("Variante (cor/tamanho) selecionada não encontrada.");
+
+        var existingOrders = await _repository.GetOrdersAsync(ct);
+        var orderNumber = $"VND-{(existingOrders.Count + 1):0000}";
+
+        var order = StoreOrder.CreateManualPaidSale(
+            Guid.NewGuid(),
+            orderNumber,
+            product,
+            variant,
+            request.Quantity,
+            request.CustomerName,
+            request.CustomerWhatsapp,
+            request.PaymentMethod,
+            request.AgreedShippingCost,
+            request.SellerNotes);
+
+        await DeductStockForOrderItemsAsync(
+            order,
+            employeeId,
+            $"Venda #{order.OrderNumber} ({order.PaymentMethod}) — {order.CustomerName}",
+            ct);
+
+        order.StockDeducted = true;
+        await _repository.SaveOrderAsync(order, ct);
+
+        settings.RecordActivity();
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+
+        return MapToDto(order);
+    }
+
+    private async Task DeductStockForOrderItemsAsync(
+        StoreOrder order,
+        Guid employeeId,
+        string reason,
+        CancellationToken ct)
+    {
+        foreach (var item in order.Items)
+        {
+            var product = await _repository.GetProductBySlugOrIdAsync(item.ProductId.ToString(), ct)
+                ?? throw new DomainException($"Produto '{item.ProductName}' não encontrado para baixa de estoque.");
+
+            var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
+                ?? throw new DomainException($"Variante {item.Color}/{item.Size} não encontrada.");
+
+            var movement = variant.ApplyStockMovement(
+                employeeId,
+                StockMovementType.Out,
+                item.Quantity,
+                reason);
+
+            await _repository.RecordStockMovementAsync(variant, movement, ct);
+            await _repository.UpdateProductAsync(product, ct);
+        }
+    }
+
+    private static DateTimeOffset GetConfirmedSaleTimestamp(StoreOrder order) =>
+        order.PixConfirmedAt ?? order.DeliveredAt ?? order.CreatedAt;
+
+    private static string NormalizeSalesPeriodKey(string? periodKey) =>
+        (periodKey ?? "30d").Trim().ToLowerInvariant() switch
+        {
+            "today" or "hoje" => "today",
+            "7d" => "7d",
+            "all" or "tudo" => "all",
+            _ => "30d"
+        };
+
+    private static bool MatchesSalesPeriod(
+        DateTime localDate,
+        string normalizedPeriod,
+        DateTime todayDate,
+        DateTime start7Days,
+        DateTime start30Days) =>
+        normalizedPeriod switch
+        {
+            "today" => localDate == todayDate,
+            "7d" => localDate >= start7Days,
+            "30d" => localDate >= start30Days,
+            _ => true
+        };
+
+    private static IReadOnlyList<TopSellingProductDto> BuildTopSellingProducts(IReadOnlyList<StoreOrder> selectedOrders)
+    {
+        var allItems = selectedOrders.SelectMany(o => o.Items).ToList();
+        var totalMerchRevenue = allItems.Sum(i => i.Subtotal);
+
+        return allItems
+            .GroupBy(i => i.ProductId)
+            .Select(g =>
+            {
+                var revenue = Math.Round(g.Sum(i => i.Subtotal), 2);
+                var share = totalMerchRevenue > 0m
+                    ? Math.Round(revenue / totalMerchRevenue * 100m, 1)
+                    : 0m;
+                return new TopSellingProductDto(
+                    g.Key,
+                    g.First().ProductName,
+                    g.Sum(i => i.Quantity),
+                    revenue,
+                    share);
+            })
+            .OrderByDescending(p => p.ConfirmedRevenue)
+            .ThenByDescending(p => p.UnitsSold)
+            .Take(10)
+            .ToList();
+    }
+
+    private static IReadOnlyList<DailySalesPointDto> BuildDailySalesSeries(
+        IReadOnlyList<StoreOrder> selectedOrders,
+        string normalizedPeriod,
+        DateTime todayDate,
+        TimeSpan brazilOffset)
+    {
+        var grouped = selectedOrders
+            .GroupBy(o => GetConfirmedSaleTimestamp(o).ToOffset(brazilOffset).Date)
+            .ToDictionary(
+                g => g.Key,
+                g => (
+                    Revenue: Math.Round(g.Sum(o => o.TotalPixAmount > 0m ? o.TotalPixAmount : o.ItemsTotal), 2),
+                    OrdersCount: g.Count(),
+                    UnitsSold: g.SelectMany(o => o.Items).Sum(i => i.Quantity)));
+
+        if (normalizedPeriod == "all")
+        {
+            var dates = grouped.Keys.OrderBy(d => d).ToList();
+            if (dates.Count == 0)
+                dates.Add(todayDate);
+
+            return dates.Select(d =>
+            {
+                var stats = grouped.TryGetValue(d, out var val) ? val : (0m, 0, 0);
+                return new DailySalesPointDto(d.ToString("dd/MM"), d.ToString("yyyy-MM-dd"), stats.Item1, stats.Item2, stats.Item3);
+            }).ToList();
+        }
+
+        var dayCount = normalizedPeriod switch
+        {
+            "today" => 1,
+            "7d" => 7,
+            _ => 30
+        };
+
+        var result = new List<DailySalesPointDto>(dayCount);
+        for (var i = dayCount - 1; i >= 0; i--)
+        {
+            var date = todayDate.AddDays(-i);
+            var stats = grouped.TryGetValue(date, out var val) ? val : (0m, 0, 0);
+            result.Add(new DailySalesPointDto(
+                date.ToString("dd/MM"),
+                date.ToString("yyyy-MM-dd"),
+                stats.Item1,
+                stats.Item2,
+                stats.Item3));
+        }
+
+        return result;
     }
 
     public async Task<StoreOrderDto> UpdateOrderFulfillmentAsync(
