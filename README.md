@@ -17,11 +17,11 @@ Os instaladores prontos (**Android `.apk`** e **Windows `win-x64 .zip`**) são g
 
 ## Planos & Identidade Visual da Vitrine
 
-O **YouLink** conta com três níveis de vitrine selecionáveis no app (`/planos` e `/configuracoes-loja`):
+O **YouLink** conta com três níveis de vitrine selecionáveis no app (`/planos` e `/configuracoes-loja`), **todos já com Servidor 24h + Certificado HTTPS + Endereço/Domínio da loja inclusos sem custo adicional**:
 
-- **Plano Básico (`Basico`)**: tema fixo *Minimalista Luxo* pronto para vender via WhatsApp, com QR Code e estoque em tempo real.
-- **Meia Versão (`Intermediario`)**: **5 versões de site pré-prontas** não configuráveis para troca instantânea em 1 clique.
-- **Premium Sob Medida (`Premium`)**: Estúdio Visual completo com paleta personalizável, fontes, cantos, densidade, destaque e grade configurável.
+- **Plano Básico (`Basico`)**: tema fixo *Minimalista Luxo* + servidor 24h + HTTPS + endereço da vitrine inclusos, pronto para vender via WhatsApp, com QR Code e estoque em tempo real.
+- **Meia Versão (`Intermediario`)**: **5 versões de site pré-prontas** não configuráveis para troca instantânea em 1 clique + servidor 24h + HTTPS + domínio/endereço incluso.
+- **Premium Sob Medida (`Premium`)**: Estúdio Visual completo (paleta, fontes, cantos, densidade, destaque e grade configurável) + servidor 24h + HTTPS + endereço incluso (com opção de domínio próprio sem taxa extra da plataforma).
 
 ---
 
@@ -69,8 +69,8 @@ dotnet build tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -m:1
 
 ---
 
-## Banco Supabase & Publicação na Nuvem
+## Banco Supabase & Publicação na Nuvem (Camadas Gratuitas Inclusas)
 
-1. Execute [supabase_schema.sql](database/supabase_schema.sql) no **SQL Editor** do Supabase.
+1. Execute [supabase_schema.sql](database/supabase_schema.sql) no **SQL Editor** do Supabase (Free Tier).
 2. Configure o bucket `clothing-images` e as variáveis de ambiente seguindo [.env.example](.env.example).
-3. Para publicar o site web no Google Cloud Run, utilize [deploy-google-cloud.ps1](deploy-google-cloud.ps1).
+3. Publique uma única instância compartilhada para atender todas as lojas via `/loja/{slug}` em hospedagem gratuita (Render `.onrender.com`, Koyeb `.koyeb.app`, Fly.io `.fly.dev`) ou Google Cloud Run ([deploy-google-cloud.ps1](deploy-google-cloud.ps1)), mantendo servidor e endereço já inclusos dentro do plano sem encarecer para o usuário.

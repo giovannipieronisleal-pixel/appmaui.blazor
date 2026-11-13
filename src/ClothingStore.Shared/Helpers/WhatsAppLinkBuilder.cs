@@ -62,6 +62,23 @@ public static class WhatsAppLinkBuilder
         return $"https://{GenerateDefaultStoreDomain(storeName)}";
     }
 
+    private static readonly string[] SharedCloudHostSuffixes =
+    [
+        ".run.app",
+        ".onrender.com",
+        ".koyeb.app",
+        ".fly.dev",
+        ".up.railway.app",
+        ".azurewebsites.net",
+        ".pages.dev",
+        ".workers.dev",
+        ".github.io"
+    ];
+
+    private static bool IsSharedCloudHost(string host) =>
+        host is "localhost" or "127.0.0.1" ||
+        SharedCloudHostSuffixes.Any(suffix => host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+
     public static string BuildStoreCatalogUrl(string? baseSiteUrl, string? storeSlugOrName)
     {
         if (string.IsNullOrWhiteSpace(baseSiteUrl))
@@ -81,9 +98,16 @@ public static class WhatsAppLinkBuilder
         if (Uri.TryCreate(uriText, UriKind.Absolute, out var uri))
         {
             var host = uri.Host.ToLowerInvariant();
-            // Se for localhost, 127.0.0.1 ou domínio padrão de plataforma em nuvem (.run.app), mantém a rota /loja/{slug}
-            if (host is "localhost" or "127.0.0.1" || host.EndsWith(".run.app", StringComparison.OrdinalIgnoreCase))
+            // Para servidor local ou hospedagem compartilhada gratuita/nuvem (Cloud Run, Render, Koyeb, Fly.io, etc.),
+            // roteia diretamente para /loja/{slug} sem exigir compra de domínio separado por cliente.
+            if (IsSharedCloudHost(host))
             {
+                var path = uri.AbsolutePath.TrimEnd('/');
+                if (path.EndsWith($"/loja/{slug}", StringComparison.OrdinalIgnoreCase))
+                {
+                    return cleanBase;
+                }
+
                 return $"{cleanBase}/loja/{slug}";
             }
 

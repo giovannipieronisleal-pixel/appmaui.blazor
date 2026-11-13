@@ -95,9 +95,11 @@ public class DomainAndRepositoryTests
         Assert.AreEqual("atelier-moda", settings.StoreSlug);
         Assert.AreEqual("http://localhost:5190/loja/atelier-moda", settings.BuildStoreCatalogUrl("http://localhost:5190"));
 
-        // Se OnlineBaseUrl estiver configurado (Google Cloud Run), utiliza o link online 24h automaticamente
+        // Se OnlineBaseUrl estiver configurado (Google Cloud Run ou nuvem gratuita compartilhada), utiliza /loja/{slug} automaticamente
         settings.OnlineBaseUrl = "https://minhaloja-catalog-xyz.a.run.app";
         Assert.AreEqual("https://minhaloja-catalog-xyz.a.run.app/loja/atelier-moda", settings.BuildStoreCatalogUrl());
+        Assert.AreEqual("https://youlink-vitrine.onrender.com/loja/atelier-moda", WhatsAppLinkBuilder.BuildStoreCatalogUrl("https://youlink-vitrine.onrender.com", "Atelier Moda"));
+        Assert.AreEqual("https://youlink.koyeb.app/loja/atelier-moda", WhatsAppLinkBuilder.BuildStoreCatalogUrl("https://youlink.koyeb.app/loja/atelier-moda", "Atelier Moda"));
 
         // Se OnlineBaseUrl for um domínio próprio oficial do lojista (ex.: https://minhalojadigital.com), o link do catálogo é a raiz direta limpa
         settings.OnlineBaseUrl = "https://minhalojadigital.com";

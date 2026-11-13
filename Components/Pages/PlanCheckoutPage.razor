@@ -29,7 +29,7 @@ else
         <div>
             <h1 class="adm-page-title">Contratar @GetPlanTitle(_selectedTier)</h1>
             <p class="adm-page-subtitle">
-                Revise o pacote escolhido, copie a chave Pix ou finalize o pedido no WhatsApp e ative seu Gift Card na hora.
+                Servidor em nuvem 24h, HTTPS e domínio/endereço da loja <strong>já estão inclusos no plano (R$ 0,00 extra)</strong>. Revise o pacote e finalize via Pix ou WhatsApp.
             </p>
         </div>
 
@@ -70,7 +70,7 @@ else
                     <span class="pill-badge pill-slate">@_settings.BasicPlanMonthlyPrice.ToString("C")/mês</span>
                 </div>
                 <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.35rem;">
-                    Tema fixo Minimalista Luxo pronto para vender.
+                    Tema fixo Minimalista Luxo + Servidor 24h e Domínio inclusos.
                 </div>
             </button>
 
@@ -82,7 +82,7 @@ else
                     <span class="pill-badge pill-green">@_settings.IntermediaryPlanMonthlyPrice.ToString("C")/mês</span>
                 </div>
                 <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.35rem;">
-                    5 versões pré-prontas de site, sem configuração manual.
+                    5 versões pré-prontas + Servidor 24h e Domínio inclusos.
                 </div>
             </button>
 
@@ -94,7 +94,7 @@ else
                     <span class="pill-badge pill-gold">@_settings.PremiumPlanMonthlyPrice.ToString("C")/mês</span>
                 </div>
                 <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.35rem;">
-                    Estúdio Visual completo e 100% moldável.
+                    Estúdio Visual completo + Servidor 24h e Domínio inclusos.
                 </div>
             </button>
         </div>
@@ -135,14 +135,60 @@ else
             </div>
 
             <div>
-                <label class="adm-label" for="checkout-domain">Domínio Desejado (comprado junto na contratação)</label>
-                <input id="checkout-domain"
-                       class="adm-input"
-                       @bind="_desiredDomain"
-                       placeholder="Ex.: lojas.minhaloja.com ou minhaloja.com.br" />
-                <span style="font-size: 0.77rem; color: var(--adm-muted);">
-                    O domínio oficial será vinculado ao catálogo online junto com a ativação do plano.
-                </span>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.25rem;">
+                    <label class="adm-label" for="checkout-domain" style="margin: 0;">Endereço / Domínio da Loja</label>
+                    <span class="pill-badge pill-green">Incluso no Plano (R$ 0,00 extra)</span>
+                </div>
+                <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+                    <input id="checkout-domain"
+                           class="adm-input"
+                           style="flex: 1 1 200px; min-width: 0;"
+                           @bind="_desiredDomain"
+                           placeholder="Ex.: lojas.minhaloja.com ou minha-loja" />
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="white-space: nowrap; flex: 0 1 auto;"
+                            disabled="@(_isCheckingDomain || string.IsNullOrWhiteSpace(_desiredDomain))"
+                            @onclick="CheckCheckoutDomainAsync">
+                        @(_isCheckingDomain ? "Verificando..." : "🔍 Verificar Endereço")
+                    </button>
+                </div>
+
+                @if (_domainCheckResult is not null)
+                {
+                    <div style="margin-top: 0.5rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_domainCheckResult.IsAvailable ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
+                        <div style="font-weight: 700;">
+                            @(_domainCheckResult.IsAvailable ? "✓ " + _domainCheckResult.Message : "✕ " + _domainCheckResult.Message)
+                        </div>
+                        @if (_domainCheckResult.IsAvailable)
+                        {
+                            <div style="font-size: 0.76rem; margin-top: 0.2rem;">
+                                Endereço já coberto no plano (sem cobrança à parte): <strong>@_domainCheckResult.NormalizedUrl</strong>
+                            </div>
+                        }
+                        else if (_domainCheckResult.Suggestions.Count > 0)
+                        {
+                            <div style="margin-top: 0.35rem; font-size: 0.76rem;">Sugestões inclusas disponíveis:</div>
+                            <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                                @foreach (var s in _domainCheckResult.Suggestions)
+                                {
+                                    <button type="button"
+                                            class="pill-badge pill-blue"
+                                            style="border: none; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.75rem;"
+                                            @onclick="() => SelectCheckoutSuggestionAsync(s)">
+                                        @s
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <span style="font-size: 0.77rem; color: var(--adm-muted);">
+                        Servidor 24h, HTTPS e o endereço/subdomínio oficial da loja já vão dentro do plano — zero compra separada de domínio.
+                    </span>
+                }
             </div>
 
             <div>
@@ -177,8 +223,27 @@ else
                     <small>/ @DurationLabel</small>
                 </div>
                 <p style="margin: 0.35rem 0 0; font-size: 0.84rem; color: var(--adm-muted);">
-                    Valor base de @MonthlyPrice.ToString("C")/mês multiplicado por @_durationMonths mes(es).
+                    Valor único de @MonthlyPrice.ToString("C")/mês × @_durationMonths mes(es) — sem taxas extras de servidor ou domínio.
                 </p>
+            </div>
+
+            <div style="background: var(--adm-surface-subtle); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.84rem;">
+                <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
+                    <span style="color: var(--adm-muted);">@GetPlanTitle(_selectedTier) (@_durationMonths mes(es))</span>
+                    <strong>@TotalOrderAmount.ToString("C")</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
+                    <span style="color: var(--adm-muted);">☁️ Servidor 24h + Certificado HTTPS</span>
+                    <strong style="color: var(--adm-success);">Incluso (R$ 0,00)</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
+                    <span style="color: var(--adm-muted);">🌐 Domínio / Endereço da Vitrine</span>
+                    <strong style="color: var(--adm-success);">Incluso (R$ 0,00)</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; gap: 0.5rem; padding-top: 0.45rem; border-top: 1px dashed var(--adm-border);">
+                    <strong>Total final (tudo incluso)</strong>
+                    <strong>@TotalOrderAmount.ToString("C")</strong>
+                </div>
             </div>
 
             <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.55rem;">
@@ -256,6 +321,8 @@ else
     private bool _loading = true;
     private bool _copiedPix;
     private bool _redeemingCode;
+    private bool _isCheckingDomain;
+    private CheckDomainAvailabilityResponse? _domainCheckResult;
     private string _selectedTier = StoreDesignPresets.PlanIntermediate;
     private int _durationMonths = 1;
     private string _customerStoreName = string.Empty;
@@ -298,7 +365,8 @@ else
             var msg =
                 $"Olá! Quero contratar o {GetPlanTitle(_selectedTier)} ({DurationLabel}) — Total: {TotalOrderAmount:C}.\n" +
                 $"Loja: {store}\n" +
-                $"Domínio desejado: {domainText}\n" +
+                $"Endereço/Domínio (incluso no plano): {domainText}\n" +
+                $"Servidor 24h + HTTPS + Domínio: já inclusos no valor do plano (R$ 0,00 extra)\n" +
                 $"Usuário/Gmail: {contactText}\n" +
                 $"Chave Pix informada: {_settings.PicpayPixKey}";
 
@@ -442,6 +510,37 @@ else
         }
     }
 
+    private async Task CheckCheckoutDomainAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_desiredDomain))
+            return;
+
+        _isCheckingDomain = true;
+        _error = null;
+        try
+        {
+            _domainCheckResult = await Gateway.CheckDomainAvailabilityAsync(_desiredDomain.Trim());
+            if (_domainCheckResult.IsAvailable)
+            {
+                _desiredDomain = _domainCheckResult.Domain;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erro ao verificar disponibilidade do endereço: {ex.Message}";
+        }
+        finally
+        {
+            _isCheckingDomain = false;
+        }
+    }
+
+    private async Task SelectCheckoutSuggestionAsync(string suggestion)
+    {
+        _desiredDomain = suggestion;
+        await CheckCheckoutDomainAsync();
+    }
+
     private async Task RedeemGiftCardAsync()
     {
         if (!Gateway.IsAdmin || string.IsNullOrWhiteSpace(_giftCardCode))
@@ -493,22 +592,25 @@ else
     {
         StoreDesignPresets.PlanPremium =>
         [
+            "Servidor em nuvem 24h + Certificado HTTPS já inclusos (R$ 0,00 extra)",
+            "Domínio / Endereço da loja incluso + opção de domínio próprio sem taxa adicional",
             "Todas as 5 versões pré-prontas incluídas",
             "Estúdio Visual completo: paleta, tipografia, bordas e espaçamento livres",
-            "Textos editoriais e grade configuráveis em tempo real",
-            "Pré-visualização ao vivo e suporte a domínio próprio na publicação"
+            "Textos editoriais e grade configuráveis em tempo real"
         ],
         StoreDesignPresets.PlanBasic =>
         [
+            "Servidor em nuvem 24h + Certificado HTTPS já inclusos (R$ 0,00 extra)",
+            "Domínio / Endereço da vitrine já incluído no valor mensal",
             "Layout oficial fixo Minimalista Luxo pronto para usar",
-            "Não configurável: foco total em simplicidade para o público",
             "Busca rápida, categorias, estoque atualizado e botão WhatsApp"
         ],
         _ =>
         [
+            "Servidor em nuvem 24h + Certificado HTTPS já inclusos (R$ 0,00 extra)",
+            "Domínio / Endereço da loja já incluído no valor mensal",
             "Escolha livre entre 5 versões pré-prontas de vitrine",
-            "Visual calibrado e não configurável (sem complexidade para operar)",
-            "Troca instantânea do tema conforme a coleção da loja"
+            "Visual calibrado e não configurável (troca instantânea com 1 clique)"
         ]
     };
 

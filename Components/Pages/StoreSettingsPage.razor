@@ -188,11 +188,14 @@
                 <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--adm-text);">
                     🌐 Link Oficial do Catálogo da Sua Loja
                 </h2>
-                <span class="pill-badge pill-green">🟢 Catálogo Pronto</span>
+                <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                    <span class="pill-badge pill-green">🟢 Catálogo Pronto</span>
+                    <span class="pill-badge pill-blue">Servidor + Domínio Inclusos</span>
+                </div>
             </div>
 
             <p style="font-size: 0.85rem; color: var(--adm-muted); margin-top: 0; margin-bottom: 0.85rem; line-height: 1.45;">
-                Este é o link oficial exclusivo da sua loja! Compartilhe com suas clientes ou divulgue nas suas redes sociais:
+                Este é o link oficial exclusivo da sua loja (<strong>servidor em nuvem + HTTPS + endereço já inclusos no seu plano</strong>, sem taxa extra)! Compartilhe com suas clientes ou divulgue nas redes sociais:
             </p>
 
             <div style="background: var(--adm-input-bg); border: 1.5px solid var(--adm-border); border-radius: 8px; padding: 0.85rem 1rem; font-family: monospace; font-size: 0.95rem; font-weight: 700; word-break: break-all; margin-bottom: 0.45rem; color: var(--adm-accent);">
@@ -268,11 +271,14 @@
         <!-- Card 5: Opções Avançadas (Discreto e Opcional para Administradores) -->
         <details style="background: var(--adm-surface); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem 1rem;">
             <summary style="cursor: pointer; font-weight: 600; font-size: 0.86rem; color: var(--adm-muted); user-select: none;">
-                ⚙️ Opções Avançadas de Domínio / Nuvem
+                ⚙️ Opções Avançadas de Domínio / Nuvem (Opcional)
             </summary>
             <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.85rem;">
                 <div>
-                    <label class="adm-label">Endereço Base / Domínio do Site no Google Cloud</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 0.25rem;">
+                        <label class="adm-label" style="margin: 0;">Endereço Base / Domínio do Site</label>
+                        <span class="pill-badge pill-green">Incluso no Plano (R$ 0,00 extra)</span>
+                    </div>
                     <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
                         <input type="text"
                                class="adm-input"
@@ -320,7 +326,7 @@
                     else
                     {
                         <span style="font-size: 0.75rem; color: var(--adm-muted);">
-                            Informe um domínio próprio ou subdomínio para consultar se está disponível no Google Cloud.
+                            Servidor e subdomínio padrão da sua vitrine já estão inclusos no plano. O vínculo de domínio próprio é opcional.
                         </span>
                     }
                 </div>
