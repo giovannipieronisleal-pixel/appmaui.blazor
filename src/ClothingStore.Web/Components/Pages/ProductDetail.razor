@@ -2,7 +2,7 @@
 @page "/loja/{StoreSlug}/produto/{Slug}"
 @inject CatalogDataGateway CatalogDataGateway
 
-<PageTitle>@(_product?.Name ?? "Peça") — @(_store?.StoreName ?? "Atelier")</PageTitle>
+<PageTitle>@(_product?.Name ?? "Peça") — @(_store?.StoreName ?? "YouLink Loja")</PageTitle>
 
 @if (_loading)
 {

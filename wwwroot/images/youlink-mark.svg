@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 456 456">
+    <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="456" y2="456" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#1E2029" />
+            <stop offset="100%" stop-color="#0E0F14" />
+        </linearGradient>
+        <linearGradient id="gold" x1="-20" y1="-45" x2="115" y2="45" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#F1D59C" />
+            <stop offset="100%" stop-color="#B0894C" />
+        </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="456" height="456" rx="108" fill="url(#bg)" />
+    <rect x="6" y="6" width="444" height="444" rx="102" fill="none" stroke="#D4AF6A" stroke-opacity="0.32" stroke-width="4" />
+    <g transform="translate(228, 228) rotate(-42) scale(1.15)">
+        <path d="M 12.5,10 A 34,34 0 0 0 -20,-34 L -80,-34 A 34,34 0 0 0 -80,34 L -27,34"
+              fill="none" stroke="#FAF8F5" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M -12.5,-10 A 34,34 0 0 0 20,34 L 80,34 A 34,34 0 0 0 80,-34 L 27,-34"
+              fill="none" stroke="url(#gold)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+    <path d="M 132,110 Q 132,134 156,134 Q 132,134 132,158 Q 132,134 108,134 Q 132,134 132,110 Z" fill="#E8C784" />
+    <circle cx="328" cy="320" r="8" fill="#FAF8F5" fill-opacity="0.9" />
+</svg>

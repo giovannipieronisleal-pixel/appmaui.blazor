@@ -1,54 +1,67 @@
-# Sistema de Catálogo e Gerenciamento de Estoque de Roupas (.NET 10)
+# YouLink — Catálogo Digital & Painel da Loja (.NET 10)
 
-Sistema integrado para loja de roupas composto por um **Site Público (Catálogo Digital em Blazor Web App)**, um **Aplicativo Administrativo (.NET MAUI)** e um **Backend Unificado (ASP.NET Core Web API)** com banco de dados relacional **PostgreSQL (Supabase)**, armazenamento de imagens no **Supabase Storage** e containerização pronta para **Google Cloud Run**.
+**YouLink** é uma plataforma para lojas de roupas composta por um **Aplicativo Mobile/Desktop (.NET MAUI Blazor Hybrid)**, um **Site Público (Catálogo Digital em Blazor Web App)** e uma **Web API (ASP.NET Core)** com integração ao WhatsApp, persistência compatível com **PostgreSQL (Supabase)**, imagens no **Supabase Storage** e script pronto para **Google Cloud Run**.
 
 ---
 
-## 1. Estrutura da Solução (`appmaui.blazor.slnx`)
+## Baixar o App Pronto (GitHub Releases / Actions)
+
+Os instaladores prontos (**Android `.apk`** e **Windows `win-x64 .zip`**) são gerados automaticamente pelo workflow [release-youlink.yml](.github/workflows/release-youlink.yml):
+
+1. Acesse a aba **Releases** do repositório para baixar a versão empacotada (`YouLink-Android.apk` e `YouLink-Windows-x64.zip`).
+2. Ou acesse a aba **Actions** → último workflow executado com sucesso → baixe os **Artifacts** da compilação mais recente.
+
+> **Nota para Android:** por ser uma compilação distribuída diretamente fora da Play Store, ative *"Instalar apps desconhecidos"* ao abrir o arquivo `.apk` no celular.
+
+---
+
+## Planos & Identidade Visual da Vitrine
+
+O **YouLink** conta com três níveis de vitrine selecionáveis no app (`/planos` e `/configuracoes-loja`):
+
+- **Plano Básico (`Basico`)**: tema fixo *Minimalista Luxo* pronto para vender via WhatsApp, com QR Code e estoque em tempo real.
+- **Meia Versão (`Intermediario`)**: **5 versões de site pré-prontas** não configuráveis para troca instantânea em 1 clique.
+- **Premium Sob Medida (`Premium`)**: Estúdio Visual completo com paleta personalizável, fontes, cantos, densidade, destaque e grade configurável.
+
+---
+
+## Estrutura Pública da Solução (`appmaui.blazor.slnx`)
 
 | Projeto | Caminho | Descrição |
 | :--- | :--- | :--- |
-| **ClothingStore.Domain** | [ClothingStore.Domain.csproj](file:///C:/Dev/appmaui.blazor/src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`) e regras de negócio. |
-| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](file:///C:/Dev/appmaui.blazor/src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, contratos de API, clientes HTTP tipados (`CatalogApiClient`, `AdminApiClient`) e gerador oficial de links WhatsApp (`WhatsAppLinkBuilder`). |
-| **ClothingStore.Application** | [ClothingStore.Application.csproj](file:///C:/Dev/appmaui.blazor/src/ClothingStore.Application/ClothingStore.Application.csproj) | Casos de uso e serviços de aplicação (`AuthService`, `CatalogService`, `ProductManagementService`, `StockManagementService`, `EmployeeAndSettingsService`). |
-| **ClothingStore.Infrastructure** | [ClothingStore.Infrastructure.csproj](file:///C:/Dev/appmaui.blazor/src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj) | Repositório transacional sincronizado (`ClothingStoreRepository`), autenticação JWT (`JwtTokenService`), hash PBKDF2 (`Pbkdf2PasswordHasher`) e integração com **Supabase Storage** (`SupabaseImageStorageService`). |
-| **ClothingStore.Api** | [ClothingStore.Api.csproj](file:///C:/Dev/appmaui.blazor/src/ClothingStore.Api/ClothingStore.Api.csproj) | ASP.NET Core Web API com endpoints públicos e administrativos protegidos por JWT e Policies verificadas no backend. Inclui [Dockerfile](file:///C:/Dev/appmaui.blazor/src/ClothingStore.Api/Dockerfile) para Google Cloud Run. |
-| **ClothingStore.Web** | [ClothingStore.Web.csproj](file:///C:/Dev/appmaui.blazor/src/ClothingStore.Web/ClothingStore.Web.csproj) | Site público em Blazor Web App funcionando exclusivamente como catálogo digital com integração oficial via WhatsApp (`https://wa.me/NUMERO?text=MENSAGEM`). |
-| **appmaui.blazor** | [appmaui.blazor.csproj](file:///C:/Dev/appmaui.blazor/appmaui.blazor.csproj) | Aplicativo `.NET MAUI` para o proprietário e funcionários gerenciarem dashboard, produtos, variantes, estoque, funcionários e **Configurações da loja**. |
-| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](file:///C:/Dev/appmaui.blazor/tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte de testes automatizados validando regras de negócio, movimentações de estoque, permissões e sincronização das configurações da loja. |
+| **YouLink (`appmaui.blazor`)** | [appmaui.blazor.csproj](appmaui.blazor.csproj) | Aplicativo `.NET MAUI Blazor Hybrid` (Android, Windows, iOS, MacCatalyst) para gerenciar catálogo, estoque, equipe, planos e visual da loja. |
+| **ClothingStore.Web** | [ClothingStore.Web.csproj](src/ClothingStore.Web/ClothingStore.Web.csproj) | Site público em Blazor Web App funcionando como catálogo digital com integração ao WhatsApp (`https://wa.me/NUMERO?text=MENSAGEM`). |
+| **ClothingStore.Api** | [ClothingStore.Api.csproj](src/ClothingStore.Api/ClothingStore.Api.csproj) | ASP.NET Core Web API com endpoints públicos e administrativos protegidos por JWT e Policies no backend. Inclui [Dockerfile](src/ClothingStore.Api/Dockerfile). |
+| **ClothingStore.Application** | [ClothingStore.Application.csproj](src/ClothingStore.Application/ClothingStore.Application.csproj) | Regras de aplicação (`AuthService`, `CatalogService`, `ProductManagementService`, `StockManagementService`, `EmployeeAndSettingsService`). |
+| **ClothingStore.Domain** | [ClothingStore.Domain.csproj](src/ClothingStore.Domain/ClothingStore.Domain.csproj) | Entidades de domínio (`Role`, `User`, `Employee`, `Category`, `Product`, `ProductVariant`, `ProductImage`, `StockMovement`, `StoreSettings`, `PlanActivationCode`). |
+| **ClothingStore.Infrastructure** | [ClothingStore.Infrastructure.csproj](src/ClothingStore.Infrastructure/ClothingStore.Infrastructure.csproj) | Repositório transacional (`ClothingStoreRepository`), autenticação JWT/PBKDF2 e armazenamento de imagens. |
+| **ClothingStore.Shared** | [ClothingStore.Shared.csproj](src/ClothingStore.Shared/ClothingStore.Shared.csproj) | DTOs, clientes HTTP (`CatalogApiClient`, `AdminApiClient`), design tokens e helper de links/domínios. |
+| **ClothingStore.UnitTests** | [ClothingStore.UnitTests.csproj](tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj) | Suíte com 45 testes automatizados de domínio, segurança, planos, domínios e stress tests. |
 
 ---
 
-## 2. Credenciais Padrão para Acesso no Aplicativo (.NET MAUI)
+## Como Compilar e Executar Localmente
 
-- **Proprietária / Administradora (`Admin` — Acesso Completo + Configurações da Loja)**:
-  - **E-mail**: `admin@loja.com`
-  - **Senha**: `Admin@123`
-- **Funcionário (`Employee` — Produtos e Estoque)**:
-  - **E-mail**: `funcionario@loja.com`
-  - **Senha**: `Func@123`
-
----
-
-## 3. Como Executar Localmente
-
-### 3.1. Executar a ASP.NET Core Web API (`http://localhost:5180`)
+### 1. API (`http://localhost:5180`)
 ```powershell
 dotnet run --project src/ClothingStore.Api/ClothingStore.Api.csproj
 ```
 
-### 3.2. Executar o Site Público — Catálogo Blazor (`http://localhost:5190`)
+### 2. Site Público — Catálogo Web (`http://localhost:5190`)
 ```powershell
 dotnet run --project src/ClothingStore.Web/ClothingStore.Web.csproj
 ```
 
-### 3.3. Executar o Aplicativo Mobile/Desktop (.NET MAUI)
-Abra a solução [appmaui.blazor.slnx](file:///C:/Dev/appmaui.blazor/appmaui.blazor.slnx) no Visual Studio e inicie o projeto `appmaui.blazor` (Windows Machine ou Emulador Android), ou via CLI:
+### 3. Aplicativo YouLink (.NET MAUI)
 ```powershell
-dotnet build appmaui.blazor.csproj -f net10.0-windows10.0.19041.0
+# Windows
+dotnet build appmaui.blazor.csproj -f net10.0-windows10.0.19041.0 -c Release
+
+# Android (APK)
+dotnet publish appmaui.blazor.csproj -f net10.0-android -c Release -p:AndroidPackageFormat=apk
 ```
 
-### 3.4. Executar os Testes Automatizados
+### 4. Testes Automatizados
 ```powershell
 dotnet build tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -m:1
 .\tests\ClothingStore.UnitTests\bin\Debug\net10.0\ClothingStore.UnitTests.exe
@@ -56,19 +69,8 @@ dotnet build tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -m:1
 
 ---
 
-## 4. Banco de Dados Supabase e Deploy no Google Cloud Run
+## Banco Supabase & Publicação na Nuvem
 
-1. **Banco de Dados PostgreSQL (Supabase)**:
-   Execute o script [supabase_schema.sql](file:///C:/Dev/appmaui.blazor/database/supabase_schema.sql) no **SQL Editor** do seu painel Supabase para criar as tabelas `roles`, `users`, `employees`, `categories`, `products`, `product_variants`, `product_images`, `stock_movements` e `store_settings` com todos os índices e constraints.
-2. **Supabase Storage**:
-   Crie um bucket público chamado `clothing-images` no Supabase Storage e configure `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` nas variáveis de ambiente da API (veja [.env.example](file:///C:/Dev/appmaui.blazor/.env.example)).
-3. **Deploy da API no Google Cloud Run**:
-   ```bash
-   gcloud run deploy clothingstore-api \
-     --source . \
-     --dockerfile src/ClothingStore.Api/Dockerfile \
-     --region southamerica-east1 \
-     --allow-unauthenticated \
-     --set-env-vars="JWT_SECRET_KEY=...,SUPABASE_URL=...,SUPABASE_SERVICE_ROLE_KEY=..."
-   ```
-
+1. Execute [supabase_schema.sql](database/supabase_schema.sql) no **SQL Editor** do Supabase.
+2. Configure o bucket `clothing-images` e as variáveis de ambiente seguindo [.env.example](.env.example).
+3. Para publicar o site web no Google Cloud Run, utilize [deploy-google-cloud.ps1](deploy-google-cloud.ps1).

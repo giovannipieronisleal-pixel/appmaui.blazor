@@ -1,4 +1,4 @@
-﻿namespace appmaui.blazor
+namespace appmaui.blazor
 {
     public partial class App : Application
     {
@@ -9,7 +9,7 @@
 
         protected override Window CreateWindow(IActivationState? activationState)
         {
-            return new Window(new MainPage()) { Title = "appmaui.blazor" };
+            return new Window(new MainPage()) { Title = "YouLink" };
         }
     }
 }

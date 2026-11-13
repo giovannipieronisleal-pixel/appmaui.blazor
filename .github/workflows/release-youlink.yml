@@ -1,0 +1,140 @@
+name: Build e Release YouLink
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag da release no GitHub (ex.: v1.0.1)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Testes Automatizados (.NET 10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Executar testes unitários
+        run: dotnet run --project tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -c Release
+
+  build-android:
+    name: Compilar Android APK (YouLink)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "microsoft"
+          java-version: "17"
+
+      - name: Configurar .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Instalar workload Android MAUI
+        run: dotnet workload install maui-android
+
+      - name: Garantir dependências do Android SDK (API 36)
+        run: dotnet build appmaui.blazor.csproj -t:InstallAndroidDependencies -f net10.0-android -c Release -p:AcceptAndroidSDKLicenses=true
+
+      - name: Publicar APK Release
+        run: dotnet publish appmaui.blazor.csproj -f net10.0-android -c Release -p:AndroidPackageFormat=apk -m:1
+
+      - name: Preparar arquivo YouLink-Android.apk
+        run: |
+          mkdir -p dist
+          APK_FILE=$(ls bin/Release/net10.0-android/publish/*-Signed.apk 2>/dev/null | head -n 1 || true)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(ls bin/Release/net10.0-android/*.apk 2>/dev/null | head -n 1 || true)
+          fi
+          if [ -z "$APK_FILE" ]; then
+            echo "Nenhum APK gerado."
+            exit 1
+          fi
+          cp "$APK_FILE" dist/YouLink-Android.apk
+          ls -lh dist/YouLink-Android.apk
+
+      - name: Enviar artefato Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouLink-Android-APK
+          path: dist/YouLink-Android.apk
+
+  build-windows:
+    name: Compilar Windows x64 (YouLink)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Instalar workload Windows MAUI
+        run: dotnet workload install maui-windows
+
+      - name: Publicar executável Windows Release
+        run: dotnet publish appmaui.blazor.csproj -f net10.0-windows10.0.19041.0 -c Release -p:WindowsPackageType=None -o dist/YouLink-Windows -m:1
+
+      - name: Compactar YouLink-Windows-x64.zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-zip | Out-Null
+          Compress-Archive -Path dist/YouLink-Windows/* -DestinationPath dist-zip/YouLink-Windows-x64.zip -Force
+          Get-Item dist-zip/YouLink-Windows-x64.zip
+
+      - name: Enviar artefato Windows x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouLink-Windows-x64
+          path: dist-zip/YouLink-Windows-x64.zip
+
+  release:
+    name: Publicar GitHub Release
+    needs: [build-android, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar instaladores compilados
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Criar ou atualizar Release no GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="${{ inputs.release_tag }}"
+          fi
+          ls -lh release-assets/
+          gh release create "$TAG" ./release-assets/* \
+            --title "YouLink $TAG" \
+            --notes "Aplicativo **YouLink** compilado e pronto para instalação (Android APK + Windows x64)." \
+            --repo "${{ github.repository }}" || \
+          gh release upload "$TAG" ./release-assets/* --clobber --repo "${{ github.repository }}"
