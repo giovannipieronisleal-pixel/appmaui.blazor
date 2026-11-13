@@ -46,13 +46,13 @@ public sealed class ThemeService
     }
 
     /// <summary>
-    /// Classe CSS aplicada no HTML do Blazor: "theme-dark", "theme-light" ou string vazia para detecção nativa por media query.
+    /// Classe CSS aplicada no HTML do Blazor: "theme-dark", "theme-light" ou "theme-system" para detecção nativa por media query.
     /// </summary>
     public string CurrentThemeClass => ThemePreference switch
     {
         "dark" => "theme-dark",
         "light" => "theme-light",
-        _ => "" // Modo sistema: utiliza @media (prefers-color-scheme: dark)
+        _ => "theme-system" // Modo sistema: aplica tokens base e responde a @media (prefers-color-scheme: dark)
     };
 
     public string ThemeDisplayName => ThemePreference switch

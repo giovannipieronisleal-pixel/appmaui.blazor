@@ -109,8 +109,15 @@
     display: none;
     background: transparent;
     border: none;
+    color: var(--adm-sidebar-muted, #B8B2A8);
     font-family: inherit;
     cursor: pointer;
+}
+
+.adm-nav-more-btn.active {
+    background-color: rgba(182, 145, 88, 0.22);
+    color: var(--adm-sidebar-text, #FAF8F5);
+    border-top-color: var(--adm-accent, #B69158);
 }
 
 .adm-mobile-sheet-backdrop {
@@ -180,5 +187,12 @@
         text-decoration: none;
         font-weight: 600;
         font-size: 0.85rem;
+    }
+
+    .adm-mobile-sheet-link.active {
+        border-color: var(--adm-accent, #B69158);
+        background: color-mix(in srgb, var(--adm-accent, #B69158) 18%, var(--adm-card, #ffffff));
+        color: var(--adm-text, #18181b);
+        font-weight: 700;
     }
 }

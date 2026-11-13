@@ -7,16 +7,16 @@
     <div class="adm-modal-overlay" style="z-index: 9999;">
         <div class="adm-card adm-modal-card" style="max-width: 620px; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 2px solid var(--adm-border);">
             <!-- Header do Modal -->
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem;">
-                <div style="display: flex; align-items: center; gap: 0.85rem;">
-                    <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--adm-accent); color: #fff; font-size: 1.25rem; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.25);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; margin-bottom: 1.25rem;">
+                <div style="display: flex; align-items: center; gap: 0.85rem; min-width: 0; flex: 1;">
+                    <div style="width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%; background: var(--adm-accent); color: #fff; font-size: 1.25rem; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.25);">
                         @GetInitials(Gateway.CurrentEmployee?.FullName)
                     </div>
-                    <div>
-                        <h2 style="font-size: 1.25rem; font-weight: 800; margin: 0; color: var(--adm-text);">
+                    <div style="min-width: 0;">
+                        <h2 style="font-size: 1.2rem; font-weight: 800; margin: 0; color: var(--adm-text); overflow-wrap: anywhere;">
                             @(Gateway.CurrentEmployee?.FullName ?? "Meu Perfil")
                         </h2>
-                        <div style="display: flex; align-items: center; gap: 0.45rem; margin-top: 0.2rem; font-size: 0.8rem; color: var(--adm-muted); flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 0.45rem; margin-top: 0.2rem; font-size: 0.8rem; color: var(--adm-muted); flex-wrap: wrap; overflow-wrap: anywhere;">
                             <span>Usuário: <strong>@(Gateway.CurrentEmployee?.EffectiveUsername)</strong></span>
                             <span>&bull;</span>
                             <span>Gmail: <strong>@(Gateway.CurrentEmployee?.Email)</strong></span>
@@ -29,29 +29,30 @@
                 </div>
 
                 <button type="button"
-                        style="background: none; border: none; font-size: 1.4rem; cursor: pointer; color: var(--adm-muted); padding: 0.25rem;"
+                        aria-label="Fechar perfil"
+                        style="flex-shrink: 0; min-width: 36px; min-height: 36px; border-radius: 8px; background: var(--adm-surface-subtle); border: 1px solid var(--adm-border); font-size: 1.15rem; line-height: 1; cursor: pointer; color: var(--adm-text); display: inline-flex; align-items: center; justify-content: center;"
                         @onclick="Close">
                     ✕
                 </button>
             </div>
 
             <!-- Abas de Navegação -->
-            <div style="display: flex; gap: 0.35rem; background: var(--adm-input-bg); border-radius: 10px; padding: 4px; margin-bottom: 1.25rem; border: 1px solid var(--adm-border); overflow-x: auto;">
+            <div style="display: flex; gap: 0.35rem; background: var(--adm-input-bg); border-radius: 10px; padding: 4px; margin-bottom: 1.25rem; border: 1px solid var(--adm-border); flex-wrap: wrap;">
                 <button type="button"
                         class="adm-btn @(_currentTab == "profile" ? "adm-btn-primary" : "adm-btn-outline")"
-                        style="flex: 1; border: none; padding: 0.5rem 0.65rem; font-size: 0.82rem; font-weight: 700; white-space: nowrap;"
+                        style="flex: 1 1 auto; border: none; padding: 0.52rem 0.65rem; font-size: 0.82rem; font-weight: 700; white-space: nowrap;"
                         @onclick='() => SetTab("profile")'>
                     👤 Meus Dados
                 </button>
                 <button type="button"
                         class="adm-btn @(_currentTab == "password" ? "adm-btn-primary" : "adm-btn-outline")"
-                        style="flex: 1; border: none; padding: 0.5rem 0.65rem; font-size: 0.82rem; font-weight: 700; white-space: nowrap;"
+                        style="flex: 1 1 auto; border: none; padding: 0.52rem 0.65rem; font-size: 0.82rem; font-weight: 700; white-space: nowrap;"
                         @onclick='() => SetTab("password")'>
                     🔑 Senha
                 </button>
                 <button type="button"
                         class="adm-btn @(_currentTab == "2fa" ? "adm-btn-primary" : "adm-btn-outline")"
-                        style="flex: 1; border: none; padding: 0.5rem 0.65rem; font-size: 0.82rem; font-weight: 700; white-space: nowrap;"
+                        style="flex: 1 1 auto; border: none; padding: 0.52rem 0.65rem; font-size: 0.82rem; font-weight: 700; white-space: nowrap;"
                         @onclick='() => SetTab("2fa")'>
                     🛡️ 2FA (Dois Fatores)
                 </button>
@@ -308,10 +309,11 @@
     private string _twoFactorVerifyCode = string.Empty;
     private bool _copiedSecret;
     private string _disableTwoFactorPassword = string.Empty;
+    private bool _wasOpen;
 
     protected override void OnParametersSet()
     {
-        if (IsOpen)
+        if (IsOpen && !_wasOpen)
         {
             _error = null;
             _success = null;
@@ -320,6 +322,8 @@
             _profileEmail = Gateway.CurrentEmployee?.Email ?? "";
             _profilePhone = Gateway.CurrentEmployee?.Phone ?? "";
         }
+
+        _wasOpen = IsOpen;
     }
 
     private void SetTab(string tab)

@@ -85,40 +85,40 @@
                 <button type="button" class="adm-mobile-sheet-close" @onclick="CloseMobileMore" aria-label="Fechar menu">✕</button>
             </div>
             <div class="adm-mobile-sheet-grid">
-                <a class="adm-mobile-sheet-link" href="/estoque" @onclick="CloseMobileMore">
+                <NavLink class="adm-mobile-sheet-link" href="/estoque" @onclick="CloseMobileMore">
                     <span>📦</span>
                     <span>Estoque</span>
-                </a>
+                </NavLink>
                 @if (Gateway.IsAdmin || Gateway.CanManageStock)
                 {
-                    <a class="adm-mobile-sheet-link" href="/vendas" @onclick="CloseMobileMore">
+                    <NavLink class="adm-mobile-sheet-link" href="/vendas" @onclick="CloseMobileMore">
                         <span>💰</span>
                         <span>Vendas</span>
-                    </a>
+                    </NavLink>
                 }
                 @if (Gateway.IsAdmin)
                 {
-                    <a class="adm-mobile-sheet-link" href="/pedidos" @onclick="CloseMobileMore">
+                    <NavLink class="adm-mobile-sheet-link" href="/pedidos" @onclick="CloseMobileMore">
                         <span>🧾</span>
                         <span>Pedidos Pix</span>
-                    </a>
-                    <a class="adm-mobile-sheet-link" href="/funcionarios" @onclick="CloseMobileMore">
+                    </NavLink>
+                    <NavLink class="adm-mobile-sheet-link" href="/funcionarios" @onclick="CloseMobileMore">
                         <span>👥</span>
                         <span>Equipe</span>
-                    </a>
-                    <a class="adm-mobile-sheet-link" href="/configuracoes-loja" @onclick="CloseMobileMore">
+                    </NavLink>
+                    <NavLink class="adm-mobile-sheet-link" href="/configuracoes-loja" @onclick="CloseMobileMore">
                         <span>🎨</span>
                         <span>Loja &amp; Visual</span>
-                    </a>
-                    <a class="adm-mobile-sheet-link" href="/planos" @onclick="CloseMobileMore">
+                    </NavLink>
+                    <NavLink class="adm-mobile-sheet-link" href="/planos" @onclick="CloseMobileMore">
                         <span>💎</span>
                         <span>Planos</span>
-                    </a>
+                    </NavLink>
                 }
-                <a class="adm-mobile-sheet-link" href="@($"/loja/{_storeSlug}")" @onclick="CloseMobileMore">
+                <NavLink class="adm-mobile-sheet-link" href="@($"/loja/{_storeSlug}")" @onclick="CloseMobileMore">
                     <span>🌐</span>
                     <span>Ver Vitrine / Site</span>
-                </a>
+                </NavLink>
             </div>
         </div>
     </div>

@@ -219,10 +219,12 @@ app.MapPost("/api/public/orders/pix", async (
 // 2. ENDPOINTS DE AUTENTICAÇÃO E ENTRADA POR E-MAIL (/api/auth/...)
 // =============================================================================
 // Headers de versionamento e compatibilidade contínua com versões antigas do app (API v1)
+const string LatestAppVersion = "1.0.9";
+
 app.Use(async (context, next) =>
 {
     context.Response.Headers["X-YouLink-Api-Version"] = "v1";
-    context.Response.Headers["X-YouLink-Latest-App"] = "1.0.8";
+    context.Response.Headers["X-YouLink-Latest-App"] = LatestAppVersion;
     await next();
 });
 
@@ -265,33 +267,31 @@ static bool IsClientVersionOlder(string? clientVersion, string latestVersion)
 
 app.MapGet("/api/app/compatibility", (string? clientVersion) =>
 {
-    const string latest = "1.0.8";
-    var updateRecommended = IsClientVersionOlder(clientVersion, latest);
+    var updateRecommended = IsClientVersionOlder(clientVersion, LatestAppVersion);
     return Results.Ok(new ApiCompatibilityStatusDto(
         ApiVersion: "v1",
         MinSupportedAppVersion: "1.0.0",
-        LatestAppVersion: latest,
+        LatestAppVersion: LatestAppVersion,
         UpdateRecommended: updateRecommended,
         ClientAppVersion: clientVersion,
         ReleaseUrl: "https://github.com/giovannipieronisleal-pixel/yourlink/releases/latest",
         Message: updateRecommended
-            ? $"Sua versão ({clientVersion}) continua funcionando normalmente na API v1. Quando quiser, atualize para a {latest} para vendas diretas no celular e melhorias visuais."
+            ? $"Sua versão ({clientVersion}) continua funcionando normalmente na API v1. Quando quiser, atualize para a {LatestAppVersion} para vendas diretas no celular e melhorias visuais."
             : "Seu aplicativo está compatível e atualizado na API v1."));
 }).AllowAnonymous();
 
 app.MapGet("/api/v1/app/compatibility", (string? clientVersion) =>
 {
-    const string latest = "1.0.8";
-    var updateRecommended = IsClientVersionOlder(clientVersion, latest);
+    var updateRecommended = IsClientVersionOlder(clientVersion, LatestAppVersion);
     return Results.Ok(new ApiCompatibilityStatusDto(
         ApiVersion: "v1",
         MinSupportedAppVersion: "1.0.0",
-        LatestAppVersion: latest,
+        LatestAppVersion: LatestAppVersion,
         UpdateRecommended: updateRecommended,
         ClientAppVersion: clientVersion,
         ReleaseUrl: "https://github.com/giovannipieronisleal-pixel/yourlink/releases/latest",
         Message: updateRecommended
-            ? $"Sua versão ({clientVersion}) continua funcionando normalmente na API v1. Quando quiser, atualize para a {latest}."
+            ? $"Sua versão ({clientVersion}) continua funcionando normalmente na API v1. Quando quiser, atualize para a {LatestAppVersion}."
             : "Aplicativo compatível na API v1."));
 }).AllowAnonymous();
 
@@ -363,7 +363,7 @@ app.MapGet("/api/platform-sync/accounts", async (
     }
 
     return Results.Ok(new PlatformAccountsSyncEnvelopeDto(
-        ServerVersion: "1.0.8",
+        ServerVersion: LatestAppVersion,
         ServerTimeUtc: DateTimeOffset.UtcNow,
         StoreName: settings.StoreName,
         PlanTier: effectiveTier,

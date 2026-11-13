@@ -353,14 +353,14 @@ public class SyncCompatAndMobileCheckoutTests
             Assert.IsNotNull(compatResp);
             Assert.AreEqual(HttpStatusCode.OK, compatResp!.StatusCode);
             Assert.IsTrue(compatResp.Headers.TryGetValues("X-YouLink-Api-Version", out var apiVer) && apiVer.Contains("v1"));
-            Assert.IsTrue(compatResp.Headers.TryGetValues("X-YouLink-Latest-App", out var latestHdr) && latestHdr.Contains("1.0.8"));
+            Assert.IsTrue(compatResp.Headers.TryGetValues("X-YouLink-Latest-App", out var latestHdr) && latestHdr.Contains("1.0.9"));
 
             var oldCompat = await compatResp.Content.ReadFromJsonAsync<ApiCompatibilityStatusDto>();
             Assert.IsNotNull(oldCompat);
             Assert.IsTrue(oldCompat!.UpdateRecommended);
             Assert.AreEqual("v1", oldCompat.ApiVersion);
 
-            var v1Compat = await rawHttp.GetFromJsonAsync<ApiCompatibilityStatusDto>("/api/v1/app/compatibility?clientVersion=1.0.8");
+            var v1Compat = await rawHttp.GetFromJsonAsync<ApiCompatibilityStatusDto>("/api/v1/app/compatibility?clientVersion=1.0.9");
             Assert.IsNotNull(v1Compat);
             Assert.IsFalse(v1Compat!.UpdateRecommended);
 
@@ -421,6 +421,43 @@ public class SyncCompatAndMobileCheckoutTests
             }
 
             CleanupDir(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public void ThemeAndProfileModal_TokensAndMarkup_PreventTransparentDarkModalRegression()
+    {
+        var root = FindRepoRoot();
+
+        var mainLayout = File.ReadAllText(Path.Combine(root, "Components", "Layout", "MainLayout.razor"), Encoding.UTF8);
+        var themeStart = mainLayout.IndexOf("<div class=\"@Theme.CurrentThemeClass\">", StringComparison.Ordinal);
+        var modalPos = mainLayout.IndexOf("UserProfileModal", StringComparison.Ordinal);
+        var codePos = mainLayout.IndexOf("@code", StringComparison.Ordinal);
+        Assert.IsTrue(themeStart >= 0 && modalPos > themeStart && modalPos < codePos, "UserProfileModal precisa ser renderizado antes de @code.");
+        var lastClosingDivBeforeCode = mainLayout.LastIndexOf("</div>", codePos, StringComparison.Ordinal);
+        Assert.IsTrue(modalPos < lastClosingDivBeforeCode, "UserProfileModal deve estar DENTRO do wrapper de tema em MainLayout.razor para herdar --adm-*.");
+
+        var themeService = File.ReadAllText(Path.Combine(root, "Services", "ThemeService.cs"), Encoding.UTF8);
+        Assert.IsTrue(themeService.Contains("_ => \"theme-system\"", StringComparison.Ordinal), "Modo sistema precisa retornar a classe theme-system.");
+
+        var appCss = File.ReadAllText(Path.Combine(root, "wwwroot", "app.css"), Encoding.UTF8);
+        var rootBlockEnd = appCss.IndexOf(".theme-light,", StringComparison.Ordinal);
+        Assert.IsTrue(rootBlockEnd > 0);
+        Assert.IsTrue(appCss[..rootBlockEnd].Contains("--adm-card:", StringComparison.Ordinal), ":root deve declarar --adm-card como fallback.");
+        Assert.IsTrue(appCss[..rootBlockEnd].Contains("--adm-sidebar:", StringComparison.Ordinal), ":root deve declarar --adm-sidebar como fallback.");
+        Assert.IsTrue(appCss.Contains("background-color: var(--adm-card, #FFFFFF);", StringComparison.Ordinal), ".adm-modal-card deve ter fallback explícito.");
+        Assert.IsTrue(appCss.Contains("background-color: var(--adm-sidebar, #141416);", StringComparison.Ordinal), ".adm-sidebar deve ter fundo explícito na versão branca e escura.");
+        Assert.IsTrue(appCss.Contains("color: var(--adm-sidebar-text, #FAF8F5);", StringComparison.Ordinal), ".adm-nav-item.active deve manter contraste.");
+        Assert.IsTrue(appCss.Contains(".theme-system .pill-green", StringComparison.Ordinal), "@media dark para theme-system deve ajustar contraste das badges.");
+
+        var navCss = File.ReadAllText(Path.Combine(root, "Components", "Layout", "NavMenu.razor.css"), Encoding.UTF8);
+        Assert.IsTrue(navCss.Contains(".adm-nav-more-btn.active", StringComparison.Ordinal), "Botão Mais precisa preservar destaque quando ativo.");
+
+        var adminAppThemePath = Path.Combine(root, "src", "ClothingStore.AdminApp", "Services", "PlatformThemeService.cs");
+        if (File.Exists(adminAppThemePath))
+        {
+            var adminTheme = File.ReadAllText(adminAppThemePath, Encoding.UTF8);
+            Assert.IsTrue(adminTheme.Contains("_ => \"theme-system\"", StringComparison.Ordinal), "AdminApp também deve retornar theme-system.");
         }
     }
 }

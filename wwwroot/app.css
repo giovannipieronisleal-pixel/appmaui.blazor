@@ -24,6 +24,29 @@
     --brand-pad: 1.35rem;
     --brand-gap: 1.35rem;
     --brand-grid-cols: 3;
+
+    /* Fallbacks globais para portais/modais fora do wrapper .theme-* */
+    --adm-bg: #F6F3ED;
+    --adm-card: #FFFFFF;
+    --adm-surface: #FFFFFF;
+    --adm-surface-subtle: #EDE7DC;
+    --adm-input-bg: #F3EFE8;
+    --adm-field-bg: #FFFFFF;
+    --adm-outline-bg: #FFFFFF;
+    --adm-sidebar: #141416;
+    --adm-sidebar-text: #F5F2EB;
+    --adm-sidebar-muted: #B8B2A8;
+    --adm-text: #18181B;
+    --adm-muted: #524E4A;
+    --adm-border: #D9D1C3;
+    --adm-primary: #18181B;
+    --adm-primary-fg: #FAF8F5;
+    --adm-accent: #B69158;
+    --adm-accent-hover: #9E7B45;
+    --adm-success: #16A34A;
+    --adm-warning: #D97706;
+    --adm-danger: #DC2626;
+    --adm-shadow: 0 10px 28px -18px rgba(24, 24, 27, 0.22);
 }
 
 .theme-light,
@@ -105,6 +128,18 @@
         --adm-danger: #EF4444;
         --adm-shadow: 0 18px 36px -20px rgba(0, 0, 0, 0.65);
     }
+
+    .theme-system .pill-green { color: #86EFAC; }
+    .theme-system .pill-amber,
+    .theme-system .pill-blue,
+    .theme-system .pill-gold { color: #E5C99B; }
+    .theme-system .pill-red { color: #FCA5A5; }
+    .theme-system .alert-success,
+    .theme-system .adm-alert-success { color: #86EFAC; }
+    .theme-system .alert-error,
+    .theme-system .adm-alert-error { color: #FCA5A5; }
+    .theme-system .alert-info,
+    .theme-system .adm-alert-info { color: #E5C99B; }
 }
 
 html, body {
@@ -159,8 +194,8 @@ html, body {
 .adm-sidebar {
     width: 268px;
     flex-shrink: 0;
-    background-color: var(--adm-sidebar);
-    color: var(--adm-sidebar-text);
+    background-color: var(--adm-sidebar, #141416);
+    color: var(--adm-sidebar-text, #F5F2EB);
     border-right: 1px solid rgba(182, 145, 88, 0.22);
     display: flex;
     flex-direction: column;
@@ -222,7 +257,7 @@ html, body {
     gap: 0.72rem;
     padding: 0.68rem 0.9rem;
     border-radius: var(--brand-radius-btn);
-    color: var(--adm-sidebar-muted);
+    color: var(--adm-sidebar-muted, #B8B2A8);
     text-decoration: none;
     font-size: 0.9rem;
     font-weight: 500;
@@ -233,14 +268,14 @@ html, body {
 .adm-nav-link:hover,
 .adm-nav-item:hover {
     background-color: rgba(255, 255, 255, 0.06);
-    color: #FAF8F5;
+    color: var(--adm-sidebar-text, #FAF8F5);
 }
 
 .adm-nav-link.active,
 .adm-nav-item.active {
-    background-color: rgba(182, 145, 88, 0.14);
-    color: #FAF8F5;
-    border-left-color: var(--adm-accent);
+    background-color: rgba(182, 145, 88, 0.22);
+    color: var(--adm-sidebar-text, #FAF8F5);
+    border-left-color: var(--adm-accent, #B69158);
     font-weight: 600;
 }
 
@@ -445,8 +480,8 @@ html, body {
 }
 
 .adm-btn-primary {
-    background-color: var(--adm-primary);
-    color: var(--adm-primary-fg);
+    background-color: var(--adm-primary, #18181B);
+    color: var(--adm-primary-fg, #FAF8F5);
 }
 
 .adm-btn-primary:hover:not(:disabled) {
@@ -454,18 +489,18 @@ html, body {
 }
 
 .adm-btn-accent {
-    background-color: var(--adm-accent);
+    background-color: var(--adm-accent, #B69158);
     color: #141416;
 }
 
 .adm-btn-accent:hover:not(:disabled) {
-    background-color: var(--adm-accent-hover);
+    background-color: var(--adm-accent-hover, #9E7B45);
 }
 
 .adm-btn-outline {
     background-color: var(--adm-outline-bg, #FFFFFF);
-    color: var(--adm-text);
-    border: 1.5px solid var(--adm-border);
+    color: var(--adm-text, #18181B);
+    border: 1.5px solid var(--adm-border, #D9D1C3);
 }
 
 .adm-btn-outline:hover:not(:disabled) {
@@ -570,28 +605,43 @@ html, body {
 .theme-dark .pill-gold { color: #E5C99B; }
 .theme-dark .pill-red { color: #FCA5A5; }
 
-.alert-banner {
+.alert-banner,
+.adm-alert {
     padding: 0.9rem 1.15rem;
     border-radius: var(--brand-radius-btn);
     border: 1px solid var(--adm-border);
     font-size: 0.9rem;
     font-weight: 500;
+    margin-bottom: 1rem;
 }
 
-.alert-success {
+.alert-success,
+.adm-alert-success {
     background: rgba(22, 163, 74, 0.12);
     border-color: rgba(22, 163, 74, 0.35);
     color: #15803D;
 }
 
-.alert-error {
+.alert-error,
+.adm-alert-error {
     background: rgba(220, 38, 38, 0.12);
     border-color: rgba(220, 38, 38, 0.35);
     color: #B91C1C;
 }
 
-.theme-dark .alert-success { color: #86EFAC; }
-.theme-dark .alert-error { color: #FCA5A5; }
+.alert-info,
+.adm-alert-info {
+    background: rgba(182, 145, 88, 0.14);
+    border-color: rgba(182, 145, 88, 0.4);
+    color: #8E6A38;
+}
+
+.theme-dark .alert-success,
+.theme-dark .adm-alert-success { color: #86EFAC; }
+.theme-dark .alert-error,
+.theme-dark .adm-alert-error { color: #FCA5A5; }
+.theme-dark .alert-info,
+.theme-dark .adm-alert-info { color: #E5C99B; }
 
 /* ---------------- Seletor de Tema & Login ---------------- */
 .theme-selector-grid {
@@ -756,6 +806,8 @@ html, body {
     padding: 1.75rem;
     border-radius: 16px;
     position: relative;
+    background-color: var(--adm-card, #FFFFFF);
+    color: var(--adm-text, #18181B);
 }
 
 .adm-public-main {
@@ -810,6 +862,8 @@ html, body {
         flex-direction: row;
         align-items: center;
         padding: 0 0.5rem env(safe-area-inset-bottom, 0px);
+        background-color: var(--adm-sidebar, #141416);
+        color: var(--adm-sidebar-text, #F5F2EB);
         border-right: none;
         border-top: 1px solid rgba(182, 145, 88, 0.25);
         z-index: 60;
@@ -847,13 +901,13 @@ html, body {
     .adm-nav-link,
     .adm-nav-item {
         flex: 1 0 auto;
-        min-width: 64px;
+        min-width: 0;
         min-height: 48px;
         flex-direction: column;
         justify-content: center;
         align-items: center;
         gap: 0.15rem;
-        padding: 0.35rem 0.55rem;
+        padding: 0.35rem 0.2rem;
         font-size: 0.72rem;
         border-left: none;
         border-top: 2px solid transparent;
@@ -863,7 +917,8 @@ html, body {
     .adm-nav-link.active,
     .adm-nav-item.active {
         border-left-color: transparent;
-        border-top-color: var(--adm-accent);
+        border-top-color: var(--adm-accent, #B69158);
+        color: var(--adm-sidebar-text, #FAF8F5);
     }
 
     .adm-topbar {
