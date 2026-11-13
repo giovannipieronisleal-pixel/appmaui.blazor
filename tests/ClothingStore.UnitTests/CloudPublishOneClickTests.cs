@@ -443,4 +443,21 @@ public sealed class CloudPublishOneClickTests
         Assert.AreEqual("https://youlink-loja.onrender.com",
             WhatsAppLinkBuilder.NormalizePublicServerUrl("youlink-loja.onrender.com/api/cloud/status"));
     }
+
+    [TestMethod]
+    public void ReleaseWorkflow_ShouldAutoPublishOnMaster_AndDeleteOldReleases()
+    {
+        var root = ResolveRepoRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release-youlink.yml"));
+        var rule = File.ReadAllText(Path.Combine(root, ".agents", "rules", "youlink-release-policy.md"));
+
+        Assert.IsTrue(workflow.Contains("github.ref == 'refs/heads/master'", StringComparison.Ordinal),
+            "Workflow precisa publicar release automaticamente a cada push em master.");
+        Assert.IsTrue(workflow.Contains("ApplicationDisplayVersion", StringComparison.Ordinal),
+            "Workflow deve ler ApplicationDisplayVersion do csproj para nomear o release.");
+        Assert.IsTrue(workflow.Contains("gh release delete \"$OLD_TAG\" --yes", StringComparison.Ordinal),
+            "Workflow deve apagar automaticamente releases antigos após publicar o atual.");
+        Assert.IsTrue(rule.Contains("apagar os releases antigos", StringComparison.Ordinal),
+            "Regra do workspace precisa documentar o push e limpeza automática dos releases antigos.");
+    }
 }

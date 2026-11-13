@@ -118,28 +118,68 @@ jobs:
           path: dist-zip/YouLink-Windows-x64.zip
 
   release:
-    name: Publicar GitHub Release
+    name: Publicar GitHub Release e Limpar Antigos
     needs: [build-android, build-windows]
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout do código para ler versão do app
+        uses: actions/checkout@v4
+
       - name: Baixar instaladores compilados
         uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
 
-      - name: Criar ou atualizar Release no GitHub
+      - name: Criar ou atualizar Release no GitHub e apagar releases antigos
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_FULL: ${{ github.ref }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+          TARGET_SHA: ${{ github.sha }}
+          REPO_NAME: ${{ github.repository }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
-            TAG="${{ inputs.release_tag }}"
+          set -euo pipefail
+
+          TAG=""
+          if [[ "$REF_FULL" == refs/tags/v* ]]; then
+            TAG="$REF_NAME"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]] && [[ -n "$INPUT_TAG" ]]; then
+            TAG="$INPUT_TAG"
+          else
+            APP_VERSION=$(sed -n 's:.*<ApplicationDisplayVersion>\([^<]*\)</ApplicationDisplayVersion>.*:\1:p' appmaui.blazor.csproj | head -n 1 | tr -d ' \t\r\n')
+            if [[ -z "$APP_VERSION" ]]; then
+              echo "Não foi possível ler <ApplicationDisplayVersion> em appmaui.blazor.csproj."
+              exit 1
+            fi
+            TAG="v$APP_VERSION"
           fi
+
+          echo "Release alvo: $TAG (commit $TARGET_SHA)"
           ls -lh release-assets/
-          gh release create "$TAG" ./release-assets/* \
-            --title "YouLink $TAG" \
-            --notes "Aplicativo **YouLink** compilado e pronto para instalação (Android APK + Windows x64)." \
-            --repo "${{ github.repository }}" || \
-          gh release upload "$TAG" ./release-assets/* --clobber --repo "${{ github.repository }}"
+
+          if gh release view "$TAG" --repo "$REPO_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG já existe; atualizando instaladores..."
+            gh release upload "$TAG" ./release-assets/* --clobber --repo "$REPO_NAME"
+          else
+            gh release create "$TAG" ./release-assets/* \
+              --target "$TARGET_SHA" \
+              --title "YouLink $TAG" \
+              --notes "Aplicativo **YouLink** compilado e pronto para instalação (Android APK + Windows x64)." \
+              --repo "$REPO_NAME"
+          fi
+
+          # Só limpa releases antigos depois que o release atual estiver confirmado com sucesso
+          gh release view "$TAG" --repo "$REPO_NAME" >/dev/null
+
+          OLD_TAGS=$(gh release list --limit 100 --repo "$REPO_NAME" --json tagName --jq '.[].tagName' || true)
+          while IFS= read -r OLD_TAG; do
+            OLD_TAG=$(echo "$OLD_TAG" | tr -d ' \t\r\n')
+            if [[ -n "$OLD_TAG" ]] && [[ "$OLD_TAG" != "$TAG" ]]; then
+              echo "Apagando release antigo: $OLD_TAG"
+              gh release delete "$OLD_TAG" --yes --repo "$REPO_NAME"
+            fi
+          done <<< "$OLD_TAGS"
