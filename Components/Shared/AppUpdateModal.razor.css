@@ -1,0 +1,214 @@
+.aum-overlay {
+    z-index: 10050;
+}
+
+.aum-card {
+    max-width: 560px;
+    border: 2px solid var(--adm-border);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.48);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.aum-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.aum-header-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.aum-icon-badge {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--adm-accent) 18%, var(--adm-surface-subtle));
+    border: 1px solid var(--adm-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+}
+
+.aum-title-wrap {
+    min-width: 0;
+}
+
+.aum-eyebrow {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--adm-accent);
+}
+
+.aum-title {
+    margin: 0.15rem 0 0;
+    font-size: 1.18rem;
+    font-weight: 800;
+    color: var(--adm-text);
+    line-height: 1.25;
+}
+
+.aum-version-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.45rem;
+}
+
+.aum-arrow {
+    color: var(--adm-muted);
+    font-weight: 700;
+}
+
+.aum-close-btn {
+    flex-shrink: 0;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 8px;
+    background: var(--adm-surface-subtle);
+    border: 1px solid var(--adm-border);
+    color: var(--adm-text);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.aum-lead {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--adm-text);
+    line-height: 1.5;
+}
+
+.aum-details-box {
+    background: var(--adm-input-bg);
+    border: 1px solid var(--adm-border);
+    border-radius: 10px;
+    padding: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.aum-details-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.88rem;
+    color: var(--adm-text);
+}
+
+.aum-release-notes {
+    font-size: 0.82rem;
+    color: var(--adm-muted);
+    line-height: 1.5;
+    white-space: pre-line;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.aum-status-box {
+    background: var(--adm-input-bg);
+    border: 1px solid var(--adm-border);
+    border-radius: 10px;
+    padding: 0.9rem;
+    font-size: 0.88rem;
+    color: var(--adm-text);
+}
+
+.aum-status-ok {
+    border-color: var(--adm-success);
+}
+
+.aum-progress-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.aum-progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.82rem;
+    color: var(--adm-text);
+}
+
+.aum-progress {
+    width: 100%;
+    height: 12px;
+    border-radius: 999px;
+    overflow: hidden;
+    accent-color: var(--adm-success);
+}
+
+.aum-feedback {
+    padding: 0.72rem 0.9rem;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.aum-feedback-info {
+    background: var(--adm-surface-subtle);
+    border: 1px solid var(--adm-border);
+    color: var(--adm-text);
+}
+
+.aum-feedback-err {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid var(--adm-danger);
+    color: var(--adm-danger);
+}
+
+.aum-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    align-items: center;
+}
+
+.aum-primary-btn {
+    flex: 1 1 220px;
+    min-height: 44px;
+    font-weight: 800;
+}
+
+.aum-secondary-btn,
+.aum-link-btn {
+    min-height: 40px;
+    font-size: 0.82rem;
+}
+
+@media (max-width: 600px) {
+    .aum-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .aum-primary-btn,
+    .aum-secondary-btn,
+    .aum-link-btn {
+        width: 100%;
+        flex: none;
+    }
+}

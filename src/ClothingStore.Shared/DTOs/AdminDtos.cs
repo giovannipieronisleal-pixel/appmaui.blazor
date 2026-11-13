@@ -283,7 +283,42 @@ public sealed class CloudCatalogSyncPayload
     public UpdateStoreSettingsRequest Settings { get; set; } = new();
     public List<SaveCategoryRequest> Categories { get; set; } = [];
     public List<SaveProductRequest> Products { get; set; } = [];
+    public List<CloudProductSyncDto>? CatalogSnapshot { get; set; }
     public string? RawDatabaseJson { get; set; }
+}
+
+public sealed class CloudProductSyncDto
+{
+    public Guid SourceId { get; set; }
+    public string CategoryName { get; set; } = string.Empty;
+    public string? CategorySlug { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Slug { get; set; }
+    public string? Description { get; set; }
+    public decimal BasePrice { get; set; }
+    public bool IsVisibleOnSite { get; set; } = true;
+    public List<CloudProductVariantSyncDto> Variants { get; set; } = [];
+    public List<CloudProductImageSyncDto> Images { get; set; } = [];
+}
+
+public sealed class CloudProductVariantSyncDto
+{
+    public string Color { get; set; } = string.Empty;
+    public string? ColorHex { get; set; }
+    public string Size { get; set; } = string.Empty;
+    public string? Sku { get; set; }
+    public int StockQuantity { get; set; }
+    public int LowStockThreshold { get; set; } = 3;
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class CloudProductImageSyncDto
+{
+    public string PublicUrl { get; set; } = string.Empty;
+    public string? StoragePath { get; set; }
+    public string? AltText { get; set; }
+    public int DisplayOrder { get; set; }
+    public bool IsPrimary { get; set; }
 }
 
 public sealed class CheckDomainAvailabilityRequest

@@ -11,6 +11,7 @@ using ClothingStore.Infrastructure.Persistence;
 using ClothingStore.Infrastructure.Security;
 using ClothingStore.Infrastructure.Storage;
 using ClothingStore.Shared.DTOs;
+using ClothingStore.Shared.Helpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics;
 
@@ -62,6 +63,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ProductManagementService>();
 builder.Services.AddScoped<StockManagementService>();
 builder.Services.AddScoped<EmployeeAndSettingsService>();
+builder.Services.AddScoped<CloudSyncStateService>();
 builder.Services.AddScoped<OrderAndShippingService>();
 
 // Autenticação JWT + Policies de Autorização verificadas no Backend
@@ -219,7 +221,7 @@ app.MapPost("/api/public/orders/pix", async (
 // 2. ENDPOINTS DE AUTENTICAÇÃO E ENTRADA POR E-MAIL (/api/auth/...)
 // =============================================================================
 // Headers de versionamento e compatibilidade contínua com versões antigas do app (API v1)
-const string LatestAppVersion = "1.0.9";
+const string LatestAppVersion = AppUpdateCatalog.CurrentAppVersion;
 
 app.Use(async (context, next) =>
 {
@@ -882,8 +884,7 @@ app.MapPost("/api/cloud/sync-state", async (
     HttpContext httpContext,
     CloudCatalogSyncPayload payload,
     IClothingStoreRepository repository,
-    EmployeeAndSettingsService settingsService,
-    ProductManagementService productService,
+    CloudSyncStateService syncStateService,
     CancellationToken ct) =>
 {
     var hasJwtAccess = httpContext.User.Identity?.IsAuthenticated == true &&
@@ -912,27 +913,17 @@ app.MapPost("/api/cloud/sync-state", async (
         return Results.Unauthorized();
     }
 
-    if (!string.IsNullOrWhiteSpace(payload.Settings.StoreName))
-    {
-        await settingsService.UpdateStoreSettingsAsync(null, payload.Settings, ct);
-    }
-
-    foreach (var cat in payload.Categories)
-    {
-        await productService.CreateCategoryAsync(cat, ct);
-    }
-
-    foreach (var prod in payload.Products)
-    {
-        await productService.CreateProductAsync(prod, null, ct);
-    }
+    var result = await syncStateService.ApplySyncPayloadAsync(payload, ct);
 
     return Results.Ok(new
     {
         message = "Catálogo online 24h sincronizado com sucesso!",
         syncedAt = DateTimeOffset.UtcNow,
-        categoriesCount = payload.Categories.Count,
-        productsCount = payload.Products.Count
+        categoriesCount = result.CategoriesCount,
+        productsCount = result.ProductsCount,
+        isSiteActive = result.IsSiteActive,
+        storeSlug = result.StoreSlug,
+        catalogUrl = result.EffectiveCatalogUrl
     });
 }).AllowAnonymous();
 

@@ -16,7 +16,22 @@ public sealed class MauiAdminGateway
 {
     private const string SessionStorageKey = "clothingstore_auth_session_v1";
     private const string ServerUrlPreferenceKey = "youlink_api_base_url_v1";
-    private const string CurrentClientAppVersion = "1.0.8";
+    private static string ResolveCurrentClientAppVersion()
+    {
+        try
+        {
+            var version = AppInfo.Current.VersionString;
+            var normalized = AppUpdateCatalog.NormalizeVersion(version);
+            if (!string.IsNullOrWhiteSpace(normalized))
+                return normalized;
+        }
+        catch
+        {
+        }
+
+        return AppUpdateCatalog.CurrentAppVersion;
+    }
+
     private static readonly HttpClient FallbackDnsHttpClient = new() { Timeout = TimeSpan.FromSeconds(6) };
 
     private readonly AdminApiClient _apiClient;
@@ -131,7 +146,7 @@ public sealed class MauiAdminGateway
 
         try
         {
-            var status = await _apiClient.GetCompatibilityStatusAsync(CurrentClientAppVersion, ct);
+            var status = await _apiClient.GetCompatibilityStatusAsync(ResolveCurrentClientAppVersion(), ct);
             if (status is not null)
             {
                 LatestCompatibilityStatus = status;
@@ -735,21 +750,29 @@ public sealed class MauiAdminGateway
             () => _employeeAndSettingsService.GetAdminStoreSettingsAsync());
     }
 
-    public async Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(UpdateStoreSettingsRequest request)
+    public async Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(
+        UpdateStoreSettingsRequest request,
+        bool suppressAutoSync = false)
     {
         EnsureAdminPermission();
         var result = await ExecuteWithFallbackAsync(
             () => _apiClient.UpdateStoreSettingsAsync(request),
             () => _employeeAndSettingsService.UpdateStoreSettingsAsync(CurrentEmployee!.EmployeeId, request));
-        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        if (!suppressAutoSync)
+        {
+            _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        }
         return result;
     }
 
-    public async Task<AdminStoreSettingsDto> ActivateSiteAsync()
+    public async Task<AdminStoreSettingsDto> ActivateSiteAsync(bool suppressAutoSync = false)
     {
         EnsureAdminPermission();
         var result = await _employeeAndSettingsService.ActivateStoreSiteAsync(CurrentEmployee?.EmployeeId);
-        _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        if (!suppressAutoSync)
+        {
+            _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        }
         return result;
     }
 
@@ -827,11 +850,14 @@ public sealed class MauiAdminGateway
         return FreeDomainFinder.UpdateDuckDnsIpAsync(domainOrSubdomain, token, ipv4, FallbackDnsHttpClient, ct);
     }
 
-    public Task<OwnServerHealthCheckResult> TestOwnServerConnectionAsync(string? targetUrl, CancellationToken ct = default)
+    public Task<OwnServerHealthCheckResult> TestOwnServerConnectionAsync(
+        string? targetUrl,
+        CancellationToken ct = default,
+        IProgress<string>? progress = null)
     {
         EnsureAdminPermission();
         if (_cloudSyncService is not null)
-            return _cloudSyncService.TestOwnServerConnectionAsync(targetUrl, ct);
+            return _cloudSyncService.TestOwnServerConnectionAsync(targetUrl, ct, progress);
 
         return Task.FromResult(new OwnServerHealthCheckResult(
             false,

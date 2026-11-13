@@ -51,9 +51,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<AdminApiClient>();
 
         // Repositório compartilhado no Windows ou armazenamento seguro do app no Android
-        var sharedWorkspaceDb = @"C:\Dev\appmaui.blazor\App_Data\clothingstore_db.json";
-        var dbFilePath = OperatingSystem.IsWindows() && Directory.Exists(@"C:\Dev\appmaui.blazor")
-            ? sharedWorkspaceDb
+        var activeWorkspaceRoot = ResolveExistingDevWorkspaceRoot();
+        var dbFilePath = activeWorkspaceRoot is not null
+            ? Path.Combine(activeWorkspaceRoot, "App_Data", "clothingstore_db.json")
             : Path.Combine(FileSystem.AppDataDirectory, "clothingstore_db.json");
 
         var outboxFilePath = Path.Combine(Path.GetDirectoryName(dbFilePath) ?? FileSystem.AppDataDirectory, "email_outbox.txt");
@@ -70,8 +70,11 @@ public static class MauiProgram
         {
             var http = sp.GetRequiredService<HttpClient>();
             var cfg = sp.GetRequiredService<IConfiguration>();
-            var uploadsDir = OperatingSystem.IsWindows() && Directory.Exists(@"C:\Dev\appmaui.blazor\src\ClothingStore.Api")
-                ? @"C:\Dev\appmaui.blazor\src\ClothingStore.Api\wwwroot"
+            var apiWwwRoot = activeWorkspaceRoot is not null
+                ? Path.Combine(activeWorkspaceRoot, "src", "ClothingStore.Api", "wwwroot")
+                : null;
+            var uploadsDir = apiWwwRoot is not null && Directory.Exists(Path.GetDirectoryName(apiWwwRoot))
+                ? apiWwwRoot
                 : FileSystem.AppDataDirectory;
             return new SupabaseImageStorageService(http, cfg, uploadsDir);
         });
@@ -81,11 +84,13 @@ public static class MauiProgram
         builder.Services.AddSingleton<ProductManagementService>();
         builder.Services.AddSingleton<StockManagementService>();
         builder.Services.AddSingleton<EmployeeAndSettingsService>();
+        builder.Services.AddSingleton<CloudSyncStateService>();
         builder.Services.AddSingleton<OrderAndShippingService>();
         builder.Services.AddSingleton<ThemeService>();
         builder.Services.AddSingleton<StoreBrandStateService>();
         builder.Services.AddSingleton<GoogleCloudSyncService>();
         builder.Services.AddSingleton<MauiAdminGateway>();
+        builder.Services.AddSingleton<AppUpdateService>();
 
         var app = builder.Build();
 
@@ -96,5 +101,19 @@ public static class MauiProgram
         _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
 
         return app;
+    }
+
+    private static string? ResolveExistingDevWorkspaceRoot()
+    {
+        if (!OperatingSystem.IsWindows())
+            return null;
+
+        foreach (var candidate in new[] { @"C:\Dev\YouLink", @"C:\Dev\appmaui.blazor" })
+        {
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 }

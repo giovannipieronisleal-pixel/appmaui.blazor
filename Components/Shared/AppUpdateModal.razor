@@ -1,0 +1,191 @@
+@using appmaui.blazor.Services
+@using ClothingStore.Shared.Helpers
+@inject AppUpdateService UpdateService
+@implements IDisposable
+
+@if (UpdateService.IsPopupOpen)
+{
+    var release = UpdateService.AvailableRelease;
+    var isBusy = UpdateService.IsChecking || UpdateService.IsDownloading || UpdateService.IsApplyingUpdate;
+
+    <div class="adm-modal-overlay aum-overlay" role="dialog" aria-modal="true" aria-labelledby="aum-title">
+        <div class="adm-card adm-modal-card aum-card">
+            <div class="aum-header">
+                <div class="aum-header-main">
+                    <div class="aum-icon-badge" aria-hidden="true">⬆️</div>
+                    <div class="aum-title-wrap">
+                        <span class="aum-eyebrow">Atualização Oficial YouLink</span>
+                        <h2 id="aum-title" class="aum-title">
+                            @if (release is { IsUpdateAvailable: true })
+                            {
+                                <span>Há uma nova atualização disponível!</span>
+                            }
+                            else
+                            {
+                                <span>Atualizações do Aplicativo</span>
+                            }
+                        </h2>
+                        <div class="aum-version-row">
+                            <span class="pill-badge pill-slate">Instalada: v@(UpdateService.CurrentVersion)</span>
+                            @if (release is { IsUpdateAvailable: true })
+                            {
+                                <span class="aum-arrow" aria-hidden="true">→</span>
+                                <span class="pill-badge pill-green">Nova: v@(release.LatestVersion)</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <button type="button"
+                        class="aum-close-btn"
+                        aria-label="Fechar aviso de atualização"
+                        disabled="@isBusy"
+                        @onclick="UpdateService.DismissPopupForNow">
+                    ✕
+                </button>
+            </div>
+
+            @if (UpdateService.IsChecking)
+            {
+                <div class="aum-status-box">
+                    ⏳ Procurando a versão mais recente do YouLink...
+                </div>
+            }
+            else if (release is { IsUpdateAvailable: true })
+            {
+                <p class="aum-lead">
+                    Deseja baixar e instalar a versão <strong>v@(release.LatestVersion)</strong> agora diretamente pelo app?
+                </p>
+
+                <div class="aum-details-box">
+                    <div class="aum-details-head">
+                        <strong>@release.ReleaseTitle</strong>
+                        @if (!string.IsNullOrWhiteSpace(release.SelectedAssetName))
+                        {
+                            <span class="pill-badge pill-blue">
+                                @release.SelectedAssetName • @AppUpdateCatalog.FormatFileSize(release.SelectedAssetSizeBytes)
+                            </span>
+                        }
+                    </div>
+                    <div class="aum-release-notes">@release.ReleaseNotes</div>
+                </div>
+            }
+            else
+            {
+                <div class="aum-status-box aum-status-ok">
+                    ✓ Seu aplicativo já está atualizado na versão <strong>v@(UpdateService.CurrentVersion)</strong>.
+                </div>
+            }
+
+            @if (UpdateService.IsDownloading || UpdateService.IsApplyingUpdate || UpdateService.DownloadProgressPercent > 0)
+            {
+                <div class="aum-progress-wrap">
+                    <div class="aum-progress-head">
+                        <span>@(UpdateService.IsApplyingUpdate ? "Aplicando atualização..." : "Progresso do download")</span>
+                        <strong>@(UpdateService.DownloadProgressPercent)%</strong>
+                    </div>
+                    <progress class="aum-progress" value="@UpdateService.DownloadProgressPercent" max="100"></progress>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(UpdateService.StatusMessage) && !UpdateService.IsChecking)
+            {
+                <div class="aum-feedback aum-feedback-info">
+                    @UpdateService.StatusMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(UpdateService.ErrorMessage))
+            {
+                <div class="aum-feedback aum-feedback-err">
+                    @UpdateService.ErrorMessage
+                </div>
+            }
+
+            <div class="aum-actions">
+                @if (release is { IsUpdateAvailable: true })
+                {
+                    <button type="button"
+                            class="adm-btn adm-btn-success aum-primary-btn"
+                            disabled="@isBusy"
+                            @onclick="UpdateNowAsync">
+                        @if (UpdateService.IsDownloading)
+                        {
+                            <span>⏳ Baixando @(UpdateService.DownloadProgressPercent)%...</span>
+                        }
+                        else if (UpdateService.IsApplyingUpdate)
+                        {
+                            <span>⚙️ Instalando atualização...</span>
+                        }
+                        else if (UpdateService.WaitingAndroidInstallPermission)
+                        {
+                            <span>📦 Instalar APK Baixado Agora</span>
+                        }
+                        else
+                        {
+                            <span>🚀 Sim, Atualizar Agora</span>
+                        }
+                    </button>
+
+                    <button type="button"
+                            class="adm-btn adm-btn-outline aum-secondary-btn"
+                            disabled="@isBusy"
+                            @onclick="UpdateService.DismissPopupForNow">
+                        Agora não
+                    </button>
+
+                    <button type="button"
+                            class="adm-btn adm-btn-outline aum-secondary-btn"
+                            disabled="@isBusy"
+                            @onclick="UpdateService.IgnoreCurrentAvailableVersion">
+                        Ignorar v@(release.LatestVersion)
+                    </button>
+
+                    <button type="button"
+                            class="adm-btn adm-btn-outline aum-link-btn"
+                            disabled="@isBusy"
+                            @onclick="UpdateService.OpenReleaseFallbackAsync">
+                        🌐 Abrir Página do GitHub
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="adm-btn adm-btn-primary aum-primary-btn"
+                            disabled="@isBusy"
+                            @onclick="CheckAgainAsync">
+                        🔄 Verificar Novamente
+                    </button>
+
+                    <button type="button"
+                            class="adm-btn adm-btn-outline aum-secondary-btn"
+                            disabled="@isBusy"
+                            @onclick="UpdateService.DismissPopupForNow">
+                        Fechar
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        UpdateService.StateChanged += OnUpdateStateChanged;
+    }
+
+    private Task UpdateNowAsync() => UpdateService.DownloadAndInstallAsync();
+
+    private Task CheckAgainAsync() => UpdateService.CheckForUpdatesAsync(manualTrigger: true);
+
+    private void OnUpdateStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        UpdateService.StateChanged -= OnUpdateStateChanged;
+    }
+}

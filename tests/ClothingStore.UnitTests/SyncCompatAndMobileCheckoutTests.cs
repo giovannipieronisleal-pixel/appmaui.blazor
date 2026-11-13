@@ -353,14 +353,14 @@ public class SyncCompatAndMobileCheckoutTests
             Assert.IsNotNull(compatResp);
             Assert.AreEqual(HttpStatusCode.OK, compatResp!.StatusCode);
             Assert.IsTrue(compatResp.Headers.TryGetValues("X-YouLink-Api-Version", out var apiVer) && apiVer.Contains("v1"));
-            Assert.IsTrue(compatResp.Headers.TryGetValues("X-YouLink-Latest-App", out var latestHdr) && latestHdr.Contains("1.0.9"));
+            Assert.IsTrue(compatResp.Headers.TryGetValues("X-YouLink-Latest-App", out var latestHdr) && latestHdr.Contains(AppUpdateCatalog.CurrentAppVersion));
 
             var oldCompat = await compatResp.Content.ReadFromJsonAsync<ApiCompatibilityStatusDto>();
             Assert.IsNotNull(oldCompat);
             Assert.IsTrue(oldCompat!.UpdateRecommended);
             Assert.AreEqual("v1", oldCompat.ApiVersion);
 
-            var v1Compat = await rawHttp.GetFromJsonAsync<ApiCompatibilityStatusDto>("/api/v1/app/compatibility?clientVersion=1.0.9");
+            var v1Compat = await rawHttp.GetFromJsonAsync<ApiCompatibilityStatusDto>($"/api/v1/app/compatibility?clientVersion={AppUpdateCatalog.CurrentAppVersion}");
             Assert.IsNotNull(v1Compat);
             Assert.IsFalse(v1Compat!.UpdateRecommended);
 

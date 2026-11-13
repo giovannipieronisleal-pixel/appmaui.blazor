@@ -43,6 +43,50 @@ public static class WhatsAppLinkBuilder
         return string.IsNullOrWhiteSpace(clean) ? "minha-loja" : clean;
     }
 
+    public static string NormalizePublicServerUrl(string? rawUrl)
+    {
+        var candidate = (rawUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(candidate))
+            return string.Empty;
+
+        if (!candidate.Contains("://", StringComparison.Ordinal))
+        {
+            candidate = $"https://{candidate}";
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
+            (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)) ||
+            string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return string.Empty;
+        }
+
+        return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+    }
+
+    public static string NormalizeSyncSecretInput(string? rawSecret)
+    {
+        var candidate = (rawSecret ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(candidate))
+            return string.Empty;
+
+        const string envPrefix = "YOULINK_SYNC_SECRET=";
+        if (candidate.StartsWith(envPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = candidate[envPrefix.Length..].Trim();
+        }
+
+        if (candidate.Length >= 2 &&
+            ((candidate.StartsWith('"') && candidate.EndsWith('"')) ||
+             (candidate.StartsWith('\'') && candidate.EndsWith('\''))))
+        {
+            candidate = candidate[1..^1].Trim();
+        }
+
+        return candidate;
+    }
+
     /// <summary>
     /// Gera o domínio padrão do catálogo no formato lojas.nomedaloja.com (ex.: lojas.minhaloja.com).
     /// </summary>

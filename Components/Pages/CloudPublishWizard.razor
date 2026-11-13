@@ -1,0 +1,332 @@
+@using Microsoft.Maui.ApplicationModel
+@using Microsoft.Maui.ApplicationModel.DataTransfer
+@using appmaui.blazor.Services
+
+<section id="publicar-site-24h" class="adm-card cpw-card @(IsOnlineConfigured && IsSiteActive ? "cpw-card-live" : string.Empty)">
+    <div class="cpw-header">
+        <div class="cpw-header-text">
+            <span class="cpw-eyebrow">Publicação Fácil • Site 24h Grátis</span>
+            <h2 class="cpw-title">🌐 Coloque Sua Loja no Ar em 3 Passos</h2>
+            <p class="cpw-subtitle">
+                Sem terminal e sem programação: gere seu site gratuito no Render, cole o link e a chave secreta abaixo e ative seu <strong>Link Oficial</strong>, <strong>WhatsApp</strong> e <strong>QR Code</strong> automaticamente.
+            </p>
+        </div>
+        <div class="cpw-status-wrap">
+            @if (IsOnlineConfigured && IsSiteActive)
+            {
+                <span class="pill-badge pill-green cpw-status-pill">🟢 Site 24h No Ar</span>
+            }
+            else if (IsOnlineConfigured)
+            {
+                <span class="pill-badge pill-gold cpw-status-pill">🟡 Site Pausado</span>
+            }
+            else
+            {
+                <span class="pill-badge pill-slate cpw-status-pill">⚪ Ainda não publicado</span>
+            }
+        </div>
+    </div>
+
+    @{
+        var hasUrl = !string.IsNullOrWhiteSpace(GoogleCloudSyncService.NormalizePublicServerUrl(RenderUrl));
+        var hasKey = HasSavedSyncSecret || !string.IsNullOrWhiteSpace(SyncSecret);
+        var isLive = IsOnlineConfigured && IsSiteActive && !string.IsNullOrWhiteSpace(OfficialCatalogUrl);
+        var showFullSetup = !isLive || _editingSetup;
+    }
+
+    <div class="cpw-progress-strip" aria-label="Progresso da publicação">
+        <span class="cpw-progress-item @(_step1Opened || hasUrl || isLive ? "cpw-progress-done" : string.Empty)">
+            @(hasUrl || isLive ? "✓" : "1.") Criar no Render
+        </span>
+        <span class="cpw-progress-item @(hasUrl && hasKey ? "cpw-progress-done" : string.Empty)">
+            @(hasUrl && hasKey ? "✓" : "2.") Colar Link e Chave
+        </span>
+        <span class="cpw-progress-item @(isLive ? "cpw-progress-done" : string.Empty)">
+            @(isLive ? "✓" : "3.") Site No Ar
+        </span>
+    </div>
+
+    @if (isLive)
+    {
+        <div class="cpw-live-bar">
+            <div class="cpw-live-info">
+                <span class="cpw-live-kicker">Link Oficial, WhatsApp e QR Code Ativos</span>
+                <code class="cpw-live-url">@OfficialCatalogUrl</code>
+                @if (LastSyncedAt.HasValue)
+                {
+                    <span class="cpw-hint">
+                        Última atualização enviada: <strong>@LastSyncedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong>
+                    </span>
+                }
+            </div>
+            <div class="cpw-live-actions">
+                <button type="button"
+                        class="adm-btn adm-btn-success"
+                        disabled="@IsPublishing"
+                        @onclick="HandlePublishClickAsync">
+                    @(IsPublishing ? "⏳ Atualizando site..." : "🔄 Atualizar Site Agora")
+                </button>
+                <button type="button" class="adm-btn adm-btn-outline" @onclick="OnCopyCatalogUrl">
+                    📋 Copiar Link
+                </button>
+                <button type="button" class="adm-btn cpw-whatsapp-btn" @onclick="OnShareWhatsApp">
+                    💬 WhatsApp
+                </button>
+                <button type="button" class="adm-btn adm-btn-primary" @onclick="OnOpenCatalogUrl">
+                    🌐 Abrir Site 24h
+                </button>
+            </div>
+        </div>
+
+        <div class="cpw-toggle-setup-row">
+            <button type="button"
+                    class="adm-btn adm-btn-outline cpw-toggle-setup-btn"
+                    @onclick="ToggleEditingSetup">
+                @(_editingSetup ? "▲ Ocultar passos de configuração" : "⚙️ Editar link ou chave do Render")
+            </button>
+        </div>
+    }
+
+    @if (showFullSetup)
+    {
+        <div class="cpw-steps-grid">
+            <article class="cpw-step">
+                <div class="cpw-step-badge">Passo 1</div>
+                <h3 class="cpw-step-title">Abrir o modelo gratuito no Render</h3>
+                <p class="cpw-step-desc">
+                    Toque no botão abaixo para abrir o Render já configurado para o YouLink. Entre com sua conta e clique em <strong>Apply / Deploy</strong> para criar seu site 24h gratuito.
+                </p>
+                <div class="cpw-step-actions">
+                    <button type="button"
+                            class="adm-btn adm-btn-primary cpw-blueprint-btn"
+                            @onclick="OpenRenderBlueprintAsync">
+                        🌐 Criar Meu Site Grátis 24h
+                    </button>
+                    <button type="button"
+                            class="adm-btn adm-btn-outline cpw-copy-blueprint-btn"
+                            @onclick="CopyRenderBlueprintUrlAsync">
+                        @(_copiedBlueprint ? "✓ Copiado" : "📋 Copiar Link")
+                    </button>
+                </div>
+
+                <details class="cpw-mini-guide">
+                    <summary>❓ Onde pego o Link e a Chave no Render?</summary>
+                    <ol class="cpw-guide-list">
+                        <li>Espere o painel do Render mostrar o selo verde <strong>Live</strong>.</li>
+                        <li>No topo da página do serviço <code>youlink-loja</code>, copie o endereço azul <code>https://...onrender.com</code>.</li>
+                        <li>No menu esquerdo, abra <strong>Environment</strong>, revele <code>YOULINK_SYNC_SECRET</code> e clique em copiar.</li>
+                    </ol>
+                </details>
+            </article>
+
+            <article class="cpw-step">
+                <div class="cpw-step-badge">Passo 2</div>
+                <h3 class="cpw-step-title">Colar URL e chave secreta</h3>
+                <div class="adm-field">
+                    <div class="cpw-label-row">
+                        <label class="adm-label" for="cpw-render-url">Endereço do site (Render) *</label>
+                        @if (hasUrl)
+                        {
+                            <span class="pill-badge pill-green cpw-inline-pill">✓ URL válida</span>
+                        }
+                    </div>
+                    <div class="cpw-secret-row">
+                        <input id="cpw-render-url"
+                               type="url"
+                               class="adm-input"
+                               value="@RenderUrl"
+                               @oninput="HandleRenderUrlInputAsync"
+                               placeholder="https://minha-loja.onrender.com" />
+                        <button type="button"
+                                class="adm-btn adm-btn-outline cpw-toggle-secret-btn"
+                                @onclick="PasteRenderUrlAsync">
+                            📋 Colar
+                        </button>
+                    </div>
+                    <span class="cpw-hint">Cole o endereço gerado no topo do painel do Render.</span>
+                </div>
+
+                <div class="adm-field">
+                    <div class="cpw-label-row">
+                        <label class="adm-label" for="cpw-sync-secret">Chave YOULINK_SYNC_SECRET *</label>
+                        @if (HasSavedSyncSecret)
+                        {
+                            <span class="pill-badge pill-green cpw-inline-pill">🔑 Salva no aparelho</span>
+                        }
+                    </div>
+                    <div class="cpw-secret-row">
+                        <input id="cpw-sync-secret"
+                               type="@(_showSecret ? "text" : "password")"
+                               class="adm-input"
+                               value="@SyncSecret"
+                               @oninput="HandleSyncSecretInputAsync"
+                               placeholder="@(HasSavedSyncSecret ? "•••••••• (já salva — cole só se quiser trocar)" : "Cole a chave YOULINK_SYNC_SECRET")" />
+                        <button type="button"
+                                class="adm-btn adm-btn-outline cpw-toggle-secret-btn"
+                                @onclick="PasteSyncSecretAsync">
+                            📋 Colar
+                        </button>
+                        <button type="button"
+                                class="adm-btn adm-btn-outline cpw-toggle-secret-btn"
+                                @onclick="ToggleShowSecret">
+                            @(_showSecret ? "🙈 Ocultar" : "👁️ Ver")
+                        </button>
+                    </div>
+                    <span class="cpw-hint">Se você copiar <code>YOULINK_SYNC_SECRET=...</code> inteiro, o app limpa o prefixo automaticamente.</span>
+                </div>
+            </article>
+
+            <article class="cpw-step cpw-step-activate">
+                <div class="cpw-step-badge">Passo 3</div>
+                <h3 class="cpw-step-title">Validar, enviar loja e ativar</h3>
+                <p class="cpw-step-desc">
+                    Com um toque, o app confere seu servidor (inclusive se ele estiver acordando do modo econômico), envia peças, fotos, preços e WhatsApp e já deixa o <strong>Link Oficial</strong> e o <strong>QR Code</strong> prontos.
+                </p>
+                <div class="cpw-step-actions cpw-step-actions-vertical">
+                    <button type="button"
+                            class="adm-btn adm-btn-success cpw-activate-btn"
+                            disabled="@IsPublishing"
+                            @onclick="HandlePublishClickAsync">
+                        @(IsPublishing ? "⏳ Testando, sincronizando e ativando..." : "Testar, Sincronizar e Ativar Link")
+                    </button>
+                    @if (HasSavedSyncSecret && OnClearSecretRequested.HasDelegate)
+                    {
+                        <button type="button"
+                                class="adm-btn adm-btn-outline cpw-clear-secret-btn"
+                                disabled="@IsPublishing"
+                                @onclick="HandleClearSecretAsync">
+                            ✕ Limpar chave salva neste aparelho
+                        </button>
+                    }
+                </div>
+                @if (LastSyncedAt.HasValue && !isLive)
+                {
+                    <p class="cpw-hint">
+                        Última sincronização: <strong>@LastSyncedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong>
+                    </p>
+                }
+            </article>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(StatusMessage))
+    {
+        <div class="cpw-feedback @(IsPublishing ? "cpw-feedback-progress" : IsLastActionSuccess ? "cpw-feedback-ok" : "cpw-feedback-err")">
+            @StatusMessage
+        </div>
+    }
+</section>
+
+@code {
+    public const string RenderBlueprintUrl = "https://dashboard.render.com/blueprint/new?repo=https://github.com/giovannipieronisleal-pixel/yourlink";
+
+    [Parameter] public string RenderUrl { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> RenderUrlChanged { get; set; }
+
+    [Parameter] public string SyncSecret { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SyncSecretChanged { get; set; }
+
+    [Parameter] public bool HasSavedSyncSecret { get; set; }
+    [Parameter] public bool IsOnlineConfigured { get; set; }
+    [Parameter] public bool IsSiteActive { get; set; }
+    [Parameter] public bool IsPublishing { get; set; }
+    [Parameter] public bool IsLastActionSuccess { get; set; }
+    [Parameter] public string? StatusMessage { get; set; }
+    [Parameter] public DateTimeOffset? LastSyncedAt { get; set; }
+    [Parameter] public string? OfficialCatalogUrl { get; set; }
+
+    [Parameter] public EventCallback OnPublishRequested { get; set; }
+    [Parameter] public EventCallback OnClearSecretRequested { get; set; }
+    [Parameter] public EventCallback OnCopyCatalogUrl { get; set; }
+    [Parameter] public EventCallback OnShareWhatsApp { get; set; }
+    [Parameter] public EventCallback OnOpenCatalogUrl { get; set; }
+
+    private bool _showSecret;
+    private bool _copiedBlueprint;
+    private bool _step1Opened;
+    private bool _editingSetup;
+
+    private async Task OpenRenderBlueprintAsync()
+    {
+        _step1Opened = true;
+        try
+        {
+            await Browser.Default.OpenAsync(new Uri(RenderBlueprintUrl), BrowserLaunchMode.External);
+        }
+        catch
+        {
+            try
+            {
+                await Launcher.Default.OpenAsync(new Uri(RenderBlueprintUrl));
+            }
+            catch
+            {
+                await CopyRenderBlueprintUrlAsync();
+            }
+        }
+    }
+
+    private async Task CopyRenderBlueprintUrlAsync()
+    {
+        try
+        {
+            await Clipboard.Default.SetTextAsync(RenderBlueprintUrl);
+            _copiedBlueprint = true;
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task PasteRenderUrlAsync()
+    {
+        try
+        {
+            var clip = await Clipboard.Default.GetTextAsync();
+            var normalized = GoogleCloudSyncService.NormalizePublicServerUrl(clip);
+            var value = string.IsNullOrWhiteSpace(normalized) ? (clip ?? string.Empty).Trim() : normalized;
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                await RenderUrlChanged.InvokeAsync(value);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task PasteSyncSecretAsync()
+    {
+        try
+        {
+            var clip = await Clipboard.Default.GetTextAsync();
+            var cleaned = GoogleCloudSyncService.NormalizeSyncSecretInput(clip);
+            if (!string.IsNullOrWhiteSpace(cleaned))
+            {
+                await SyncSecretChanged.InvokeAsync(cleaned);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private Task HandleRenderUrlInputAsync(ChangeEventArgs e)
+    {
+        return RenderUrlChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+    }
+
+    private Task HandleSyncSecretInputAsync(ChangeEventArgs e)
+    {
+        var cleaned = GoogleCloudSyncService.NormalizeSyncSecretInput(e.Value?.ToString());
+        return SyncSecretChanged.InvokeAsync(string.IsNullOrEmpty(cleaned) ? (e.Value?.ToString() ?? string.Empty) : cleaned);
+    }
+
+    private void ToggleShowSecret() => _showSecret = !_showSecret;
+
+    private void ToggleEditingSetup() => _editingSetup = !_editingSetup;
+
+    private Task HandlePublishClickAsync() => OnPublishRequested.InvokeAsync();
+
+    private Task HandleClearSecretAsync() => OnClearSecretRequested.InvokeAsync();
+}

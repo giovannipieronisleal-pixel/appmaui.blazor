@@ -7,6 +7,7 @@
 @inject ThemeService Theme
 @inject StoreBrandStateService BrandState
 @inject GoogleCloudSyncService CloudSync
+@inject AppUpdateService UpdateService
 
 @{
     var effectiveSlug = string.IsNullOrWhiteSpace(_form.StoreSlug)
@@ -17,11 +18,7 @@
         ? _form.OnlineBaseUrl.TrimEnd('/')
         : WhatsAppLinkBuilder.GenerateDefaultStoreUrl(_form.StoreName);
 
-    var isPlaceholderOrLocal = string.IsNullOrWhiteSpace(_form.OnlineBaseUrl)
-        || baseSiteUrl.Contains("://lojas.", StringComparison.OrdinalIgnoreCase)
-        || baseSiteUrl.Contains("minhaloja.com", StringComparison.OrdinalIgnoreCase)
-        || baseSiteUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
-        || baseSiteUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+    var isPlaceholderOrLocal = IsPlaceholderOrLocalUrl(baseSiteUrl);
 
     var storeCatalogUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl(baseSiteUrl, effectiveSlug);
     var qrCodeSvgUri = WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(storeCatalogUrl);
@@ -80,6 +77,19 @@
                     <div>Modo Escuro</div>
                     <div style="font-size: 0.72rem; color: var(--adm-muted); font-weight: 500;">OLED / Alto Contraste</div>
                 </div>
+            </div>
+
+            <div style="margin-top: 0.9rem; padding-top: 0.85rem; border-top: 1px solid var(--adm-border); display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+                <div style="font-size: 0.8rem; color: var(--adm-muted);">
+                    Versão instalada: <strong style="color: var(--adm-text);">v@(UpdateService.CurrentVersion)</strong>
+                </div>
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        style="padding: 0.35rem 0.7rem; font-size: 0.78rem;"
+                        disabled="@UpdateService.IsChecking"
+                        @onclick="CheckUpdatesManuallyAsync">
+                    @(UpdateService.IsChecking ? "⏳ Verificando..." : "🔄 Procurar Atualizações")
+                </button>
             </div>
         </section>
 
@@ -213,7 +223,7 @@
                 @if (isPlaceholderOrLocal)
                 {
                     <span>
-                        Sua vitrine já funciona <strong>direto aqui no aplicativo</strong> para cadastrar peças e vender no Pix pelo celular! Quando quiser divulgar um link na internet (Instagram/Bio), conecte um servidor próprio em <strong>Configurações Técnicas</strong> abaixo.
+                        Sua vitrine já funciona <strong>direto aqui no aplicativo</strong> para cadastrar peças e vender no Pix pelo celular! Quando quiser divulgar um link na internet (Instagram/Bio), <a href="#publicar-site-24h" style="color: var(--adm-accent); font-weight: 700;">publique seu site grátis em 3 passos logo abaixo</a>.
                     </span>
                 }
                 else
@@ -449,13 +459,31 @@
     </div>
 </div>
 
-<!-- Bloco Técnico Opcional (Fechado por padrão para não complicar quem não é dev) -->
+<CloudPublishWizard RenderUrl="@_wizardRenderUrl"
+                    RenderUrlChanged="v => _wizardRenderUrl = v"
+                    SyncSecret="@_ownServerSyncSecretInput"
+                    SyncSecretChanged="v => _ownServerSyncSecretInput = v"
+                    HasSavedSyncSecret="@_hasOwnServerSyncSecret"
+                    IsOnlineConfigured="@(!isPlaceholderOrLocal)"
+                    IsSiteActive="@_form.IsSiteActive"
+                    IsPublishing="@_publishingOneClick"
+                    IsLastActionSuccess="@_publishWizardSuccess"
+                    StatusMessage="@_publishWizardMessage"
+                    LastSyncedAt="@_form.LastOnlineSyncAt"
+                    OfficialCatalogUrl="@storeCatalogUrl"
+                    OnPublishRequested="PublishOneClickAsync"
+                    OnClearSecretRequested="ClearOwnServerSyncSecretAsync"
+                    OnCopyCatalogUrl="() => CopyStoreUrlAsync(storeCatalogUrl)"
+                    OnShareWhatsApp="() => ShareOnWhatsAppAsync(storeCatalogUrl)"
+                    OnOpenCatalogUrl="() => OpenBrowserAsync(storeCatalogUrl)" />
+
+<!-- Bloco Técnico Opcional (Fechado por padrão para quem não precisa de integração central/OAuth) -->
 <details class="adm-card" style="margin-top: 1.25rem; border: 1px dashed var(--adm-border);">
     <summary style="cursor: pointer; font-weight: 700; font-size: 0.94rem; color: var(--adm-text); user-select: none;">
-        ⚙️ Configurações Técnicas (Sincronizar com YouLink Admin, Servidor Próprio &amp; OAuth Google) — Para Devs / Opcional
+        ⚙️ Configurações Técnicas (Sincronizar com YouLink Admin &amp; OAuth Google) — Para Devs / Opcional
     </summary>
     <p style="font-size: 0.82rem; color: var(--adm-muted); margin: 0.5rem 0 1rem; line-height: 1.45;">
-        Se você usa a loja só neste celular para cadastrar peças e receber no Pix, não precisa mexer em nada aqui. Abra somente se quiser conectar este aparelho ao servidor central / PC (<strong>YouLink Admin</strong>) ou publicar em Cloud Run / Render / Fly.io.
+        Para publicar sua loja grátis na internet, use apenas o assistente de 3 passos acima. Abra esta seção somente se quiser conectar este aparelho ao servidor central (<strong>YouLink Admin</strong>) ou verificar sua conta Google via OAuth.
     </p>
     <div style="display: flex; flex-direction: column; gap: 1rem;">
         <section class="adm-card" style="margin: 0; border-left: 4px solid var(--adm-accent);">
@@ -491,125 +519,6 @@
                 </div>
             }
         </section>
-
-<!-- Card: Meu Servidor Próprio (BYO Server — Google Cloud Run / Render / Fly.io) -->
-<section class="adm-card" style="margin-top: 0; border-left: 4px solid #2563EB;">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
-        <div>
-            <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #2563EB;">
-                Infraestrutura Dedicada (Opcional)
-            </div>
-            <h2 style="font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0; color: var(--adm-text);">
-                ☁️ Meu Servidor Próprio (Google Cloud Run / Render / Fly.io)
-            </h2>
-            <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0.25rem 0 0; line-height: 1.45;">
-                Conecte uma instância exclusiva da sua loja rodando na <strong>sua própria conta Google Cloud Run</strong>, Render ou Fly.io. Reduz em <strong>-R$ 10,00/mês</strong> os planos pagos!
-            </p>
-        </div>
-        <div>
-            @if (string.Equals(_serverHostingMode, "DedicatedOwnServer", StringComparison.OrdinalIgnoreCase))
-            {
-                <span class="pill-badge pill-green">✓ Servidor Próprio Ativo (@_ownServerProvider)</span>
-            }
-            else
-            {
-                <span class="pill-badge pill-gold">Modo Padrão da Plataforma</span>
-            }
-        </div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.85rem;">
-        <div class="adm-field">
-            <label class="adm-label">Modo de Hospedagem do Catálogo</label>
-            <select class="adm-input" @bind="_serverHostingMode">
-                <option value="PlatformShared">Servidor da Plataforma (Já Incluso)</option>
-                <option value="DedicatedOwnServer">Meu Servidor Próprio Exclusivo (-R$ 10/mês)</option>
-            </select>
-        </div>
-
-        <div class="adm-field">
-            <label class="adm-label">Provedor do Servidor Próprio</label>
-            <select class="adm-input" @bind="_ownServerProvider">
-                <option value="GoogleCloudRun">Google Cloud Run (Nível Gratuito)</option>
-                <option value="Render">Render Web Service (Free Tier)</option>
-                <option value="FlyIo">Fly.io App</option>
-                <option value="VPSPropria">VPS Própria / Docker</option>
-                <option value="Outro">Outro Provedor HTTPS</option>
-            </select>
-        </div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.85rem; margin-top: 0.75rem;">
-        <div class="adm-field">
-            <label class="adm-label">URL HTTPS do Seu Servidor</label>
-            <input type="text" class="adm-input" @bind="_form.OnlineBaseUrl"
-                   placeholder="https://minhaloja-xxxxxx.a.run.app" />
-            <span style="font-size: 0.73rem; color: var(--adm-muted);">
-                Endpoint usado para publicar o catálogo público e receber sincronizações em <code>/api/cloud/sync-state</code>.
-            </span>
-        </div>
-
-        <div class="adm-field">
-            <label class="adm-label">
-                Chave Secreta de Sincronização (X-YouLink-Sync-Key)
-                @if (_hasOwnServerSyncSecret)
-                {
-                    <span class="pill-badge pill-green" style="margin-left: 0.35rem; font-size: 0.68rem;">Salva</span>
-                }
-            </label>
-            <input type="password" class="adm-input" @bind="_ownServerSyncSecretInput"
-                   placeholder="@(_hasOwnServerSyncSecret ? "•••••••• (preencha só se quiser trocar)" : "Defina igual à env YOULINK_SYNC_SECRET")" />
-            <span style="font-size: 0.73rem; color: var(--adm-muted);">
-                Obrigatória para o app enviar produtos ao seu servidor remoto sem precisar de senha admin.
-            </span>
-        </div>
-    </div>
-
-    <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-top: 0.85rem;">
-        <button type="button"
-                class="adm-btn adm-btn-primary"
-                disabled="@_savingHosting"
-                @onclick="SaveHostingAndGoogleSettingsAsync">
-            @(_savingHosting ? "⏳ Salvando..." : "💾 Salvar Servidor Próprio")
-        </button>
-
-        <button type="button"
-                class="adm-btn adm-btn-outline"
-                disabled="@_testingOwnServer"
-                @onclick="TestOwnServerNowAsync">
-            @(_testingOwnServer ? "⏳ Testando..." : "⚡ Testar Conexão Agora")
-        </button>
-
-        @if (_hasOwnServerSyncSecret)
-        {
-            <button type="button"
-                    class="adm-btn adm-btn-outline"
-                    style="color: var(--adm-danger);"
-                    disabled="@_savingHosting"
-                    @onclick="ClearOwnServerSyncSecretAsync">
-                ✕ Limpar Sync Key
-            </button>
-        }
-    </div>
-
-    @if (_ownServerTestResult is not null)
-    {
-        <div style="margin-top: 0.75rem; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.82rem; @(_ownServerTestResult.IsOnline ? "background: rgba(34,197,94,0.12); border: 1px solid var(--adm-success); color: var(--adm-success);" : "background: rgba(239,68,68,0.12); border: 1px solid var(--adm-danger); color: var(--adm-danger);")">
-            <strong>@(_ownServerTestResult.IsOnline ? "✓ " : "✕ ")@_ownServerTestResult.StatusMessage</strong>
-        </div>
-    }
-
-    <details style="margin-top: 0.85rem; font-size: 0.8rem; color: var(--adm-muted);">
-        <summary style="cursor: pointer; font-weight: 700; color: var(--adm-text);">
-            📖 Passo a passo rápido: como subir seu servidor gratuito em 3 minutos
-        </summary>
-        <ol style="margin: 0.5rem 0 0; padding-left: 1.25rem; line-height: 1.55;">
-            <li><strong>Google Cloud Run (Cota Gratuita mensal):</strong> No repositório oficial, rode <code>.\deploy-google-cloud.ps1</code> escolhendo uma chave em <code>YOULINK_SYNC_SECRET</code> e cole a URL <code>https://...run.app</code> acima.</li>
-            <li><strong>Render ou Fly.io:</strong> Faça deploy do container <code>Dockerfile</code> (projeto <code>ClothingStore.Api</code>) com a variável <code>YOULINK_SYNC_SECRET</code> e cole o endereço HTTPS gerado.</li>
-            <li>Clique em <strong>Testar Conexão Agora</strong> e depois em <strong>Forçar Sincronização com Nuvem</strong> para enviar suas roupas!</li>
-        </ol>
-    </details>
-</section>
 
 <!-- Card: Verificação de Conta Google (Google One Pro / Workspace) -->
 <section class="adm-card" style="margin-top: 1.25rem; border-left: 4px solid #7C3AED;">
@@ -1036,11 +945,12 @@
     private string? _googleHostedDomain;
     private DateTimeOffset? _googleAccountVerifiedAt;
     private bool _qualifiesForDedicatedBenefit;
-    private bool _savingHosting;
-    private bool _testingOwnServer;
     private bool _verifyingGoogle;
-    private OwnServerHealthCheckResult? _ownServerTestResult;
     private GoogleAccountTierVerificationResult? _googleVerifyResult;
+    private string _wizardRenderUrl = string.Empty;
+    private bool _publishingOneClick;
+    private bool _publishWizardSuccess;
+    private string? _publishWizardMessage;
     private string _centralServerUrlInput = string.Empty;
     private bool _connectingCentralServer;
     private bool _centralServerConnectedOk;
@@ -1687,7 +1597,7 @@
     private void ApplyHostingAndGoogleFields(AdminStoreSettingsDto s)
     {
         _serverHostingMode = string.IsNullOrWhiteSpace(s.ServerHostingMode) ? "PlatformShared" : s.ServerHostingMode;
-        _ownServerProvider = string.IsNullOrWhiteSpace(s.OwnServerProvider) ? "GoogleCloudRun" : s.OwnServerProvider;
+        _ownServerProvider = string.IsNullOrWhiteSpace(s.OwnServerProvider) ? "Render" : s.OwnServerProvider;
         _hasOwnServerSyncSecret = s.HasOwnServerSyncSecret;
         _googleOAuthClientId = s.GoogleOAuthClientId ?? string.Empty;
         _googleAccountEmail = s.GoogleAccountEmail;
@@ -1697,50 +1607,214 @@
         _googleAccountVerifiedAt = s.GoogleAccountVerifiedAt;
         _qualifiesForDedicatedBenefit = s.QualifiesForDedicatedServerBenefit;
 
+        _wizardRenderUrl = !IsPlaceholderOrLocalUrl(s.OnlineBaseUrl)
+            ? s.OnlineBaseUrl!
+            : string.Empty;
+
         _form.ServerHostingMode = _serverHostingMode;
         _form.OwnServerProvider = _ownServerProvider;
         _form.GoogleOAuthClientId = _googleOAuthClientId;
     }
 
-    private async Task SaveHostingAndGoogleSettingsAsync()
+    private static bool IsPlaceholderOrLocalUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return true;
+
+        var trimmed = url.Trim().TrimEnd('/');
+        return trimmed.Contains("://lojas.", StringComparison.OrdinalIgnoreCase)
+               || trimmed.Contains("minhaloja.com", StringComparison.OrdinalIgnoreCase)
+               || trimmed.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+               || trimmed.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string InferOwnServerProvider(string normalizedUrl)
+    {
+        if (normalizedUrl.Contains(".onrender.com", StringComparison.OrdinalIgnoreCase))
+            return "Render";
+        if (normalizedUrl.Contains(".run.app", StringComparison.OrdinalIgnoreCase))
+            return "GoogleCloudRun";
+        if (normalizedUrl.Contains(".fly.dev", StringComparison.OrdinalIgnoreCase))
+            return "FlyIo";
+        return "Render";
+    }
+
+    private void SyncUpdatedSettingsToState(AdminStoreSettingsDto updated)
+    {
+        _form.StoreName = updated.StoreName;
+        _form.StoreSlug = updated.StoreSlug;
+        _form.WhatsappNumber = updated.WhatsappNumber;
+        _form.StoreDescription = updated.StoreDescription;
+        _form.LogoPublicUrl = updated.LogoPublicUrl;
+        _form.DefaultLowStockThreshold = updated.DefaultLowStockThreshold;
+        _form.OnlineBaseUrl = updated.OnlineBaseUrl;
+        _form.AutoSyncOnlineOnSave = updated.AutoSyncOnlineOnSave;
+        _form.LastOnlineSyncAt = updated.LastOnlineSyncAt;
+        _form.IsSiteActive = updated.IsSiteActive;
+        _form.DeactivationReason = updated.DeactivationReason;
+        _form.LastActivityAt = updated.LastActivityAt;
+        _form.PublishedStoreName = updated.PublishedStoreName;
+        _planTier = updated.PlanTier;
+        _planExpiresAt = updated.PlanExpiresAt;
+        _activeGiftCardCode = updated.ActiveGiftCardCode;
+        _basicPlanPrice = updated.BasicPlanMonthlyPrice;
+        _intermediaryPlanPrice = updated.IntermediaryPlanMonthlyPrice;
+        _premiumPlanPrice = updated.PremiumPlanMonthlyPrice;
+        _designDraft = (updated.Design ?? StoreDesignDto.CreateMinimalistaLuxo()).Clone();
+
+        if (!string.IsNullOrWhiteSpace(updated.OnlineBaseUrl))
+        {
+            _domainInput = updated.OnlineBaseUrl
+                .Replace("https://", "", StringComparison.OrdinalIgnoreCase)
+                .Replace("http://", "", StringComparison.OrdinalIgnoreCase)
+                .TrimEnd('/');
+        }
+
+        ApplyHostingAndGoogleFields(updated);
+        BrandState.ApplyFromAdminSettings(updated);
+    }
+
+    private async Task PublishOneClickAsync()
     {
         _error = null;
         _success = null;
-        _savingHosting = true;
+        _publishWizardMessage = null;
+        _publishWizardSuccess = false;
+
+        var normalizedUrl = GoogleCloudSyncService.NormalizePublicServerUrl(_wizardRenderUrl);
+        if (string.IsNullOrWhiteSpace(normalizedUrl) || IsPlaceholderOrLocalUrl(normalizedUrl))
+        {
+            _publishWizardMessage = "Cole a URL gerada no painel do Render no Passo 2 (ex.: https://minha-loja.onrender.com).";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_form.StoreName))
+        {
+            _publishWizardMessage = "Preencha o Nome da Loja no card Identidade da Loja & WhatsApp antes de ativar.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_form.WhatsappNumber))
+        {
+            _publishWizardMessage = "Preencha o WhatsApp de Atendimento da loja antes de ativar.";
+            return;
+        }
+
+        _wizardRenderUrl = normalizedUrl;
+        _publishingOneClick = true;
+        _publishWizardMessage = "🔍 Conectando ao seu site no Render...";
+        StateHasChanged();
+
+        var progressReporter = new Progress<string>(msg =>
+        {
+            _publishWizardMessage = msg;
+            InvokeAsync(StateHasChanged);
+        });
+
         try
         {
-            _form.ServerHostingMode = _serverHostingMode;
-            _form.OwnServerProvider = _ownServerProvider;
+            var health = await Gateway.TestOwnServerConnectionAsync(normalizedUrl, progress: progressReporter);
+            if (!health.IsOnline)
+            {
+                _publishWizardSuccess = false;
+                _publishWizardMessage = $"Não conseguimos acessar {normalizedUrl} ({health.StatusMessage}). Confira se o deploy no Render já ficou com status Live.";
+                return;
+            }
+
+            var cleanedSecret = GoogleCloudSyncService.NormalizeSyncSecretInput(_ownServerSyncSecretInput);
+            if (string.IsNullOrWhiteSpace(cleanedSecret) &&
+                !_hasOwnServerSyncSecret &&
+                health.StatusMessage.Contains("Sync Key", StringComparison.OrdinalIgnoreCase))
+            {
+                _publishWizardSuccess = false;
+                _publishWizardMessage = "O servidor respondeu normalmente e exige a chave YOULINK_SYNC_SECRET. Cole-a no Passo 2 e tente novamente.";
+                return;
+            }
+
+            _publishWizardMessage = "📦 Enviando produtos, fotos e configurações para o site 24h...";
+            await InvokeAsync(StateHasChanged);
+
+            if (_autoSyncSlugWithName || string.IsNullOrWhiteSpace(_form.StoreSlug))
+            {
+                _form.StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName);
+            }
+
+            if (string.IsNullOrWhiteSpace(_form.StoreDescription))
+            {
+                _form.StoreDescription = $"Catálogo digital oficial de {_form.StoreName.Trim()}.";
+            }
+
+            _form.OnlineBaseUrl = normalizedUrl;
+            _form.AutoSyncOnlineOnSave = false;
+            _form.PlanTier = _planTier;
+            _form.ServerHostingMode = "DedicatedOwnServer";
+            _form.OwnServerProvider = InferOwnServerProvider(normalizedUrl);
             _form.GoogleOAuthClientId = _googleOAuthClientId;
             _form.ClearOwnServerSyncSecret = false;
-            _form.OwnServerSyncSecret = string.IsNullOrWhiteSpace(_ownServerSyncSecretInput)
+            _form.OwnServerSyncSecret = string.IsNullOrWhiteSpace(cleanedSecret)
                 ? null
-                : _ownServerSyncSecretInput.Trim();
+                : cleanedSecret;
 
-            var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            if (BrandState.IsPremiumPlan)
+            {
+                _form.Design = _designDraft.Clone();
+            }
+            else if (BrandState.IsIntermediatePlan)
+            {
+                _form.Design = StoreDesignPresets.ResolveByPresetKey(_designDraft.PresetKey);
+            }
+
+            var updated = await Gateway.UpdateStoreSettingsAsync(_form, suppressAutoSync: true);
             _form.OwnServerSyncSecret = null;
-            _ownServerSyncSecretInput = string.Empty;
-            ApplyHostingAndGoogleFields(updated);
-            BrandState.ApplyFromAdminSettings(updated);
 
-            _success = string.Equals(updated.ServerHostingMode, "DedicatedOwnServer", StringComparison.OrdinalIgnoreCase)
-                ? $"✅ Modo 'Meu Servidor Próprio' ({updated.OwnServerProvider}) salvo! Lembre de testar e sincronizar o catálogo."
-                : "✅ Preferências de servidor e OAuth salvas.";
+            if (!updated.IsSiteActive)
+            {
+                updated = await Gateway.ActivateSiteAsync(suppressAutoSync: true);
+            }
+
+            _form.AutoSyncOnlineOnSave = true;
+            _form.PublishedStoreName = updated.StoreName;
+            updated = await Gateway.UpdateStoreSettingsAsync(_form, suppressAutoSync: true);
+            if (!updated.IsSiteActive)
+            {
+                updated = await Gateway.ActivateSiteAsync(suppressAutoSync: true);
+            }
+
+            var (syncOk, syncMessage) = await CloudSync.SyncCatalogToCloudAsync(progress: progressReporter);
+            var refreshed = await Gateway.GetStoreSettingsAsync();
+            SyncUpdatedSettingsToState(refreshed);
+
+            if (syncOk)
+            {
+                _ownServerSyncSecretInput = string.Empty;
+                var liveCatalogUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl(refreshed.OnlineBaseUrl, refreshed.StoreSlug);
+                _publishWizardSuccess = true;
+                _publishWizardMessage = $"✓ Servidor validado ({health.LatencyMs} ms)! {syncMessage} Link Oficial, WhatsApp e QR Code atualizados para {liveCatalogUrl}.";
+                _success = _publishWizardMessage;
+            }
+            else
+            {
+                _publishWizardSuccess = false;
+                _publishWizardMessage = $"Servidor respondeu em /api/cloud/status ({health.LatencyMs} ms), mas a sincronização falhou: {syncMessage}";
+                _error = _publishWizardMessage;
+            }
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            _publishWizardSuccess = false;
+            _publishWizardMessage = $"Não foi possível concluir a publicação: {ex.Message}";
+            _error = _publishWizardMessage;
         }
         finally
         {
-            _savingHosting = false;
+            _publishingOneClick = false;
         }
     }
 
     private async Task ClearOwnServerSyncSecretAsync()
     {
         _error = null;
-        _savingHosting = true;
+        _publishingOneClick = true;
         try
         {
             _form.ServerHostingMode = _serverHostingMode;
@@ -1748,9 +1822,12 @@
             _form.OwnServerSyncSecret = null;
             _form.ClearOwnServerSyncSecret = true;
 
-            var updated = await Gateway.UpdateStoreSettingsAsync(_form);
+            var updated = await Gateway.UpdateStoreSettingsAsync(_form, suppressAutoSync: true);
             _form.ClearOwnServerSyncSecret = false;
+            _ownServerSyncSecretInput = string.Empty;
             ApplyHostingAndGoogleFields(updated);
+            _publishWizardSuccess = true;
+            _publishWizardMessage = "Chave YOULINK_SYNC_SECRET removida deste aparelho. Cole uma nova chave no Passo 2 para sincronizar novamente.";
             _success = "Chave secreta de sincronização removida.";
         }
         catch (Exception ex)
@@ -1759,25 +1836,7 @@
         }
         finally
         {
-            _savingHosting = false;
-        }
-    }
-
-    private async Task TestOwnServerNowAsync()
-    {
-        _ownServerTestResult = null;
-        _testingOwnServer = true;
-        try
-        {
-            _ownServerTestResult = await Gateway.TestOwnServerConnectionAsync(_form.OnlineBaseUrl);
-        }
-        catch (Exception ex)
-        {
-            _ownServerTestResult = new OwnServerHealthCheckResult(false, _form.OnlineBaseUrl ?? string.Empty, null, 0, ex.Message);
-        }
-        finally
-        {
-            _testingOwnServer = false;
+            _publishingOneClick = false;
         }
     }
 
@@ -1849,6 +1908,12 @@
         {
             _verifyingGoogle = false;
         }
+    }
+
+    private async Task CheckUpdatesManuallyAsync()
+    {
+        await UpdateService.CheckForUpdatesAsync(manualTrigger: true);
+        UpdateService.OpenPopup();
     }
 
     public void Dispose()

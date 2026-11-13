@@ -6,6 +6,7 @@
 @inject ThemeService Theme
 @inject StoreBrandStateService BrandState
 @inject GoogleCloudSyncService CloudSync
+@inject AppUpdateService UpdateService
 @implements IDisposable
 
 <div class="@Theme.CurrentThemeClass">
@@ -113,16 +114,19 @@
                     </div>
                 </header>
 
-                @if (_compatibilityStatus?.UpdateRecommended == true && !_dismissedUpdateBanner)
+                @if ((UpdateService.AvailableRelease?.IsUpdateAvailable == true || _compatibilityStatus?.UpdateRecommended == true) && !_dismissedUpdateBanner)
                 {
+                    var latestVersionLabel = UpdateService.AvailableRelease?.IsUpdateAvailable == true
+                        ? UpdateService.AvailableRelease.LatestVersion
+                        : _compatibilityStatus?.LatestAppVersion ?? string.Empty;
                     <div class="adm-compat-banner" style="display: flex; align-items: center; justify-content: space-between; gap: 0.65rem; flex-wrap: wrap; padding: 0.6rem 1rem; background: color-mix(in srgb, var(--adm-accent) 12%, var(--adm-surface)); border-bottom: 1px solid var(--adm-border); font-size: 0.82rem;">
                         <span>
-                            ✨ <strong>Atualização v@(_compatibilityStatus.LatestAppVersion) disponível</strong> — sua versão continua funcionando normalmente com a API @(_compatibilityStatus.ApiVersion).
+                            ✨ <strong>Atualização v@(latestVersionLabel) disponível</strong> — toque para baixar e atualizar diretamente pelo app.
                         </span>
                         <div style="display: flex; gap: 0.45rem; align-items: center;">
-                            <a href="@_compatibilityStatus.ReleaseUrl" target="_blank" rel="noopener" class="adm-btn adm-btn-accent" style="padding: 0.3rem 0.65rem; font-size: 0.78rem;">
-                                ⬇️ Baixar v@(_compatibilityStatus.LatestAppVersion)
-                            </a>
+                            <button type="button" class="adm-btn adm-btn-accent" style="padding: 0.3rem 0.65rem; font-size: 0.78rem;" @onclick="UpdateService.OpenPopup">
+                                🚀 Atualizar v@(latestVersionLabel)
+                            </button>
                             <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.3rem 0.55rem; font-size: 0.76rem;" @onclick="() => _dismissedUpdateBanner = true">
                                 Dispensar
                             </button>
@@ -138,6 +142,7 @@
     }
 
     <appmaui.blazor.Components.Pages.UserProfileModal @bind-IsOpen="_showUserProfileModal" />
+    <appmaui.blazor.Components.Shared.AppUpdateModal />
 </div>
 
 @code {
@@ -167,12 +172,30 @@
         Theme.OnThemeChanged += OnThemeChanged;
         BrandState.OnBrandChanged += OnBrandChanged;
         CloudSync.OnSyncStatusChanged += OnSyncStatusChanged;
+        UpdateService.StateChanged += OnUpdateStateChanged;
 
         await Gateway.TryRestoreSessionAsync();
         await RefreshStoreInfoAsync();
-        if (_compatibilityStatus is null)
+        _ = RunStartupBackgroundChecksAsync();
+    }
+
+    private async Task RunStartupBackgroundChecksAsync()
+    {
+        try
         {
-            _compatibilityStatus = await Gateway.RefreshCompatibilityAsync();
+            await UpdateService.CheckForUpdatesAsync();
+            _compatibilityStatus = Gateway.LatestCompatibilityStatus;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await CloudSync.EnsureCloudMirrorPopulatedAsync();
+        }
+        catch
+        {
         }
     }
 
@@ -219,7 +242,13 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private void OnSyncStatusChanged()
+    private async void OnSyncStatusChanged()
+    {
+        await RefreshStoreInfoAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnUpdateStateChanged()
     {
         InvokeAsync(StateHasChanged);
     }
@@ -252,5 +281,6 @@
         Theme.OnThemeChanged -= OnThemeChanged;
         BrandState.OnBrandChanged -= OnBrandChanged;
         CloudSync.OnSyncStatusChanged -= OnSyncStatusChanged;
+        UpdateService.StateChanged -= OnUpdateStateChanged;
     }
 }

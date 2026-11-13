@@ -7,6 +7,7 @@ using ClothingStore.Infrastructure.Security;
 using ClothingStore.Infrastructure.Storage;
 using ClothingStore.Shared.Clients;
 using ClothingStore.Shared.DTOs;
+using ClothingStore.Shared.Helpers;
 using ClothingStore.Web.Components;
 using ClothingStore.Web.Services;
 
@@ -55,6 +56,7 @@ builder.Services.AddSingleton<IImageStorageService>(sp =>
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ProductManagementService>();
 builder.Services.AddScoped<EmployeeAndSettingsService>();
+builder.Services.AddScoped<CloudSyncStateService>();
 builder.Services.AddScoped<OrderAndShippingService>();
 builder.Services.AddScoped<CatalogDataGateway>();
 
@@ -91,6 +93,8 @@ app.MapGet("/api/public/store-info", async (CatalogService catalogService, Cance
 app.MapGet("/api/cloud/status", async (IClothingStoreRepository repository, CancellationToken ct) =>
 {
     var settings = await repository.GetStoreSettingsAsync(ct);
+    var categories = await repository.GetCategoriesAsync(onlyActive: false, ct);
+    var products = await repository.GetProductsAsync(includeArchived: false, ct);
     var hasEnvSecret = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"));
     return Results.Ok(new
     {
@@ -98,18 +102,41 @@ app.MapGet("/api/cloud/status", async (IClothingStoreRepository repository, Canc
         provider = settings.OwnServerProvider,
         hostingMode = settings.ServerHostingMode,
         storeName = settings.StoreName,
+        storeSlug = settings.StoreSlug,
+        isSiteActive = settings.IsSiteActive,
+        categoriesCount = categories.Count,
+        productsCount = products.Count,
         service = "ClothingStore.Web",
+        appVersion = AppUpdateCatalog.CurrentAppVersion,
         requiresSyncKey = hasEnvSecret || !string.IsNullOrWhiteSpace(settings.OwnServerSyncSecret),
         timestamp = DateTimeOffset.UtcNow
     });
 });
 
+app.MapGet("/api/app/compatibility", (string? clientVersion) => Results.Ok(BuildWebCompatibilityDto(clientVersion)));
+
+app.MapGet("/api/v1/app/compatibility", (string? clientVersion) => Results.Ok(BuildWebCompatibilityDto(clientVersion)));
+
+static ApiCompatibilityStatusDto BuildWebCompatibilityDto(string? clientVersion)
+{
+    var updateRecommended = AppUpdateCatalog.IsVersionNewer(AppUpdateCatalog.CurrentAppVersion, clientVersion);
+    return new ApiCompatibilityStatusDto(
+        ApiVersion: "v1",
+        MinSupportedAppVersion: "1.0.0",
+        LatestAppVersion: AppUpdateCatalog.CurrentAppVersion,
+        UpdateRecommended: updateRecommended,
+        ClientAppVersion: clientVersion,
+        ReleaseUrl: AppUpdateCatalog.ReleasesPageUrl,
+        Message: updateRecommended
+            ? $"Há uma atualização v{AppUpdateCatalog.CurrentAppVersion} disponível para o YouLink."
+            : "Seu aplicativo está atualizado.");
+}
+
 app.MapPost("/api/cloud/sync-state", async (
     HttpContext httpContext,
     CloudCatalogSyncPayload payload,
     IClothingStoreRepository repository,
-    EmployeeAndSettingsService settingsService,
-    ProductManagementService productService,
+    CloudSyncStateService syncStateService,
     CancellationToken ct) =>
 {
     if (!await IsAuthorizedSyncRequestAsync(httpContext, repository, ct))
@@ -117,28 +144,25 @@ app.MapPost("/api/cloud/sync-state", async (
         return Results.Unauthorized();
     }
 
-    if (!string.IsNullOrWhiteSpace(payload.Settings.StoreName))
+    try
     {
-        await settingsService.UpdateStoreSettingsAsync(null, payload.Settings, ct);
-    }
+        var result = await syncStateService.ApplySyncPayloadAsync(payload, ct);
 
-    foreach (var cat in payload.Categories)
-    {
-        await productService.CreateCategoryAsync(cat, ct);
+        return Results.Ok(new
+        {
+            message = "Catálogo online 24h sincronizado com sucesso!",
+            syncedAt = DateTimeOffset.UtcNow,
+            categoriesCount = result.CategoriesCount,
+            productsCount = result.ProductsCount,
+            isSiteActive = result.IsSiteActive,
+            storeSlug = result.StoreSlug,
+            catalogUrl = result.EffectiveCatalogUrl
+        });
     }
-
-    foreach (var prod in payload.Products)
+    catch (ClothingStore.Domain.Exceptions.DomainException ex)
     {
-        await productService.CreateProductAsync(prod, null, ct);
+        return Results.BadRequest(new { error = ex.Message });
     }
-
-    return Results.Ok(new
-    {
-        message = "Catálogo online 24h sincronizado com sucesso!",
-        syncedAt = DateTimeOffset.UtcNow,
-        categoriesCount = payload.Categories.Count,
-        productsCount = payload.Products.Count
-    });
 }).DisableAntiforgery();
 
 app.MapRazorComponents<App>()
@@ -155,15 +179,26 @@ static string ResolveDatabasePath(IConfiguration configuration, string contentRo
         return Path.GetFullPath(configured);
     }
 
-    if (Directory.Exists(@"C:\Dev\appmaui.blazor"))
+    var parentSrcDir = Path.GetFullPath(Path.Combine(contentRootPath, "..", "..", "src"));
+    var workspaceCandidate = Directory.Exists(parentSrcDir)
+        ? Path.GetFullPath(Path.Combine(contentRootPath, "..", "..", "App_Data", "clothingstore_db.json"))
+        : null;
+    if (!string.IsNullOrWhiteSpace(workspaceCandidate) && EnsureWritableDirectory(workspaceCandidate))
     {
-        return @"C:\Dev\appmaui.blazor\App_Data\clothingstore_db.json";
+        return workspaceCandidate;
     }
 
-    var parentSrcDir = Path.GetFullPath(Path.Combine(contentRootPath, "..", "..", "src"));
-    var candidate = Directory.Exists(parentSrcDir)
-        ? Path.GetFullPath(Path.Combine(contentRootPath, "..", "..", "App_Data", "clothingstore_db.json"))
-        : Path.Combine(contentRootPath, "App_Data", "clothingstore_db.json");
+    foreach (var devRoot in new[] { @"C:\Dev\YouLink", @"C:\Dev\appmaui.blazor" })
+    {
+        if (Directory.Exists(devRoot))
+        {
+            var devCandidate = Path.Combine(devRoot, "App_Data", "clothingstore_db.json");
+            if (EnsureWritableDirectory(devCandidate))
+                return devCandidate;
+        }
+    }
+
+    var candidate = Path.Combine(contentRootPath, "App_Data", "clothingstore_db.json");
 
     if (EnsureWritableDirectory(candidate))
     {
