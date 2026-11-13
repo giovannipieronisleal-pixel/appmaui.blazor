@@ -8,8 +8,8 @@
 
 Os instaladores prontos (**Android `.apk`** e **Windows `win-x64 .zip`**) são gerados automaticamente pelo workflow [release-youlink.yml](.github/workflows/release-youlink.yml):
 
-1. Acesse a aba **Releases** do repositório para baixar a versão empacotada (`YouLink-Android.apk` e `YouLink-Windows-x64.zip`).
-2. Ou acesse a aba **Actions** → último workflow executado com sucesso → baixe os **Artifacts** da compilação mais recente.
+1. **[👉 Abrir a Aba Releases (Baixar Android APK e Windows .zip)](https://github.com/giovannipieronisleal-pixel/yourlink/releases)** — ou vá direto para a **[Última Versão Publicada (Latest Release)](https://github.com/giovannipieronisleal-pixel/yourlink/releases/latest)** para baixar `YouLink-Android.apk` e `YouLink-Windows-x64.zip`.
+2. Ou acesse a aba **[GitHub Actions](https://github.com/giovannipieronisleal-pixel/yourlink/actions)** → último workflow executado com sucesso → baixe os **Artifacts** da compilação mais recente.
 
 > **Nota para Android:** por ser uma compilação distribuída diretamente fora da Play Store, ative *"Instalar apps desconhecidos"* ao abrir o arquivo `.apk` no celular.
 
