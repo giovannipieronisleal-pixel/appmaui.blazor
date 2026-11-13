@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.git/
+.github/
+.vs/
+.vscode/
+App_Data/
+Platforms/
+Resources/
+tests/
+*.apk
+*.msix
+*.log

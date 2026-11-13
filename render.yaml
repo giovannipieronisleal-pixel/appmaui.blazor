@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: youlink-loja
+    runtime: docker
+    dockerfilePath: ./src/ClothingStore.Web/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: YOULINK_SYNC_SECRET
+        generateValue: true

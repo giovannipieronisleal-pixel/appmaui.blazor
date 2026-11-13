@@ -19,7 +19,8 @@ RUN dotnet publish "ClothingStore.Web.csproj" -c Release -o /app/publish /p:UseA
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080
+ENV PORT=8080
 COPY --from=build /app/publish .
+RUN mkdir -p /app/App_Data && chmod -R 777 /app/App_Data
 ENTRYPOINT ["dotnet", "ClothingStore.Web.dll"]
 
