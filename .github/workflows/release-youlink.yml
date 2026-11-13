@@ -132,14 +132,15 @@ jobs:
             -OutputInstallerDir dist-installer `
             -Version $appVer `
             -RequireInstaller
+          New-Item -ItemType Directory -Force dist-release | Out-Null
+          Copy-Item dist-zip/YouLink-Windows-x64.zip dist-release/YouLink-Windows-x64.zip -Force
+          Copy-Item dist-installer/YouLink-Setup-x64.exe dist-release/YouLink-Setup-x64.exe -Force
 
       - name: Enviar artefato Windows x64 (.zip portável + Setup .exe)
         uses: actions/upload-artifact@v4
         with:
           name: YouLink-Windows-x64
-          path: |
-            dist-zip/YouLink-Windows-x64.zip
-            dist-installer/YouLink-Setup-x64.exe
+          path: dist-release/*
 
   release:
     name: Publicar GitHub Release e Limpar Antigos
@@ -183,7 +184,10 @@ jobs:
           fi
 
           echo "Release alvo: $TAG (commit $TARGET_SHA)"
-          ls -lh release-assets/
+          rm -rf flat-assets
+          mkdir -p flat-assets
+          find release-assets -type f -exec cp -f {} flat-assets/ \;
+          ls -lh flat-assets/
 
           RELEASE_NOTES=$(printf '%s\n' \
             "## YouLink $TAG" \
@@ -202,10 +206,10 @@ jobs:
 
           if gh release view "$TAG" --repo "$REPO_NAME" >/dev/null 2>&1; then
             echo "Release $TAG já existe; atualizando instaladores e descrição..."
-            gh release upload "$TAG" ./release-assets/* --clobber --repo "$REPO_NAME"
+            gh release upload "$TAG" ./flat-assets/* --clobber --repo "$REPO_NAME"
             gh release edit "$TAG" --title "YouLink $TAG" --notes "$RELEASE_NOTES" --repo "$REPO_NAME"
           else
-            gh release create "$TAG" ./release-assets/* \
+            gh release create "$TAG" ./flat-assets/* \
               --target "$TARGET_SHA" \
               --title "YouLink $TAG" \
               --notes "$RELEASE_NOTES" \
