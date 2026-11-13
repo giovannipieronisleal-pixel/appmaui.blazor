@@ -161,21 +161,19 @@ jobs:
           echo "Release alvo: $TAG (commit $TARGET_SHA)"
           ls -lh release-assets/
 
-          RELEASE_NOTES=$(cat <<EOF
-## YouLink $TAG
-
-Aplicativo **YouLink** para **Android** e **Windows x64** com vitrine web integrada, gestão de estoque e publicação gratuita 24h direto pelo app.
-
-### Arquivos deste Release
-- \`YouLink-Windows-x64.zip\` — versão portável Self-Contained para Windows 10/11 (extraia e execute; não exige .NET instalado).
-- \`YouLink-Android.apk\` — instalador Android (ative *"Instalar apps desconhecidos"* se instalar fora da Play Store).
-
-### Principais Recursos
-- Publicação de site grátis 24h no Render em 3 passos sem terminal (**Loja & Visual**).
-- Atualização automática com popup dentro do próprio app (Windows preservando \`App_Data\` e Android).
-- Catálogo digital, QR Code, pedidos no WhatsApp, Pix EMV e cálculo de frete PAC/SEDEX.
-EOF
-)
+          RELEASE_NOTES=$(printf '%s\n' \
+            "## YouLink $TAG" \
+            '' \
+            'Aplicativo **YouLink** para **Android** e **Windows x64** com vitrine web integrada, gestão de estoque e publicação gratuita 24h direto pelo app.' \
+            '' \
+            '### Arquivos deste Release' \
+            '- `YouLink-Windows-x64.zip` — versão portável Self-Contained para Windows 10/11 (extraia e execute; não exige .NET instalado).' \
+            '- `YouLink-Android.apk` — instalador Android (ative *"Instalar apps desconhecidos"* se instalar fora da Play Store).' \
+            '' \
+            '### Principais Recursos' \
+            '- Publicação de site grátis 24h no Render em 3 passos sem terminal (**Loja & Visual**).' \
+            '- Atualização automática com popup dentro do próprio app (Windows preservando `App_Data` e Android).' \
+            '- Catálogo digital, QR Code, pedidos no WhatsApp, Pix EMV e cálculo de frete PAC/SEDEX.')
 
           if gh release view "$TAG" --repo "$REPO_NAME" >/dev/null 2>&1; then
             echo "Release $TAG já existe; atualizando instaladores e descrição..."
