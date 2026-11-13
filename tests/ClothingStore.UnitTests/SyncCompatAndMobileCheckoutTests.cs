@@ -82,14 +82,29 @@ public class SyncCompatAndMobileCheckoutTests
         return port;
     }
 
+    private static async Task<Guid> EnsureAdminEmployeeIdAsync(ClothingStoreRepository repo, Pbkdf2PasswordHasher hasher)
+    {
+        var employees = await repo.GetEmployeesAsync();
+        if (employees.Count > 0)
+            return employees[0].Id;
+
+        var jwt = new JwtTokenService(new ConfigurationBuilder().Build());
+        var auth = new AuthService(repo, hasher, jwt);
+        var created = await auth.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+            "Dona Teste",
+            "dona.sync@youlink.app",
+            "1234",
+            Username: "dona.sync"));
+        return created.Employee.EmployeeId;
+    }
+
     [TestMethod]
     public async Task ExpressMobileCheckout_ShouldCompletePixOrderWithoutCep_AndConfirmDirectlyInApp()
     {
         var (repo, tempDir, _, hasher, storage) = CreateIsolatedEnv();
         try
         {
-            var employees = await repo.GetEmployeesAsync();
-            var adminEmpId = employees[0].Id;
+            var adminEmpId = await EnsureAdminEmployeeIdAsync(repo, hasher);
 
             var catService = new ProductManagementService(repo, storage);
             var cat = await catService.CreateCategoryAsync(new SaveCategoryRequest { Name = "Vestidos" });
@@ -155,8 +170,7 @@ public class SyncCompatAndMobileCheckoutTests
         var (repo, tempDir, _, hasher, storage) = CreateIsolatedEnv();
         try
         {
-            var employees = await repo.GetEmployeesAsync();
-            var adminEmpId = employees[0].Id;
+            var adminEmpId = await EnsureAdminEmployeeIdAsync(repo, hasher);
             var settingsService = new EmployeeAndSettingsService(repo, hasher, storage);
 
             await settingsService.UpdateStoreSettingsAsync(adminEmpId, new UpdateStoreSettingsRequest
@@ -193,6 +207,13 @@ public class SyncCompatAndMobileCheckoutTests
             var jwt = new JwtTokenService(new ConfigurationBuilder().Build());
             var auth = new AuthService(repo, hasher, jwt);
 
+            var adminReg = await auth.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                FullName: "Dona Modas",
+                Email: "dona@modas.com.br",
+                Password: "senha123",
+                Username: "dona.modas"));
+            Assert.IsTrue(adminReg.Employee.IsAdmin);
+
             var reg = await auth.RegisterUserAccountAsync(new RegisterUserAccountRequest(
                 FullName: "Giovanna Silva",
                 Email: "giovanna@modas.com.br",
@@ -205,11 +226,13 @@ public class SyncCompatAndMobileCheckoutTests
             var reloadedRepo = new ClothingStoreRepository(hasher, dbPath);
             var employees = await reloadedRepo.GetEmployeesAsync();
 
-            var adminEmp = employees.FirstOrDefault(e => e.User?.Username == "admin");
+            var legacyAdminEmp = employees.FirstOrDefault(e => e.User?.Username == "admin");
+            var ownerEmp = employees.FirstOrDefault(e => e.User?.Username == "dona.modas");
             var newEmp = employees.FirstOrDefault(e => e.User?.Username == "giovanna.modas");
 
-            Assert.IsNotNull(adminEmp?.User, "A conta admin padrão deve existir.");
-            Assert.IsTrue(adminEmp!.IsActive && adminEmp.User!.IsActive, "A conta admin padrão deve estar ativa.");
+            Assert.IsNull(legacyAdminEmp, "Não deve existir conta admin padrão pré-criada.");
+            Assert.IsNotNull(ownerEmp?.User, "A primeira conta administradora deve permanecer cadastrada.");
+            Assert.IsTrue(ownerEmp!.IsActive && ownerEmp.User!.IsActive);
             Assert.IsNotNull(newEmp?.User, "A conta criada no celular deve estar salva no repositório.");
             Assert.IsTrue(newEmp!.IsActive && newEmp.User!.IsActive);
             Assert.AreEqual("giovanna@modas.com.br", newEmp.User!.Email);
@@ -385,10 +408,10 @@ public class SyncCompatAndMobileCheckoutTests
             var adminAcc = accountsEnvelope.Accounts.FirstOrDefault(a => a.Username == "admin");
             var phoneAcc = accountsEnvelope.Accounts.FirstOrDefault(a => a.Username == "joao.celular");
 
-            Assert.IsNotNull(adminAcc, "O admin deve aparecer ativo na lista sincronizada.");
-            Assert.IsTrue(adminAcc!.IsActive);
+            Assert.IsNull(adminAcc, "Não deve existir conta admin padrão pré-criada.");
             Assert.IsNotNull(phoneAcc, "A conta criada no celular precisa aparecer imediatamente no YouLink Admin!");
             Assert.IsTrue(phoneAcc!.IsActive);
+            Assert.AreEqual("Admin", phoneAcc.RoleName);
             Assert.AreEqual("joao.celular@teste.com", phoneAcc.Email);
 
             // Admin aplica VIP direto para a conta sincronizada e alterna status ativo

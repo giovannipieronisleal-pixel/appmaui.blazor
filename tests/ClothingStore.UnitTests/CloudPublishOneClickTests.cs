@@ -457,7 +457,159 @@ public sealed class CloudPublishOneClickTests
             "Workflow deve ler ApplicationDisplayVersion do csproj para nomear o release.");
         Assert.IsTrue(workflow.Contains("gh release delete \"$OLD_TAG\" --yes", StringComparison.Ordinal),
             "Workflow deve apagar automaticamente releases antigos após publicar o atual.");
+        Assert.IsTrue(workflow.Contains("YouLink-Setup-x64.exe", StringComparison.Ordinal),
+            "Workflow deve gerar e enviar o instalador YouLink-Setup-x64.exe.");
+        Assert.IsTrue(workflow.Contains("build-windows-package.ps1", StringComparison.Ordinal),
+            "Workflow deve usar build-windows-package.ps1 para empacotar YouLink.exe e subpasta App.");
         Assert.IsTrue(rule.Contains("apagar os releases antigos", StringComparison.Ordinal),
             "Regra do workspace precisa documentar o push e limpeza automática dos releases antigos.");
+
+        Assert.IsTrue(File.Exists(Path.Combine(root, "installer", "YouLink.iss")));
+        Assert.IsTrue(File.Exists(Path.Combine(root, "installer", "build-windows-package.ps1")));
+        Assert.IsTrue(File.Exists(Path.Combine(root, "installer", "launcher", "YouLinkLauncher.cpp")));
+        Assert.IsTrue(File.Exists(Path.Combine(root, "installer", "launcher", "YouLinkLauncher.rc")));
+    }
+
+    [TestMethod]
+    public void AppUpdateCatalog_WindowsSetupAsset_And_InstalledDetection_ShouldWorkAccurately()
+    {
+        const string releaseWithSetupJson = """
+        {
+          "tag_name": "v1.0.12",
+          "name": "YouLink v1.0.12",
+          "body": "Inclui instalador YouLink-Setup-x64.exe.",
+          "html_url": "https://github.com/giovannipieronisleal-pixel/yourlink/releases/tag/v1.0.12",
+          "draft": false,
+          "assets": [
+            {
+              "name": "YouLink-Setup-x64.exe",
+              "size": 78400000,
+              "browser_download_url": "https://github.com/giovannipieronisleal-pixel/yourlink/releases/download/v1.0.12/YouLink-Setup-x64.exe"
+            },
+            {
+              "name": "YouLink-Windows-x64.zip",
+              "size": 92400000,
+              "browser_download_url": "https://github.com/giovannipieronisleal-pixel/yourlink/releases/download/v1.0.12/YouLink-Windows-x64.zip"
+            },
+            {
+              "name": "YouLink-Android.apk",
+              "size": 34500000,
+              "browser_download_url": "https://github.com/giovannipieronisleal-pixel/yourlink/releases/download/v1.0.12/YouLink-Android.apk"
+            }
+          ]
+        }
+        """;
+
+        var setupRelease = AppUpdateCatalog.ParseGitHubReleaseJson(
+            releaseWithSetupJson,
+            "1.0.11",
+            isWindows: true,
+            isAndroid: false,
+            preferWindowsSetup: true);
+        Assert.IsNotNull(setupRelease);
+        Assert.AreEqual(AppUpdateCatalog.WindowsSetupAssetName, setupRelease!.SelectedAssetName);
+
+        var portableRelease = AppUpdateCatalog.ParseGitHubReleaseJson(
+            releaseWithSetupJson,
+            "1.0.11",
+            isWindows: true,
+            isAndroid: false,
+            preferWindowsSetup: false);
+        Assert.IsNotNull(portableRelease);
+        Assert.AreEqual(AppUpdateCatalog.WindowsAssetName, portableRelease!.SelectedAssetName);
+
+        var tempDir = Path.Combine(Path.GetTempPath(), $"youlink-setup-detect-{Guid.NewGuid():N}");
+        try
+        {
+            var appSubDir = Path.Combine(tempDir, "App");
+            Directory.CreateDirectory(appSubDir);
+            Assert.IsFalse(AppUpdateCatalog.IsWindowsSetupInstallation(appSubDir));
+
+            File.WriteAllText(Path.Combine(tempDir, "unins000.exe"), "MZ");
+            Assert.IsTrue(AppUpdateCatalog.IsWindowsSetupInstallation(appSubDir));
+
+            var installerScript = AppUpdateCatalog.BuildWindowsInstallerUpdateScript(
+                1234,
+                @"C:\Temp\YouLink-Setup-x64.exe",
+                @"C:\Users\Cliente\AppData\Local\Programs\YouLink\YouLink.exe",
+                Path.Combine(tempDir, "setup-update.log"));
+            Assert.IsTrue(installerScript.Contains("/VERYSILENT", StringComparison.Ordinal));
+            Assert.IsTrue(installerScript.Contains("YouLink.exe", StringComparison.Ordinal));
+        }
+        finally
+        {
+            CleanupDir(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task NoDefaultAdmin_InitialSeed_LegacyDbCleanup_And_LoginUi_ShouldBeEnforced()
+    {
+        var root = ResolveRepoRoot();
+
+        // 1. UI de Login e Gateway não podem conter atalho nem pré-preenchimento "Admin Padrão / admin"
+        var loginRazor = File.ReadAllText(Path.Combine(root, "Components", "Pages", "Login.razor"));
+        Assert.IsFalse(loginRazor.Contains("Admin Padrão", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(loginRazor.Contains("FillAdminCredentials", StringComparison.Ordinal));
+        Assert.IsFalse(loginRazor.Contains("_login = \"admin\"", StringComparison.Ordinal));
+        Assert.IsFalse(loginRazor.Contains("_password = \"admin\"", StringComparison.Ordinal));
+        Assert.IsFalse(loginRazor.Contains("placeholder=\"admin", StringComparison.OrdinalIgnoreCase));
+
+        var gatewayCs = File.ReadAllText(Path.Combine(root, "Services", "MauiAdminGateway.cs"));
+        Assert.IsTrue(gatewayCs.Contains("IsLegacyDefaultAdminProfile", StringComparison.Ordinal),
+            "Sessões persistidas antigas do admin padrão precisam ser descartadas na inicialização.");
+
+        // 2. Migração automática deve apagar admin legado sem prejudicar loja já cadastrada
+        var tempDir = Path.Combine(Path.GetTempPath(), $"youlink-no-admin-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var hasher = new Pbkdf2PasswordHasher();
+
+            // Caso A: banco antigo tinha somente admin/admin
+            var onlyLegacyDbPath = Path.Combine(tempDir, "legacy-only.json");
+            var adminRole = new ClothingStore.Domain.Entities.Role(Guid.NewGuid(), "Admin", "Acesso total");
+            var employeeRole = new ClothingStore.Domain.Entities.Role(Guid.NewGuid(), "Employee", "Operação");
+            var legacyUser = new ClothingStore.Domain.Entities.User("admin", hasher.HashPassword("admin"), adminRole.Id)
+            {
+                Id = Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111")
+            };
+            var legacyEmp = new ClothingStore.Domain.Entities.Employee(
+                legacyUser.Id, "Administrador", "Proprietário(a)", "5511900000000", true, true)
+            {
+                Id = Guid.Parse("bbbbbbbb-1111-1111-1111-111111111111")
+            };
+            var legacyState = new ClothingStoreDatabaseState();
+            legacyState.Roles.AddRange([adminRole, employeeRole]);
+            legacyState.Users.Add(legacyUser);
+            legacyState.Employees.Add(legacyEmp);
+            File.WriteAllText(onlyLegacyDbPath, System.Text.Json.JsonSerializer.Serialize(legacyState));
+
+            var migratedRepo = new ClothingStoreRepository(hasher, onlyLegacyDbPath);
+            Assert.AreEqual(0, (await migratedRepo.GetEmployeesAsync()).Count);
+            Assert.IsNull(await migratedRepo.GetUserByEmailAsync("admin"));
+
+            // Caso B: banco antigo tinha admin/admin E uma conta real cadastrada como Employee
+            var withMerchantDbPath = Path.Combine(tempDir, "legacy-plus-merchant.json");
+            var merchantUser = new ClothingStore.Domain.Entities.User("dona@minhaloja.com", hasher.HashPassword("SenhaBoa@1"), employeeRole.Id, "dona.loja");
+            var merchantEmp = new ClothingStore.Domain.Entities.Employee(merchantUser.Id, "Dona Real", "Lojista", "5511999990000", false, true);
+            legacyState.Users.Clear();
+            legacyState.Employees.Clear();
+            legacyState.Users.AddRange([legacyUser, merchantUser]);
+            legacyState.Employees.AddRange([legacyEmp, merchantEmp]);
+            File.WriteAllText(withMerchantDbPath, System.Text.Json.JsonSerializer.Serialize(legacyState));
+
+            var promotedRepo = new ClothingStoreRepository(hasher, withMerchantDbPath);
+            var remainingEmployees = await promotedRepo.GetEmployeesAsync();
+            Assert.AreEqual(1, remainingEmployees.Count);
+            Assert.AreEqual("dona.loja", remainingEmployees[0].User?.Username);
+            Assert.AreEqual("Admin", remainingEmployees[0].User?.Role?.Name);
+            Assert.IsTrue(remainingEmployees[0].CanManageProducts);
+            Assert.IsNull(await promotedRepo.GetUserByEmailAsync("admin"));
+        }
+        finally
+        {
+            CleanupDir(tempDir);
+        }
     }
 }

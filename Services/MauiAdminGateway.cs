@@ -205,6 +205,14 @@ public sealed class MauiAdminGateway
         await localFallback();
     }
 
+    private static readonly Guid LegacyDefaultAdminUserId = Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111");
+
+    private static bool IsLegacyDefaultAdminProfile(EmployeeProfileDto? profile) =>
+        profile is not null &&
+        (profile.UserId == LegacyDefaultAdminUserId ||
+         string.Equals(profile.Email, "admin", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(profile.Username, "admin", StringComparison.OrdinalIgnoreCase));
+
     public async Task TryRestoreSessionAsync()
     {
         if (IsAuthenticated)
@@ -219,9 +227,9 @@ public sealed class MauiAdminGateway
                 return;
 
             var saved = JsonSerializer.Deserialize<LoginResponse>(rawJson);
-            if (saved is null || saved.ExpiresAt <= DateTimeOffset.UtcNow)
+            if (saved is null || saved.ExpiresAt <= DateTimeOffset.UtcNow || IsLegacyDefaultAdminProfile(saved.Employee))
             {
-                SecureStorage.Default.Remove(SessionStorageKey);
+                ClearSavedSession();
                 return;
             }
 
@@ -239,6 +247,12 @@ public sealed class MauiAdminGateway
                         return saved.Employee;
                     }
                 });
+
+            if (IsLegacyDefaultAdminProfile(freshProfile))
+            {
+                Logout();
+                return;
+            }
 
             AccessToken = saved.AccessToken;
             CurrentEmployee = freshProfile;
@@ -407,14 +421,7 @@ public sealed class MauiAdminGateway
             }
             else
             {
-                try
-                {
-                    SecureStorage.Default.Remove(SessionStorageKey);
-                }
-                catch
-                {
-                }
-                Preferences.Default.Remove(SessionStorageKey + "_fallback");
+                ClearSavedSession();
             }
         }
         catch
@@ -424,11 +431,8 @@ public sealed class MauiAdminGateway
         AuthStateChanged?.Invoke();
     }
 
-    public void Logout()
+    private static void ClearSavedSession()
     {
-        AccessToken = null;
-        CurrentEmployee = null;
-        _apiClient.ClearSession();
         try
         {
             try
@@ -443,6 +447,14 @@ public sealed class MauiAdminGateway
         catch
         {
         }
+    }
+
+    public void Logout()
+    {
+        AccessToken = null;
+        CurrentEmployee = null;
+        _apiClient.ClearSession();
+        ClearSavedSession();
         AuthStateChanged?.Invoke();
     }
 

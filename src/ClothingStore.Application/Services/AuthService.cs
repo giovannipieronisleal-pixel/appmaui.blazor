@@ -72,7 +72,8 @@ public sealed class AuthService
 
         var existingEmployees = await _repository.GetEmployeesAsync(ct);
         var isFirstAccount = existingEmployees.Count == 0 ||
-            existingEmployees.All(e => e.User != null && string.Equals(e.User.Email, "admin", StringComparison.OrdinalIgnoreCase));
+            !existingEmployees.Any(e => e.IsActive && e.User is { IsActive: true } u &&
+                string.Equals(u.Role?.Name, RoleNames.Admin, StringComparison.OrdinalIgnoreCase));
         var roleName = isFirstAccount ? RoleNames.Admin : RoleNames.Employee;
 
         var role = await _repository.GetRoleByNameAsync(roleName, ct)

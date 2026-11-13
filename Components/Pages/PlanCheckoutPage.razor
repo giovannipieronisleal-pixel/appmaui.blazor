@@ -333,19 +333,31 @@ else
 
                 @if (!string.IsNullOrWhiteSpace(PlanPixBrCode))
                 {
-                    <div style="border-top: 1px solid var(--adm-border); padding-top: 0.55rem; display: flex; flex-direction: column; gap: 0.4rem;">
-                        <div style="font-size: 0.78rem; font-weight: 700; color: var(--adm-muted);">
-                            Código Pix Copia e Cola (valor já preenchido: @TotalOrderAmount.ToString("C")):
+                    var planPixQrUri = ClothingStore.Shared.Helpers.WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(PlanPixBrCode);
+                    <div style="border-top: 1px solid var(--adm-border); padding-top: 0.65rem; display: flex; flex-direction: column; gap: 0.55rem;">
+                        <div style="font-size: 0.78rem; font-weight: 700; color: var(--adm-success);">
+                            ✅ Pix EMV gerado com valor EXATO para esta venda (@TotalOrderAmount.ToString("C")):
                         </div>
-                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                            <input type="text" readonly class="adm-input" value="@PlanPixBrCode" style="flex: 1; font-family: monospace; font-size: 0.74rem;" />
-                            <button type="button"
-                                    class="adm-btn adm-btn-primary"
-                                    style="white-space: nowrap;"
-                                    @onclick="CopyPlanPixBrCodeAsync">
-                                @(_copiedPlanBrCode ? "✓ Pix EMV Copiado!" : "📋 Copiar Pix Copia e Cola")
-                            </button>
+                        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                            <img src="@planPixQrUri"
+                                 alt="QR Code Pix no valor exato"
+                                 style="width: 112px; height: 112px; border-radius: 8px; background: #FFFFFF; padding: 5px; border: 1px solid var(--adm-border);" />
+                            <div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 0.45rem;">
+                                <input type="text" readonly class="adm-input" value="@PlanPixBrCode" style="width: 100%; font-family: monospace; font-size: 0.74rem;" />
+                                <button type="button"
+                                        class="adm-btn adm-btn-primary"
+                                        style="white-space: nowrap; align-self: flex-start;"
+                                        @onclick="CopyPlanPixBrCodeAsync">
+                                    @(_copiedPlanBrCode ? "✓ Pix EMV Copiado!" : "📋 Copiar Pix Copia e Cola Exato")
+                                </button>
+                            </div>
                         </div>
+                    </div>
+                }
+                else
+                {
+                    <div style="border-top: 1px solid var(--adm-border); padding-top: 0.55rem; font-size: 0.76rem; color: var(--adm-muted); line-height: 1.45;">
+                        ⚠️ Para gerar automaticamente o <strong>QR Code e Pix Copia e Cola com valor exato (@TotalOrderAmount.ToString("C"))</strong>, a chave recebedora precisa ser uma chave Pix válida (CPF, CNPJ, E-mail, Celular ou Chave Aleatória) — não um link placeholder como <code>picpay.me/sua-conta</code>.
                     </div>
                 }
             </div>
@@ -475,7 +487,7 @@ else
                 string.IsNullOrWhiteSpace(_settings.StorePixReceiverName) ? _settings.StoreName : _settings.StorePixReceiverName,
                 _settings.OriginCity,
                 TotalOrderAmount,
-                $"YLK{_durationMonths}M");
+                _confirmedMobilePlanReceipt?.Protocolo ?? $"YLK{_durationMonths}M");
         }
     }
 

@@ -3,6 +3,7 @@ bin/
 obj/
 dist/
 dist-zip/
+dist-installer/
 
 # User-specific files
 .vs/

@@ -6,11 +6,12 @@ O **YouLink** é um aplicativo para **Android e Windows** integrado a uma **vitr
 
 ## Baixar o App Pronto (Windows e Android)
 
-- 👉 **[Baixar a Última Versão (Latest Release)](https://github.com/giovannipieronisleal-pixel/yourlink/releases/latest)** (`YouLink-Windows-x64.zip` e `YouLink-Android.apk`)
+- 👉 **[Baixar a Última Versão (Latest Release)](https://github.com/giovannipieronisleal-pixel/yourlink/releases/latest)** (`YouLink-Setup-x64.exe`, `YouLink-Windows-x64.zip` e `YouLink-Android.apk`)
 - 👉 **[Ver Aba Releases](https://github.com/giovannipieronisleal-pixel/yourlink/releases)** | **[GitHub Actions (Builds)](https://github.com/giovannipieronisleal-pixel/yourlink/actions)**
 
 ### Instalação e Atualização Direta no App
-- **Windows (`YouLink-Windows-x64.zip`):** extraia a pasta e abra o executável (pacote *Self-Contained* x64 — não exige .NET pré-instalado).
+- **Windows — Instalador (`YouLink-Setup-x64.exe` · Recomendado):** executável único que instala o aplicativo no Windows, cria o atalho **YouLink** na Área de Trabalho e Menu Iniciar e não exige .NET pré-instalado.
+- **Windows — Portável (`YouLink-Windows-x64.zip`):** pacote organizado com a pasta `YouLink/`, contendo `YouLink.exe` direto na frente e os arquivos internos isolados na subpasta `App/`. Extraia tudo antes de clicar em `YouLink.exe`.
 - **Android (`YouLink-Android.apk`):** ao abrir o `.apk` fora da Play Store, ative *"Instalar apps desconhecidos"*.
 - **Atualização automática integrada:** ao abrir o aplicativo, o YouLink verifica automaticamente o último release publicado e exibe um popup para baixar e instalar a nova versão dentro do próprio app (preservando os dados em `App_Data` no Windows).
 

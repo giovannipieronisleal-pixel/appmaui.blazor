@@ -6,7 +6,7 @@ namespace ClothingStore.Infrastructure.Persistence;
 
 /// <summary>
 /// Estrutura de estado persistente do banco de dados (sincronizada em disco/Supabase).
-/// Inicializa limpa (sem produtos ou categorias de exemplo) e com o login Admin padrão.
+/// Inicializa limpa (sem produtos, categorias ou usuários padrão).
 /// </summary>
 public sealed class ClothingStoreDatabaseState
 {
@@ -35,27 +35,8 @@ public sealed class ClothingStoreDatabaseState
             RoleNames.Employee,
             "Funcionário com acesso operacional a produtos e estoque");
 
+        _ = passwordHasher;
         state.Roles.AddRange([adminRole, employeeRole]);
-
-        // 2. Login Admin Padrão (login: admin / senha: admin)
-        var adminUser = new User("admin", passwordHasher.HashPassword("admin"), adminRole.Id)
-        {
-            Id = Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111")
-        };
-
-        var adminEmployee = new Employee(
-            adminUser.Id,
-            "Administrador",
-            "Proprietário(a) / Administrador(a)",
-            "5511900000000",
-            canManageProducts: true,
-            canManageStock: true)
-        {
-            Id = Guid.Parse("bbbbbbbb-1111-1111-1111-111111111111")
-        };
-
-        state.Users.Add(adminUser);
-        state.Employees.Add(adminEmployee);
 
         // 3. Categorias iniciam vazias (sem exemplos) para serem criadas pelos clientes
         // state.Categories permanece vazio até o cliente criar suas próprias categorias.

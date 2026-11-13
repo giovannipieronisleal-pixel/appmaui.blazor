@@ -429,14 +429,27 @@ public class WindowsPlatformTests
             var unauthenticatedDashboard = await http.GetAsync("/api/dashboard/summary");
             Assert.AreEqual(HttpStatusCode.Unauthorized, unauthenticatedDashboard.StatusCode);
 
+            // Sem admin padrão pré-criado: /api/auth/login com admin/admin deve falhar
+            var legacyAdminResp = await http.PostAsJsonAsync("/api/auth/login", new LoginRequest("admin", "admin"));
+            Assert.IsFalse(legacyAdminResp.IsSuccessStatusCode, "Não deve existir conta admin/admin pré-criada.");
+
+            // Primeira criação do administrador inicial via /api/auth/register-initial-admin deve funcionar em banco limpo
             var registerResp = await http.PostAsJsonAsync("/api/auth/register-initial-admin", new RegisterInitialAdminRequest(
                 "Lojista Windows",
                 "windows@youlink.app",
                 "1234",
                 "Loja Windows Test"));
-            Assert.AreEqual(HttpStatusCode.BadRequest, registerResp.StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, registerResp.StatusCode);
 
-            var loginResp = await http.PostAsJsonAsync("/api/auth/login", new LoginRequest("admin", "admin"));
+            // Segunda tentativa de register-initial-admin deve ser bloqueada com BadRequest
+            var duplicateRegisterResp = await http.PostAsJsonAsync("/api/auth/register-initial-admin", new RegisterInitialAdminRequest(
+                "Outro Lojista",
+                "outro@youlink.app",
+                "1234",
+                "Outra Loja"));
+            Assert.AreEqual(HttpStatusCode.BadRequest, duplicateRegisterResp.StatusCode);
+
+            var loginResp = await http.PostAsJsonAsync("/api/auth/login", new LoginRequest("windows@youlink.app", "1234"));
             Assert.AreEqual(HttpStatusCode.OK, loginResp.StatusCode);
             var authResult = await loginResp.Content.ReadFromJsonAsync<LoginResponse>();
             Assert.IsNotNull(authResult?.AccessToken);

@@ -277,19 +277,6 @@
     {
         @* TELA 3: FORMULÁRIO DE LOGIN *@
         <div style="display: flex; flex-direction: column; gap: 0.9rem;">
-            <!-- Cartãozinho de Dica com Acesso Rápido -->
-            <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); border-radius: var(--brand-radius-card); padding: 0.65rem 0.85rem; font-size: 0.82rem; color: var(--adm-text); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
-                <div>
-                    🔑 <strong>Admin Padrão:</strong> <code>admin</code> / <code>admin</code>
-                </div>
-                <button type="button"
-                        class="adm-btn adm-btn-outline"
-                        style="padding: 0.2rem 0.6rem; font-size: 0.76rem; border-color: var(--adm-accent); white-space: nowrap;"
-                        @onclick="FillAdminCredentials">
-                    Preencher
-                </button>
-            </div>
-
             <div>
                 <label class="adm-label">Usuário ou E-mail *</label>
                 <input type="text"
@@ -297,7 +284,7 @@
                        autocomplete="username"
                        @bind="_login"
                        @onkeydown="HandleLoginKeyDown"
-                       placeholder="admin, seu-usuario ou seu@email.com" />
+                       placeholder="seu-usuario ou seu@email.com" />
             </div>
 
             <div>
@@ -551,8 +538,8 @@
     private string _storeSlug = "minha-loja";
 
     // Campos de Login (suporta usuário ou e-mail)
-    private string _login = "admin";
-    private string _password = "admin";
+    private string _login = string.Empty;
+    private string _password = string.Empty;
 
     // Campos de 2FA
     private bool _is2FaStep;
@@ -603,13 +590,6 @@
         catch
         {
         }
-    }
-
-    private void FillAdminCredentials()
-    {
-        _login = "admin";
-        _password = "admin";
-        _errorMessage = null;
     }
 
     private async Task HandleLoginKeyDown(KeyboardEventArgs e)

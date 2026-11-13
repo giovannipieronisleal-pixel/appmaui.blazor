@@ -96,11 +96,11 @@ public class ExtremeTests
     public async Task Register_DuplicateLogin_CaseAndWhitespaceInsensitive_IsRejected()
     {
         using var env = new Env();
-        await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("A", "Maria@Gmail.com", "1234"));
+        await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("A", "Maria@Gmail.com", "1234", Username: "maria.loja"));
         await Assert.ThrowsExceptionAsync<DomainException>(() =>
             env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("B", "  maria@gmail.COM  ", "1234")));
         await Assert.ThrowsExceptionAsync<DomainException>(() =>
-            env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("C", "ADMIN", "1234")));
+            env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("C", "outra@gmail.com", "1234", Username: "  MARIA.LOJA  ")));
     }
 
     [TestMethod]
@@ -152,12 +152,13 @@ public class ExtremeTests
     public async Task Login_BruteForce_LocksAccount_EvenWithCorrectPasswordAfterwards()
     {
         using var env = new Env();
+        await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("Vitima", "vitima@loja.com", "SenhaForte@1"));
         for (int i = 0; i < User.MaxFailedAttemptsBeforeLockout; i++)
         {
-            await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.LoginAsync(new LoginRequest("admin", "errada" + i)));
+            await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.LoginAsync(new LoginRequest("vitima@loja.com", "errada" + i)));
         }
 
-        var ex = await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.LoginAsync(new LoginRequest("admin", "admin")));
+        var ex = await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.LoginAsync(new LoginRequest("vitima@loja.com", "SenhaForte@1")));
         Assert.IsTrue(ex.Message.Contains("bloqueada"), ex.Message);
     }
 
@@ -180,12 +181,12 @@ public class ExtremeTests
     {
         using var env = new Env();
         var a = await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("A", "a@x.com", "1234"));
-        await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("B", "b@x.com", "1234"));
+        await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("B", "b@x.com", "1234", Username: "b.loja"));
 
         await Assert.ThrowsExceptionAsync<DomainException>(() =>
             env.Auth.UpdateUserProfileAsync(a.Employee.UserId, new UpdateUserProfileRequest("A", "B@X.com")));
         await Assert.ThrowsExceptionAsync<DomainException>(() =>
-            env.Auth.UpdateUserProfileAsync(a.Employee.UserId, new UpdateUserProfileRequest("A", "admin")));
+            env.Auth.UpdateUserProfileAsync(a.Employee.UserId, new UpdateUserProfileRequest("A", "b.loja")));
 
         // Trocar para o próprio e-mail (só mudando maiúsculas) é permitido
         var same = await env.Auth.UpdateUserProfileAsync(a.Employee.UserId, new UpdateUserProfileRequest("A Novo", "A@x.com"));
@@ -197,17 +198,17 @@ public class ExtremeTests
     public async Task Pin_InvalidFormats_AndWrongPassword_AreRejected()
     {
         using var env = new Env();
-        var s = await env.Auth.LoginAsync(new LoginRequest("admin", "admin"));
+        var s = await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("Dona Pin", "pin@loja.com", "SenhaPin@1"));
         var uid = s.Employee.UserId;
 
         foreach (var bad in new[] { "", "123", "12345", "12a4", "١٢٣٤", " 1234", "12.4", "-123" })
         {
-            await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.SetSecurityPinAsync(uid, new SetSecurityPinRequest("admin", bad)),
+            await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.SetSecurityPinAsync(uid, new SetSecurityPinRequest("SenhaPin@1", bad)),
                 $"PIN inválido aceito: '{bad}'");
         }
 
         await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.SetSecurityPinAsync(uid, new SetSecurityPinRequest("errada", "1234")));
-        await env.Auth.SetSecurityPinAsync(uid, new SetSecurityPinRequest("admin", "0000"));
+        await env.Auth.SetSecurityPinAsync(uid, new SetSecurityPinRequest("SenhaPin@1", "0000"));
         var profile = await env.Auth.GetCurrentProfileAsync(uid);
         Assert.IsTrue(profile.HasSecurityPin);
     }
@@ -229,7 +230,7 @@ public class ExtremeTests
     public async Task TwoFactor_BackupCodeIsSingleUse_WrongCodesLockAccount_DisableNeedsPassword()
     {
         using var env = new Env();
-        var s = await env.Auth.LoginAsync(new LoginRequest("admin", "admin"));
+        var s = await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("Dona 2FA", "twofa@loja.com", "Senha2FA@1"));
         var setup = await env.Auth.GenerateTwoFactorSetupAsync(s.Employee.UserId);
 
         // Código errado na ativação não ativa
@@ -240,17 +241,17 @@ public class ExtremeTests
         await env.Auth.EnableTwoFactorAsync(s.Employee.UserId, new EnableTwoFactorRequest(setup.SecretKey, otp, setup.BackupCodes));
 
         // LoginAsync "simples" nunca pode furar o 2FA
-        await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.LoginAsync(new LoginRequest("admin", "admin")));
+        await Assert.ThrowsExceptionAsync<DomainException>(() => env.Auth.LoginAsync(new LoginRequest("twofa@loja.com", "Senha2FA@1")));
 
         // Código de backup funciona uma única vez
         var backup = setup.BackupCodes[1];
-        await env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", backup));
+        await env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("twofa@loja.com", backup));
         await Assert.ThrowsExceptionAsync<DomainException>(() =>
-            env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", backup)));
+            env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("twofa@loja.com", backup)));
 
         // O backup consumido continua consumido após reabrir o banco (persistido)
         var repo2 = new ClothingStoreRepository(env.Hasher, env.DbFile);
-        var userReloaded = await repo2.GetUserByEmailAsync("admin");
+        var userReloaded = await repo2.GetUserByEmailAsync("twofa@loja.com");
         Assert.AreEqual(3, userReloaded!.TwoFactorBackupCodes.Count);
 
         // Desativar exige senha correta
@@ -261,10 +262,10 @@ public class ExtremeTests
         for (int i = 0; i < User.MaxFailedAttemptsBeforeLockout; i++)
         {
             await Assert.ThrowsExceptionAsync<DomainException>(() =>
-                env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", "11111" + i)));
+                env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("twofa@loja.com", "11111" + i)));
         }
         var lockEx = await Assert.ThrowsExceptionAsync<DomainException>(() =>
-            env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", TwoFactorHelper.GenerateCurrentTotp(setup.SecretKey))));
+            env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("twofa@loja.com", TwoFactorHelper.GenerateCurrentTotp(setup.SecretKey))));
         Assert.IsTrue(lockEx.Message.Contains("bloqueada"), lockEx.Message);
     }
 
@@ -272,9 +273,10 @@ public class ExtremeTests
     public async Task TwoFactor_VerifyWithoutPasswordStep_ForAccountWithout2FA_IsRejected()
     {
         using var env = new Env();
+        await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("Sem 2FA", "no2fa@loja.com", "SenhaSem2FA"));
         // Conta sem 2FA: chamar a verificação 2FA direto não pode logar ninguém
         await Assert.ThrowsExceptionAsync<DomainException>(() =>
-            env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", "123456")));
+            env.Auth.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("no2fa@loja.com", "123456")));
     }
 
     // ---------------------------------------------------------------
@@ -314,7 +316,7 @@ public class ExtremeTests
     public async Task StoreSettings_InvalidValues_AreRejected()
     {
         using var env = new Env();
-        var s = await env.Auth.LoginAsync(new LoginRequest("admin", "admin"));
+        var s = await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("Dona Cfg", "cfg@loja.com", "SenhaCfg@1"));
         UpdateStoreSettingsRequest Make(string name, string wa, string desc, int low) => new()
         {
             StoreName = name, WhatsappNumber = wa, StoreDescription = desc, DefaultLowStockThreshold = low
@@ -355,7 +357,7 @@ public class ExtremeTests
     public async Task Stock_100ParallelMovements_NoLostUpdates()
     {
         using var env = new Env();
-        var s = await env.Auth.LoginAsync(new LoginRequest("admin", "admin"));
+        var s = await env.Auth.RegisterUserAccountAsync(new RegisterUserAccountRequest("Dona Estoque", "stk@loja.com", "SenhaStk@1"));
         var product = await env.Products.CreateProductAsync(new SaveProductRequest
         {
             CategoryName = "Testes", Name = "Camiseta Stress", Description = "x", BasePrice = 10m, IsVisibleOnSite = true

@@ -1,0 +1,44 @@
+#include <winres.h>
+#pragma code_page(65001)
+
+#ifndef YOULINK_VER_COMMA
+#define YOULINK_VER_COMMA 1,0,11,0
+#endif
+
+#ifndef YOULINK_VER_STR
+#define YOULINK_VER_STR "1.0.11.0"
+#endif
+
+1 ICON "appicon.ico"
+
+1 VERSIONINFO
+ FILEVERSION YOULINK_VER_COMMA
+ PRODUCTVERSION YOULINK_VER_COMMA
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041604b0"
+        BEGIN
+            VALUE "CompanyName", "YouLink"
+            VALUE "FileDescription", "YouLink — Catálogo Digital e Painel da Loja"
+            VALUE "FileVersion", YOULINK_VER_STR
+            VALUE "InternalName", "YouLink.exe"
+            VALUE "OriginalFilename", "YouLink.exe"
+            VALUE "ProductName", "YouLink"
+            VALUE "ProductVersion", YOULINK_VER_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0416, 1200
+    END
+END

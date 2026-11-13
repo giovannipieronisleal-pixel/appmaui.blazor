@@ -28,7 +28,7 @@ public sealed record AppUpdateReleaseInfo(
 /// </summary>
 public static class AppUpdateCatalog
 {
-    public const string CurrentAppVersion = "1.0.10";
+    public const string CurrentAppVersion = "1.0.11";
     public const string GitHubOwner = "giovannipieronisleal-pixel";
     public const string GitHubRepo = "yourlink";
     public const string GitHubLatestReleaseApiUrl =
@@ -37,7 +37,9 @@ public static class AppUpdateCatalog
         $"https://github.com/{GitHubOwner}/{GitHubRepo}/releases/latest";
 
     public const string WindowsAssetName = "YouLink-Windows-x64.zip";
+    public const string WindowsSetupAssetName = "YouLink-Setup-x64.exe";
     public const string AndroidAssetName = "YouLink-Android.apk";
+    public const string WindowsLauncherName = "YouLink.exe";
     public const string WindowsExecutableName = "appmaui.blazor.exe";
 
     public static string NormalizeVersion(string? rawVersion)
@@ -70,11 +72,32 @@ public static class AppUpdateCatalog
             && candidate > current;
     }
 
+    public static bool IsWindowsSetupInstallation(string? baseDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(baseDirectory))
+            return false;
+
+        try
+        {
+            var trimmed = baseDirectory.TrimEnd('\\', '/');
+            if (File.Exists(Path.Combine(trimmed, "unins000.exe")))
+                return true;
+
+            var parent = Directory.GetParent(trimmed);
+            return parent is not null && File.Exists(Path.Combine(parent.FullName, "unins000.exe"));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static AppUpdateReleaseInfo? ParseGitHubReleaseJson(
         string json,
         string currentVersion,
         bool isWindows,
-        bool isAndroid)
+        bool isAndroid,
+        bool preferWindowsSetup = false)
     {
         if (string.IsNullOrWhiteSpace(json))
             return null;
@@ -110,6 +133,8 @@ public static class AppUpdateCatalog
                 publishedAt = parsedDate;
             }
 
+            string? windowsSetupUrl = null;
+            long? windowsSetupSize = null;
             string? windowsUrl = null;
             long? windowsSize = null;
             string? androidUrl = null;
@@ -128,8 +153,14 @@ public static class AppUpdateCatalog
                     if (string.IsNullOrWhiteSpace(assetName) || string.IsNullOrWhiteSpace(downloadUrl))
                         continue;
 
-                    if (string.Equals(assetName, WindowsAssetName, StringComparison.OrdinalIgnoreCase) ||
-                        assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(assetName, WindowsSetupAssetName, StringComparison.OrdinalIgnoreCase) ||
+                        assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        windowsSetupUrl ??= downloadUrl;
+                        windowsSetupSize ??= size;
+                    }
+                    else if (string.Equals(assetName, WindowsAssetName, StringComparison.OrdinalIgnoreCase) ||
+                             assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                     {
                         windowsUrl ??= downloadUrl;
                         windowsSize ??= size;
@@ -146,6 +177,9 @@ public static class AppUpdateCatalog
             var (selectedName, selectedUrl, selectedSize) = SelectPlatformAsset(
                 isWindows,
                 isAndroid,
+                preferWindowsSetup,
+                windowsSetupUrl,
+                windowsSetupSize,
                 windowsUrl,
                 windowsSize,
                 androidUrl,
@@ -161,8 +195,8 @@ public static class AppUpdateCatalog
                     : releaseBody.Trim(),
                 ReleasePageUrl: string.IsNullOrWhiteSpace(htmlUrl) ? ReleasesPageUrl : htmlUrl.Trim(),
                 PublishedAt: publishedAt,
-                WindowsDownloadUrl: windowsUrl,
-                WindowsAssetSizeBytes: windowsSize,
+                WindowsDownloadUrl: preferWindowsSetup ? (windowsSetupUrl ?? windowsUrl) : (windowsUrl ?? windowsSetupUrl),
+                WindowsAssetSizeBytes: preferWindowsSetup ? (windowsSetupSize ?? windowsSize) : (windowsSize ?? windowsSetupSize),
                 AndroidDownloadUrl: androidUrl,
                 AndroidAssetSizeBytes: androidSize,
                 SelectedAssetName: selectedName,
@@ -181,7 +215,8 @@ public static class AppUpdateCatalog
         ApiCompatibilityStatusDto? apiCompat,
         string currentVersion,
         bool isWindows,
-        bool isAndroid)
+        bool isAndroid,
+        bool preferWindowsSetup = false)
     {
         var normalizedCurrent = NormalizeVersion(currentVersion);
         if (string.IsNullOrWhiteSpace(normalizedCurrent))
@@ -199,11 +234,15 @@ public static class AppUpdateCatalog
             : apiCompat.ReleaseUrl.Trim();
 
         var tagBase = $"https://github.com/{GitHubOwner}/{GitHubRepo}/releases/download/v{apiLatest}";
+        var windowsSetupUrl = $"{tagBase}/{WindowsSetupAssetName}";
         var windowsUrl = $"{tagBase}/{WindowsAssetName}";
         var androidUrl = $"{tagBase}/{AndroidAssetName}";
         var (selectedName, selectedUrl, selectedSize) = SelectPlatformAsset(
             isWindows,
             isAndroid,
+            preferWindowsSetup,
+            windowsSetupUrl,
+            null,
             windowsUrl,
             null,
             androidUrl,
@@ -219,7 +258,7 @@ public static class AppUpdateCatalog
                 : apiCompat.Message.Trim(),
             ReleasePageUrl: releasePage,
             PublishedAt: null,
-            WindowsDownloadUrl: windowsUrl,
+            WindowsDownloadUrl: preferWindowsSetup ? windowsSetupUrl : windowsUrl,
             WindowsAssetSizeBytes: null,
             AndroidDownloadUrl: androidUrl,
             AndroidAssetSizeBytes: null,
@@ -283,6 +322,7 @@ public static class AppUpdateCatalog
         sb.AppendLine($"$sourceDir = '{EscapePowerShellSingleQuoted(sourceAppDir.TrimEnd('\\', '/'))}'");
         sb.AppendLine($"$targetDir = '{EscapePowerShellSingleQuoted(targetAppDir.TrimEnd('\\', '/'))}'");
         sb.AppendLine($"$exeName = '{EscapePowerShellSingleQuoted(executableFileName)}'");
+        sb.AppendLine($"$launcherName = '{EscapePowerShellSingleQuoted(WindowsLauncherName)}'");
         sb.AppendLine($"$logPath = '{EscapePowerShellSingleQuoted(logFilePath)}'");
         sb.AppendLine("function Write-Log([string]$msg) { Add-Content -Path $logPath -Value \"[$(Get-Date -Format 'HH:mm:ss')] $msg\" -Encoding UTF8 }");
         sb.AppendLine("Write-Log 'Iniciando atualização automática do YouLink Windows...'");
@@ -298,25 +338,79 @@ public static class AppUpdateCatalog
         sb.AppendLine("$rc = $LASTEXITCODE");
         sb.AppendLine("Write-Log \"Robocopy exit code: $rc\"");
         sb.AppendLine("if ($rc -ge 8) { throw \"Falha ao copiar arquivos da atualização (robocopy=$rc).\" }");
-        sb.AppendLine("$exePath = Join-Path $targetDir $exeName");
-        sb.AppendLine("if (Test-Path $exePath) {");
-        sb.AppendLine("    Write-Log \"Reabrindo $exePath\"");
-        sb.AppendLine("    Start-Process -FilePath $exePath -WorkingDirectory $targetDir");
+        sb.AppendLine("$sourceParent = Split-Path -Path $sourceDir -Parent");
+        sb.AppendLine("$targetParent = Split-Path -Path $targetDir -Parent");
+        sb.AppendLine("$launchExe = Join-Path $targetDir $exeName");
+        sb.AppendLine("$launchWorkDir = $targetDir");
+        sb.AppendLine("if ((Split-Path -Leaf $targetDir) -eq 'App' -and $targetParent -and $sourceParent) {");
+        sb.AppendLine("    $srcLauncher = Join-Path $sourceParent $launcherName");
+        sb.AppendLine("    if (Test-Path $srcLauncher) {");
+        sb.AppendLine("        Copy-Item -Path $srcLauncher -Destination (Join-Path $targetParent $launcherName) -Force");
+        sb.AppendLine("        $launchExe = Join-Path $targetParent $launcherName");
+        sb.AppendLine("    }");
+        sb.AppendLine("    $srcReadme = Join-Path $sourceParent 'LEIA-ME.txt'");
+        sb.AppendLine("    if (Test-Path $srcReadme) { Copy-Item -Path $srcReadme -Destination (Join-Path $targetParent 'LEIA-ME.txt') -Force }");
+        sb.AppendLine("}");
+        sb.AppendLine("if (Test-Path $launchExe) {");
+        sb.AppendLine("    Write-Log \"Reabrindo $launchExe\"");
+        sb.AppendLine("    Start-Process -FilePath $launchExe -WorkingDirectory $launchWorkDir");
         sb.AppendLine("}");
         sb.AppendLine("try { Remove-Item -Path $sourceDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}");
+        return sb.ToString();
+    }
+
+    public static string BuildWindowsInstallerUpdateScript(
+        int targetProcessId,
+        string setupExePath,
+        string targetLauncherPath,
+        string logFilePath)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("$ErrorActionPreference = 'Stop'");
+        sb.AppendLine($"$targetPid = {targetProcessId}");
+        sb.AppendLine($"$setupExe = '{EscapePowerShellSingleQuoted(setupExePath)}'");
+        sb.AppendLine($"$launchExe = '{EscapePowerShellSingleQuoted(targetLauncherPath)}'");
+        sb.AppendLine($"$logPath = '{EscapePowerShellSingleQuoted(logFilePath)}'");
+        sb.AppendLine("function Write-Log([string]$msg) { Add-Content -Path $logPath -Value \"[$(Get-Date -Format 'HH:mm:ss')] $msg\" -Encoding UTF8 }");
+        sb.AppendLine("Write-Log 'Iniciando atualização pelo instalador YouLink-Setup-x64.exe...'");
+        sb.AppendLine("for ($i = 0; $i -lt 40; $i++) {");
+        sb.AppendLine("    $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue");
+        sb.AppendLine("    if ($null -eq $proc) { break }");
+        sb.AppendLine("    Start-Sleep -Milliseconds 350");
+        sb.AppendLine("}");
+        sb.AppendLine("$stillRunning = Get-Process -Id $targetPid -ErrorAction SilentlyContinue");
+        sb.AppendLine("if ($null -ne $stillRunning) { try { Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue } catch {} Start-Sleep -Milliseconds 600 }");
+        sb.AppendLine("$procSetup = Start-Process -FilePath $setupExe -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS') -Wait -PassThru");
+        sb.AppendLine("Write-Log \"Instalador finalizado com código: $($procSetup.ExitCode)\"");
+        sb.AppendLine("if ($procSetup.ExitCode -ne 0) { throw \"Instalador retornou código $($procSetup.ExitCode).\" }");
+        sb.AppendLine("if (Test-Path $launchExe) {");
+        sb.AppendLine("    Start-Process -FilePath $launchExe -WorkingDirectory (Split-Path -Parent $launchExe)");
+        sb.AppendLine("}");
         return sb.ToString();
     }
 
     private static (string? AssetName, string? DownloadUrl, long? SizeBytes) SelectPlatformAsset(
         bool isWindows,
         bool isAndroid,
+        bool preferWindowsSetup,
+        string? windowsSetupUrl,
+        long? windowsSetupSize,
         string? windowsUrl,
         long? windowsSize,
         string? androidUrl,
         long? androidSize)
     {
-        if (isWindows && !string.IsNullOrWhiteSpace(windowsUrl))
-            return (WindowsAssetName, windowsUrl, windowsSize);
+        if (isWindows)
+        {
+            if (preferWindowsSetup && !string.IsNullOrWhiteSpace(windowsSetupUrl))
+                return (WindowsSetupAssetName, windowsSetupUrl, windowsSetupSize);
+
+            if (!string.IsNullOrWhiteSpace(windowsUrl))
+                return (WindowsAssetName, windowsUrl, windowsSize);
+
+            if (!string.IsNullOrWhiteSpace(windowsSetupUrl))
+                return (WindowsSetupAssetName, windowsSetupUrl, windowsSetupSize);
+        }
 
         if (isAndroid && !string.IsNullOrWhiteSpace(androidUrl))
             return (AndroidAssetName, androidUrl, androidSize);

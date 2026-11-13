@@ -83,6 +83,7 @@ public sealed class AppUpdateService
             var currentVersion = ResolveCurrentVersion();
             var isWindows = OperatingSystem.IsWindows();
             var isAndroid = OperatingSystem.IsAndroid();
+            var preferWindowsSetup = isWindows && AppUpdateCatalog.IsWindowsSetupInstallation(AppContext.BaseDirectory);
 
             AppUpdateReleaseInfo? githubRelease = null;
             string? githubError = null;
@@ -94,7 +95,12 @@ public sealed class AppUpdateService
                 if (resp.IsSuccessStatusCode)
                 {
                     var json = await resp.Content.ReadAsStringAsync(cts.Token);
-                    githubRelease = AppUpdateCatalog.ParseGitHubReleaseJson(json, currentVersion, isWindows, isAndroid);
+                    githubRelease = AppUpdateCatalog.ParseGitHubReleaseJson(
+                        json,
+                        currentVersion,
+                        isWindows,
+                        isAndroid,
+                        preferWindowsSetup);
                 }
                 else
                 {
@@ -120,7 +126,8 @@ public sealed class AppUpdateService
                 apiCompat,
                 currentVersion,
                 isWindows,
-                isAndroid);
+                isAndroid,
+                preferWindowsSetup);
 
             if (resolved is not null)
             {
@@ -359,38 +366,36 @@ public sealed class AppUpdateService
 
         Span<byte> header = stackalloc byte[2];
         using var fs = File.OpenRead(filePath);
-        if (fs.Read(header) < 2 || header[0] != (byte)'P' || header[1] != (byte)'K')
+        if (fs.Read(header) < 2)
+        {
+            throw new InvalidOperationException("O arquivo baixado está vazio ou corrompido.");
+        }
+
+        if (filePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            if (header[0] != (byte)'M' || header[1] != (byte)'Z')
+            {
+                throw new InvalidOperationException("O arquivo baixado não é um instalador Windows válido (.exe).");
+            }
+            return;
+        }
+
+        if (header[0] != (byte)'P' || header[1] != (byte)'K')
         {
             throw new InvalidOperationException("O pacote baixado não parece ser um instalador válido (.zip/.apk).");
         }
     }
 
     private async Task ApplyWindowsUpdateAsync(
-        string zipPath,
+        string packagePath,
         string updateDir,
         string targetVersion,
         CancellationToken ct)
     {
-        StatusMessage = "Extraindo nova versão...";
-        NotifyChanged();
-
-        var stagingDir = Path.Combine(updateDir, "staging");
-        if (Directory.Exists(stagingDir))
-        {
-            Directory.Delete(stagingDir, recursive: true);
-        }
-
-        ZipFile.ExtractToDirectory(zipPath, stagingDir, overwriteFiles: true);
-        var sourceAppDir = AppUpdateCatalog.ResolveExtractedAppRoot(stagingDir);
-        if (string.IsNullOrWhiteSpace(sourceAppDir))
-        {
-            throw new InvalidOperationException("Executável do YouLink não encontrado dentro do pacote Windows.");
-        }
-
         var currentAppDir = AppContext.BaseDirectory;
         if (AppUpdateCatalog.IsDevelopmentBuildDirectory(currentAppDir))
         {
-            StatusMessage = $"✓ Pacote v{targetVersion} baixado e validado em: {zipPath} (pasta de desenvolvimento preservada).";
+            StatusMessage = $"✓ Pacote v{targetVersion} baixado e validado em: {packagePath} (pasta de desenvolvimento preservada).";
             TryOpenWindowsFolder(updateDir);
             NotifyChanged();
             return;
@@ -398,12 +403,50 @@ public sealed class AppUpdateService
 
         var scriptPath = Path.Combine(updateDir, "apply-youlink-update.ps1");
         var logPath = Path.Combine(updateDir, "update.log");
-        var script = AppUpdateCatalog.BuildWindowsApplyUpdateScript(
-            Environment.ProcessId,
-            sourceAppDir,
-            currentAppDir,
-            AppUpdateCatalog.WindowsExecutableName,
-            logPath);
+        string script;
+
+        if (packagePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            StatusMessage = "Preparando instalador da nova versão...";
+            NotifyChanged();
+
+            var parentDir = Directory.GetParent(currentAppDir.TrimEnd('\\', '/'))?.FullName;
+            var launcherPath = parentDir is not null && File.Exists(Path.Combine(parentDir, AppUpdateCatalog.WindowsLauncherName))
+                ? Path.Combine(parentDir, AppUpdateCatalog.WindowsLauncherName)
+                : Path.Combine(currentAppDir, AppUpdateCatalog.WindowsExecutableName);
+
+            script = AppUpdateCatalog.BuildWindowsInstallerUpdateScript(
+                Environment.ProcessId,
+                packagePath,
+                launcherPath,
+                logPath);
+        }
+        else
+        {
+            StatusMessage = "Extraindo nova versão...";
+            NotifyChanged();
+
+            var stagingDir = Path.Combine(updateDir, "staging");
+            if (Directory.Exists(stagingDir))
+            {
+                Directory.Delete(stagingDir, recursive: true);
+            }
+
+            ZipFile.ExtractToDirectory(packagePath, stagingDir, overwriteFiles: true);
+            var sourceAppDir = AppUpdateCatalog.ResolveExtractedAppRoot(stagingDir);
+            if (string.IsNullOrWhiteSpace(sourceAppDir))
+            {
+                throw new InvalidOperationException("Executável do YouLink não encontrado dentro do pacote Windows.");
+            }
+
+            script = AppUpdateCatalog.BuildWindowsApplyUpdateScript(
+                Environment.ProcessId,
+                sourceAppDir,
+                currentAppDir,
+                AppUpdateCatalog.WindowsExecutableName,
+                logPath);
+        }
+
         await File.WriteAllTextAsync(scriptPath, script, ct);
 
         var needsElevation = !TryProbeDirectoryWritable(currentAppDir);

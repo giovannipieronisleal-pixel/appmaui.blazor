@@ -46,7 +46,24 @@ public class PixCheckoutAndShippingTests
         int stock = 5)
     {
         var employees = await repo.GetEmployeesAsync();
-        var adminEmpId = employees[0].Id;
+        Guid adminEmpId;
+        if (employees.Count > 0)
+        {
+            adminEmpId = employees[0].Id;
+        }
+        else
+        {
+            var jwtConfig = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:SecretKey"] = "TestSecretKeyForUnitTesting_1234567890_ABCDEF!" })
+                .Build();
+            var auth = new AuthService(repo, new Pbkdf2PasswordHasher(), new JwtTokenService(jwtConfig));
+            var created = await auth.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                "Dona Pix",
+                "dona.pix@youlink.app",
+                "1234",
+                Username: "dona.pix"));
+            adminEmpId = created.Employee.EmployeeId;
+        }
 
         var catService = new ProductManagementService(repo, storage);
         var categories = await catService.GetAllCategoriesAsync();

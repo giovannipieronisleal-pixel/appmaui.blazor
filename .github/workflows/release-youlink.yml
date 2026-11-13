@@ -58,7 +58,24 @@ jobs:
         run: dotnet build appmaui.blazor.csproj -t:InstallAndroidDependencies -f net10.0-android -c Release -p:AcceptAndroidSDKLicenses=true
 
       - name: Publicar APK Release
-        run: dotnet publish appmaui.blazor.csproj -f net10.0-android -c Release -p:AndroidPackageFormat=apk -m:1
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "Assinando APK com keystore persistente configurada nos Secrets do GitHub..."
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/youlink-release.keystore"
+            dotnet publish appmaui.blazor.csproj -f net10.0-android -c Release -p:AndroidPackageFormat=apk -m:1 \
+              -p:AndroidKeyStore=true \
+              -p:AndroidSigningKeyStore="$RUNNER_TEMP/youlink-release.keystore" \
+              -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \
+              -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" \
+              -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD"
+          else
+            dotnet publish appmaui.blazor.csproj -f net10.0-android -c Release -p:AndroidPackageFormat=apk -m:1
+          fi
 
       - name: Preparar arquivo YouLink-Android.apk
         run: |
@@ -104,18 +121,25 @@ jobs:
           YOULINK_WIN_PUBLISH_DIR: dist/YouLink-Windows
         run: dotnet run --project tests/ClothingStore.UnitTests/ClothingStore.UnitTests.csproj -c Release
 
-      - name: Compactar YouLink-Windows-x64.zip
+      - name: Montar pacote organizado e Instalador Windows (YouLink.exe + Setup)
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist-zip | Out-Null
-          Compress-Archive -Path dist/YouLink-Windows/* -DestinationPath dist-zip/YouLink-Windows-x64.zip -Force
-          Get-Item dist-zip/YouLink-Windows-x64.zip
+          [xml]$proj = Get-Content appmaui.blazor.csproj
+          $appVer = ($proj.Project.PropertyGroup.ApplicationDisplayVersion | Where-Object { $_ } | Select-Object -First 1).Trim()
+          & .\installer\build-windows-package.ps1 `
+            -PublishDir dist/YouLink-Windows `
+            -OutputZipPath dist-zip/YouLink-Windows-x64.zip `
+            -OutputInstallerDir dist-installer `
+            -Version $appVer `
+            -RequireInstaller
 
-      - name: Enviar artefato Windows x64
+      - name: Enviar artefato Windows x64 (.zip portável + Setup .exe)
         uses: actions/upload-artifact@v4
         with:
           name: YouLink-Windows-x64
-          path: dist-zip/YouLink-Windows-x64.zip
+          path: |
+            dist-zip/YouLink-Windows-x64.zip
+            dist-installer/YouLink-Setup-x64.exe
 
   release:
     name: Publicar GitHub Release e Limpar Antigos
@@ -167,7 +191,8 @@ jobs:
             'Aplicativo **YouLink** para **Android** e **Windows x64** com vitrine web integrada, gestão de estoque e publicação gratuita 24h direto pelo app.' \
             '' \
             '### Arquivos deste Release' \
-            '- `YouLink-Windows-x64.zip` — versão portável Self-Contained para Windows 10/11 (extraia e execute; não exige .NET instalado).' \
+            '- `YouLink-Setup-x64.exe` — **Instalador oficial Windows (Recomendado)**: instala em 1 clique com ícone do YouLink na Área de Trabalho e Menu Iniciar.' \
+            '- `YouLink-Windows-x64.zip` — versão portável organizada na pasta `YouLink/` (`YouLink.exe` + subpasta `App/`); extraia tudo antes de abrir.' \
             '- `YouLink-Android.apk` — instalador Android (ative *"Instalar apps desconhecidos"* se instalar fora da Play Store).' \
             '' \
             '### Principais Recursos' \

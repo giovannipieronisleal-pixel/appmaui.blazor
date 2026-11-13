@@ -54,7 +54,15 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
                     if (loaded is not null && loaded.Roles.Count > 0)
                     {
                         HydrateNavigationProperties(loaded);
-                        _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
+                        if (PurgeLegacyDefaultAdmin(loaded))
+                        {
+                            PersistToDisk(loaded);
+                        }
+                        else
+                        {
+                            _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
+                        }
+
                         return loaded;
                     }
 
@@ -142,6 +150,60 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         state.Orders ??= [];
     }
 
+    private static readonly Guid LegacyDefaultAdminUserId = Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111");
+    private static readonly Guid LegacyDefaultAdminEmployeeId = Guid.Parse("bbbbbbbb-1111-1111-1111-111111111111");
+
+    private bool PurgeLegacyDefaultAdmin(ClothingStoreDatabaseState state)
+    {
+        var legacyUserIds = state.Users
+            .Where(u =>
+                u.Id == LegacyDefaultAdminUserId ||
+                ((string.Equals(u.Email, "admin", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(u.Username, "admin", StringComparison.OrdinalIgnoreCase)) &&
+                 _passwordHasher.VerifyPassword("admin", u.PasswordHash)))
+            .Select(u => u.Id)
+            .ToHashSet();
+
+        var removedUsers = legacyUserIds.Count > 0
+            ? state.Users.RemoveAll(u => legacyUserIds.Contains(u.Id))
+            : 0;
+        var removedEmployees = state.Employees.RemoveAll(e =>
+            legacyUserIds.Contains(e.UserId) || e.Id == LegacyDefaultAdminEmployeeId);
+
+        if (removedUsers == 0 && removedEmployees == 0)
+        {
+            return false;
+        }
+
+        // Se o banco já tinha outro usuário real cadastrado antes da remoção do admin legado,
+        // garante que pelo menos um usuário ativo possua perfil Administrador para não travar a loja.
+        var adminRole = state.Roles.FirstOrDefault(r =>
+            string.Equals(r.Name, ClothingStore.Domain.Enums.RoleNames.Admin, StringComparison.OrdinalIgnoreCase));
+
+        if (adminRole is not null &&
+            state.Users.Any(u => u.IsActive) &&
+            !state.Users.Any(u => u.IsActive && u.RoleId == adminRole.Id))
+        {
+            var earliestActiveUser = state.Users
+                .Where(u => u.IsActive)
+                .OrderBy(u => u.CreatedAt)
+                .First();
+            earliestActiveUser.RoleId = adminRole.Id;
+            earliestActiveUser.Role = adminRole;
+
+            var employee = state.Employees.FirstOrDefault(e => e.UserId == earliestActiveUser.Id);
+            if (employee is not null)
+            {
+                employee.CanManageProducts = true;
+                employee.CanManageStock = true;
+                employee.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        HydrateNavigationProperties(state);
+        return true;
+    }
+
     private void PersistToDisk(ClothingStoreDatabaseState state)
     {
         try
@@ -175,8 +237,16 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
                         if (loaded is not null && loaded.Roles.Count > 0)
                         {
                             HydrateNavigationProperties(loaded);
+                            var purged = PurgeLegacyDefaultAdmin(loaded);
                             _state = loaded;
-                            _lastLoadedUtc = lastWrite;
+                            if (purged)
+                            {
+                                PersistToDisk(loaded);
+                            }
+                            else
+                            {
+                                _lastLoadedUtc = lastWrite;
+                            }
                         }
                     }
                 }

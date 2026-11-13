@@ -137,34 +137,33 @@ public class DomainAndRepositoryTests
     }
 
     [TestMethod]
-    public async Task Repository_InitialSeed_ShouldStartCleanWithoutExampleProductsAndWithDefaultAdmin()
+    public async Task Repository_InitialSeed_ShouldStartCleanWithoutExampleProductsOrDefaultUsers()
     {
         var tempFile = Path.Combine(Path.GetTempPath(), $"clothingstore_clean_{Guid.NewGuid():N}.json");
         try
         {
             var hasher = new Pbkdf2PasswordHasher();
             var repo = new ClothingStoreRepository(hasher, tempFile);
+            var jwt = new JwtTokenService(new ConfigurationBuilder().Build());
+            var auth = new AuthService(repo, hasher, jwt);
 
             var products = await repo.GetProductsAsync();
             var categories = await repo.GetCategoriesAsync();
             var employees = await repo.GetEmployeesAsync();
+            var setupStatus = await auth.GetSetupStatusAsync();
 
-            // Nenhum produto nem categoria de exemplo pré-cadastrada (clientes criam suas próprias categorias)
+            // Nenhum produto, categoria nem usuário padrão pré-cadastrado
             Assert.AreEqual(0, products.Count);
             Assert.AreEqual(0, categories.Count);
-            // Apenas o login Admin padrão (login: admin / senha: admin)
-            Assert.AreEqual(1, employees.Count);
-            Assert.AreEqual("admin", employees[0].User?.Email);
+            Assert.AreEqual(0, employees.Count);
+            Assert.IsTrue(setupStatus.RequiresInitialSetup);
+
+            await Assert.ThrowsExceptionAsync<DomainException>(async () =>
+                await auth.LoginAsync(new LoginRequest("admin", "admin")));
 
             var settings = await repo.GetStoreSettingsAsync();
             Assert.AreEqual("Minha Loja", settings.StoreName);
             Assert.AreEqual("minha-loja", settings.StoreSlug);
-
-            var liveDbPath = @"C:\Dev\appmaui.blazor\App_Data\clothingstore_db.json";
-            if (Directory.Exists(@"C:\Dev\appmaui.blazor\App_Data"))
-            {
-                File.Copy(tempFile, liveDbPath, overwrite: true);
-            }
         }
         finally
         {
@@ -174,7 +173,7 @@ public class DomainAndRepositoryTests
     }
 
     [TestMethod]
-    public async Task Security_DefaultAdminLogin_OptionalEmployeeEmail_BruteForceLockout_And_ZeroPasswordLeak_ShouldWork()
+    public async Task Security_RegisteredAdminLogin_OptionalEmployeeEmail_BruteForceLockout_And_ZeroPasswordLeak_ShouldWork()
     {
         var tempFile = Path.Combine(Path.GetTempPath(), $"clothingstore_sec_{Guid.NewGuid():N}.json");
         var tempUploads = Path.Combine(Path.GetTempPath(), $"clothingstore_uploads_{Guid.NewGuid():N}");
@@ -196,11 +195,16 @@ public class DomainAndRepositoryTests
             var imageStorage = new SupabaseImageStorageService(httpClient, config, tempUploads);
             var adminService = new EmployeeAndSettingsService(repo, hasher, imageStorage);
 
-            // 1. Login Admin padrão ("admin" / "admin") funciona imediatamente sem precisar de @
-            var loginResp = await authService.LoginAsync(new LoginRequest("admin", "admin"));
+            // 1. Primeira conta cadastrada vira Administradora e entra por nome de usuário (sem precisar de @)
+            await authService.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                "Dona Segurança",
+                "dona.sec@loja.com",
+                "SenhaForte@123",
+                Username: "dona.sec"));
+            var loginResp = await authService.LoginAsync(new LoginRequest("dona.sec", "SenhaForte@123"));
             Assert.IsFalse(string.IsNullOrWhiteSpace(loginResp.AccessToken));
             Assert.IsTrue(loginResp.Employee.IsAdmin);
-            Assert.AreEqual("admin", loginResp.Employee.Email);
+            Assert.AreEqual("dona.sec@loja.com", loginResp.Employee.Email);
 
             // 2. Criar funcionário SEM informar e-mail (gera login automático pelo nome ou usa Username)
             var empWithoutEmail = await adminService.CreateEmployeeAsync(new CreateEmployeeRequest
@@ -221,12 +225,12 @@ public class DomainAndRepositoryTests
             for (int i = 0; i < 5; i++)
             {
                 await Assert.ThrowsExceptionAsync<DomainException>(async () =>
-                    await authService.LoginAsync(new LoginRequest("admin", "errada")));
+                    await authService.LoginAsync(new LoginRequest("dona.sec", "errada")));
             }
 
             // Mesmo com a senha correta, a conta bloqueada rejeita o login durante o período de lockout
             await Assert.ThrowsExceptionAsync<DomainException>(async () =>
-                await authService.LoginAsync(new LoginRequest("admin", "admin")));
+                await authService.LoginAsync(new LoginRequest("dona.sec", "SenhaForte@123")));
         }
         finally
         {
@@ -269,8 +273,13 @@ public class DomainAndRepositoryTests
             var adminServiceMaui = new EmployeeAndSettingsService(repoMaui, hasher, imageStorage);
             var catalogServiceWeb = new CatalogService(repoWeb);
 
-            // 1. Login com Admin padrão ("admin" / "admin") e personalização da loja
-            var adminSession = await authService.LoginAsync(new LoginRequest("admin", "admin"));
+            // 1. Cadastro da primeira conta Administradora e personalização da loja
+            var adminSession = await authService.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                "Dona Lumière",
+                "dona@lumiere.com",
+                "SenhaForte@123",
+                Username: "dona.lumiere"));
+            Assert.IsTrue(adminSession.Employee.IsAdmin);
             await adminServiceMaui.UpdateStoreSettingsAsync(adminSession.Employee.EmployeeId, new UpdateStoreSettingsRequest
             {
                 StoreName = "Maison Lumière",
@@ -391,7 +400,7 @@ public class DomainAndRepositoryTests
     }
 
     [TestMethod]
-    public async Task DefaultAdmin_Login_And_TwoFactor_ShouldWorkProperly()
+    public async Task RegisteredAdmin_Login_And_TwoFactor_ShouldWorkProperly()
     {
         var tempFile = Path.Combine(Path.GetTempPath(), $"clothingstore_admin_test_{Guid.NewGuid():N}.json");
         try
@@ -401,15 +410,20 @@ public class DomainAndRepositoryTests
             var jwt = new JwtTokenService(new ConfigurationBuilder().Build());
             var authService = new AuthService(repo, hasher, jwt);
 
-            // 1. Login com usuário padrão admin e senha admin
-            var loginResp = await authService.LoginAsync(new LoginRequest("admin", "admin"));
+            // 1. Cadastra a primeira conta administradora e entra com usuário e senha
+            await authService.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                "Administrador Loja",
+                "dona.twofa@loja.com",
+                "Senha2FA@123",
+                Username: "dona.twofa"));
+            var loginResp = await authService.LoginAsync(new LoginRequest("dona.twofa", "Senha2FA@123"));
             Assert.IsNotNull(loginResp);
-            Assert.AreEqual("admin", loginResp.Employee.Email);
-            Assert.AreEqual("Administrador", loginResp.Employee.FullName);
+            Assert.AreEqual("dona.twofa@loja.com", loginResp.Employee.Email);
+            Assert.AreEqual("Administrador Loja", loginResp.Employee.FullName);
             Assert.IsTrue(loginResp.Employee.IsAdmin);
 
             // 2. Testar que login com caixa alta (case-insensitive) também funciona
-            var loginCaseResp = await authService.LoginAsync(new LoginRequest("ADMIN", "admin"));
+            var loginCaseResp = await authService.LoginAsync(new LoginRequest("DONA.TWOFA", "Senha2FA@123"));
             Assert.IsNotNull(loginCaseResp);
 
             // 3. Configurar 2FA para o admin
@@ -426,18 +440,18 @@ public class DomainAndRepositoryTests
             Assert.IsTrue(enabledProfile.HasTwoFactorEnabled);
 
             // 5. Tentar logar com senha: deve acusar que 2FA é exigido
-            var challenge = await authService.LoginWithChallengeAsync(new LoginRequest("admin", "admin"));
+            var challenge = await authService.LoginWithChallengeAsync(new LoginRequest("dona.twofa", "Senha2FA@123"));
             Assert.IsTrue(challenge.RequiresTwoFactor);
             Assert.IsNull(challenge.AuthResult);
 
             // 6. Completar login com código 2FA
-            var twoFactorLogin = await authService.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", currentOtp));
+            var twoFactorLogin = await authService.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("dona.twofa", currentOtp));
             Assert.IsNotNull(twoFactorLogin);
-            Assert.AreEqual("admin", twoFactorLogin.Employee.Email);
+            Assert.AreEqual("dona.twofa@loja.com", twoFactorLogin.Employee.Email);
 
             // 7. Também permite usar código de emergência/backup
             var backupCode = setup.BackupCodes[0];
-            var backupLogin = await authService.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("admin", backupCode));
+            var backupLogin = await authService.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest("dona.twofa", backupCode));
             Assert.IsNotNull(backupLogin);
         }
         finally
