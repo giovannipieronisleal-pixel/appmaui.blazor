@@ -161,14 +161,31 @@ jobs:
           echo "Release alvo: $TAG (commit $TARGET_SHA)"
           ls -lh release-assets/
 
+          RELEASE_NOTES=$(cat <<EOF
+## YouLink $TAG
+
+Aplicativo **YouLink** para **Android** e **Windows x64** com vitrine web integrada, gestão de estoque e publicação gratuita 24h direto pelo app.
+
+### Arquivos deste Release
+- \`YouLink-Windows-x64.zip\` — versão portável Self-Contained para Windows 10/11 (extraia e execute; não exige .NET instalado).
+- \`YouLink-Android.apk\` — instalador Android (ative *"Instalar apps desconhecidos"* se instalar fora da Play Store).
+
+### Principais Recursos
+- Publicação de site grátis 24h no Render em 3 passos sem terminal (**Loja & Visual**).
+- Atualização automática com popup dentro do próprio app (Windows preservando \`App_Data\` e Android).
+- Catálogo digital, QR Code, pedidos no WhatsApp, Pix EMV e cálculo de frete PAC/SEDEX.
+EOF
+)
+
           if gh release view "$TAG" --repo "$REPO_NAME" >/dev/null 2>&1; then
-            echo "Release $TAG já existe; atualizando instaladores..."
+            echo "Release $TAG já existe; atualizando instaladores e descrição..."
             gh release upload "$TAG" ./release-assets/* --clobber --repo "$REPO_NAME"
+            gh release edit "$TAG" --title "YouLink $TAG" --notes "$RELEASE_NOTES" --repo "$REPO_NAME"
           else
             gh release create "$TAG" ./release-assets/* \
               --target "$TARGET_SHA" \
               --title "YouLink $TAG" \
-              --notes "Aplicativo **YouLink** compilado e pronto para instalação (Android APK + Windows x64)." \
+              --notes "$RELEASE_NOTES" \
               --repo "$REPO_NAME"
           fi
 
