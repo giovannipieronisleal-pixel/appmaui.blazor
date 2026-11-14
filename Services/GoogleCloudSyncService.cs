@@ -217,7 +217,9 @@ public sealed class GoogleCloudSyncService
 
         var reason = lastStatusCode.HasValue
             ? $"HTTP {(int)lastStatusCode.Value}"
-            : lastException?.Message ?? "sem resposta";
+            : lastException is OperationCanceledException or TimeoutException
+                ? "tempo limite de conexão esgotado — verifique se o endereço está correto e se o servidor está ativo"
+                : lastException?.Message ?? "sem resposta";
 
         return new OwnServerHealthCheckResult(
             false,
@@ -234,7 +236,7 @@ public sealed class GoogleCloudSyncService
             or (HttpStatusCode)429;
 
     private static bool IsTransientWakeupException(Exception ex) =>
-        ex is HttpRequestException or TaskCanceledException or TimeoutException;
+        ex is HttpRequestException or TaskCanceledException or OperationCanceledException or TimeoutException;
 
     public async Task<GoogleAccountTierVerificationResult> VerifyGoogleAccountByTokenAsync(
         string accessToken,

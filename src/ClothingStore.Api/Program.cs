@@ -497,6 +497,15 @@ app.MapPost("/api/platform-sync/toggle-user-active/{userId:guid}", async (
         nextActive ? $"Conta '{employee.FullName}' reativada no servidor." : $"Conta '{employee.FullName}' suspensa no servidor."));
 }).AllowAnonymous();
 
+app.MapPost("/api/platform-sync/sync-accounts", async (
+    SyncLocalAccountsRequest request,
+    IClothingStoreRepository repository,
+    IPasswordHasher passwordHasher,
+    CancellationToken ct) =>
+    Results.Ok(await PlatformAccountSyncProcessor.ProcessSyncBatchAsync(request, repository, passwordHasher, ct)))
+    .AllowAnonymous()
+    .RequireRateLimiting("auth-strict");
+
 authGroup.MapPost("/email-code/request", async (RequestEmailLoginCodeRequest request, AuthService authService, CancellationToken ct) =>
     Results.Ok(await authService.RequestEmailLoginCodeAsync(request, ct))).AllowAnonymous().RequireRateLimiting("auth-strict");
 

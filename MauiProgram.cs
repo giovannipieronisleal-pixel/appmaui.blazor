@@ -40,21 +40,19 @@ public static class MauiProgram
         {
             var handler = new SocketsHttpHandler
             {
-                ConnectTimeout = TimeSpan.FromMilliseconds(900)
+                ConnectTimeout = TimeSpan.FromSeconds(5)
             };
             return new HttpClient(handler)
             {
                 BaseAddress = new Uri(apiBaseUrl),
-                Timeout = TimeSpan.FromSeconds(6)
+                Timeout = TimeSpan.FromSeconds(20)
             };
         });
         builder.Services.AddSingleton<AdminApiClient>();
 
         // Repositório compartilhado no Windows ou armazenamento seguro do app no Android
-        var activeWorkspaceRoot = ResolveExistingDevWorkspaceRoot();
-        var dbFilePath = activeWorkspaceRoot is not null
-            ? Path.Combine(activeWorkspaceRoot, "App_Data", "clothingstore_db.json")
-            : Path.Combine(FileSystem.AppDataDirectory, "clothingstore_db.json");
+        var activeWorkspaceRoot = SharedDatabasePathResolver.ResolveExistingDevWorkspaceRoot();
+        var dbFilePath = SharedDatabasePathResolver.ResolveSharedDatabaseFilePath(activeWorkspaceRoot, FileSystem.AppDataDirectory);
 
         var outboxFilePath = Path.Combine(Path.GetDirectoryName(dbFilePath) ?? FileSystem.AppDataDirectory, "email_outbox.txt");
 
@@ -101,19 +99,5 @@ public static class MauiProgram
         _ = Task.Run(LocalWebServerLauncher.EnsureWebCatalogRunningAsync);
 
         return app;
-    }
-
-    private static string? ResolveExistingDevWorkspaceRoot()
-    {
-        if (!OperatingSystem.IsWindows())
-            return null;
-
-        foreach (var candidate in new[] { @"C:\Dev\YouLink", @"C:\Dev\appmaui.blazor" })
-        {
-            if (Directory.Exists(candidate))
-                return candidate;
-        }
-
-        return null;
     }
 }

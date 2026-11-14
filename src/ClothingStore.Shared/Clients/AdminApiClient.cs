@@ -200,7 +200,7 @@ public sealed class AdminApiClient
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
 
             var infoResp = await _httpClient.GetAsync(new Uri(targetBase, "api/public/store-info"), cts.Token);
             if (infoResp.IsSuccessStatusCode)
@@ -240,6 +240,23 @@ public sealed class AdminApiClient
         var response = await _httpClient.SendAsync(req, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<PlatformAccountsSyncEnvelopeDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<SyncLocalAccountsResultDto> SyncLocalAccountsAsync(
+        SyncLocalAccountsRequest request,
+        string? syncSecret = null,
+        CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint("/api/platform-sync/sync-accounts"))
+        {
+            Content = JsonContent.Create(request)
+        };
+        if (!string.IsNullOrWhiteSpace(syncSecret))
+            req.Headers.Add("X-YouLink-Sync-Key", syncSecret.Trim());
+
+        var response = await _httpClient.SendAsync(req, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<SyncLocalAccountsResultDto>(cancellationToken: ct))!;
     }
 
     public async Task<AdminStoreSettingsDto> ApplyRemoteVipAsync(

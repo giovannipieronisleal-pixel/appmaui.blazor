@@ -16,6 +16,7 @@ public sealed class MauiAdminGateway
 {
     private const string SessionStorageKey = "clothingstore_auth_session_v1";
     private const string ServerUrlPreferenceKey = "youlink_api_base_url_v1";
+    private const string PendingAccountSyncPreferenceKey = "youlink_pending_account_sync_v1";
     private static string ResolveCurrentClientAppVersion()
     {
         try
@@ -52,6 +53,8 @@ public sealed class MauiAdminGateway
     public bool CanManageStock => IsAdmin || (CurrentEmployee?.CanManageStock ?? false);
     public bool HasCustomServerUrl { get; private set; }
     public bool LastAccountActionWasLocalOnly { get; private set; }
+    public int LastSyncedAccountsCount { get; private set; }
+    public string? LastSyncedAccountsMessage { get; private set; }
     public bool IsRemoteApiOnline => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
     public string CurrentServerUrl => _apiClient.CurrentBaseAddress ?? string.Empty;
     public ApiCompatibilityStatusDto? LatestCompatibilityStatus { get; private set; }
@@ -114,6 +117,8 @@ public sealed class MauiAdminGateway
             var defaultTest = await _apiClient.TestServerConnectionAsync(null, ct);
             if (!defaultTest.Reachable)
                 _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            else
+                await TrySyncLocalAccountsQuietlyAsync(ct);
 
             AuthStateChanged?.Invoke();
             return defaultTest;
@@ -133,10 +138,101 @@ public sealed class MauiAdminGateway
         }
 
         if (!probe.Reachable)
+        {
             _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+        }
+        else
+        {
+            await TrySyncLocalAccountsQuietlyAsync(ct);
+        }
 
         AuthStateChanged?.Invoke();
         return probe;
+    }
+
+    private static bool GetPendingAccountSync()
+    {
+        try
+        {
+            return Preferences.Default.Get(PendingAccountSyncPreferenceKey, false);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void SetPendingAccountSync(bool pending)
+    {
+        try
+        {
+            if (pending)
+                Preferences.Default.Set(PendingAccountSyncPreferenceKey, true);
+            else
+                Preferences.Default.Remove(PendingAccountSyncPreferenceKey);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task<SyncLocalAccountsResultDto?> TrySyncLocalAccountsQuietlyAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await PushLocalAccountsToServerAsync(ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Envia todas as contas locais deste aparelho para o servidor central / Receptor LAN do YouLink Admin.
+    /// Idempotente: contas já existentes no destino são preservadas sem alteração.
+    /// </summary>
+    public async Task<SyncLocalAccountsResultDto> PushLocalAccountsToServerAsync(CancellationToken ct = default)
+    {
+        var employees = await _employeeAndSettingsService.GetEmployeesAsync(ct);
+        var adminStore = await _employeeAndSettingsService.GetAdminStoreSettingsAsync(ct);
+        var storeName = string.IsNullOrWhiteSpace(adminStore.StoreName) ? null : adminStore.StoreName.Trim();
+
+        var items = employees
+            .Select(e => new SyncLocalAccountItemDto(
+                FullName: e.FullName,
+                Username: e.Username,
+                Email: e.Email,
+                Phone: e.Phone,
+                IsActive: e.IsActive,
+                StoreName: storeName))
+            .Take(PlatformAccountSyncProcessor.MaxBatchSize)
+            .ToList();
+
+        if (items.Count == 0 && CurrentEmployee is not null)
+        {
+            items.Add(new SyncLocalAccountItemDto(
+                FullName: CurrentEmployee.FullName,
+                Username: CurrentEmployee.Username,
+                Email: CurrentEmployee.Email,
+                Phone: CurrentEmployee.Phone,
+                IsActive: CurrentEmployee.IsActive,
+                StoreName: storeName));
+        }
+
+        if (items.Count == 0)
+        {
+            LastSyncedAccountsCount = 0;
+            LastSyncedAccountsMessage = "Nenhuma conta local encontrada neste dispositivo para enviar.";
+            SetPendingAccountSync(false);
+            return new SyncLocalAccountsResultDto(0, 0, LastSyncedAccountsMessage);
+        }
+
+        var result = await _apiClient.SyncLocalAccountsAsync(new SyncLocalAccountsRequest(items), ct: ct);
+        LastSyncedAccountsCount = result.ImportedCount;
+        LastSyncedAccountsMessage = result.Message;
+        SetPendingAccountSync(false);
+        return result;
     }
 
     public async Task<ApiCompatibilityStatusDto?> RefreshCompatibilityAsync(CancellationToken ct = default)
@@ -258,6 +354,11 @@ public sealed class MauiAdminGateway
             CurrentEmployee = freshProfile;
             _apiClient.SetSession(saved.AccessToken, freshProfile);
             AuthStateChanged?.Invoke();
+
+            if (GetPendingAccountSync())
+            {
+                _ = TrySyncLocalAccountsQuietlyAsync();
+            }
         }
         catch
         {
@@ -288,7 +389,14 @@ public sealed class MauiAdminGateway
             });
 
         if (usedFallback)
+        {
             LastAccountActionWasLocalOnly = true;
+            SetPendingAccountSync(true);
+        }
+        else if (GetPendingAccountSync())
+        {
+            _ = TrySyncLocalAccountsQuietlyAsync();
+        }
 
         await PersistSessionAsync(response);
         return response;
@@ -729,12 +837,38 @@ public sealed class MauiAdminGateway
             () => _employeeAndSettingsService.GetEmployeesAsync());
     }
 
-    public Task<EmployeeProfileDto> CreateEmployeeAsync(CreateEmployeeRequest request)
+    public async Task<EmployeeProfileDto> CreateEmployeeAsync(CreateEmployeeRequest request)
     {
         EnsureAdminPermission();
-        return ExecuteWithFallbackAsync(
-            () => _apiClient.CreateEmployeeAsync(request),
-            () => _employeeAndSettingsService.CreateEmployeeAsync(request));
+
+        if (ShouldTryRemoteApi)
+        {
+            try
+            {
+                var remote = await _apiClient.CreateEmployeeAsync(request);
+                LastAccountActionWasLocalOnly = false;
+                return remote;
+            }
+            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+            {
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+            catch (InvalidOperationException) when (HasCustomServerUrl)
+            {
+                // Sessão iniciada offline no celular antes de conectar o Servidor Central:
+                // cria localmente e sincroniza a conta para o Receptor LAN / YouLink Admin.
+            }
+        }
+
+        var local = await _employeeAndSettingsService.CreateEmployeeAsync(request);
+        LastAccountActionWasLocalOnly = true;
+        SetPendingAccountSync(true);
+        var synced = await TrySyncLocalAccountsQuietlyAsync();
+        if (synced is not null && synced.ImportedCount > 0)
+        {
+            LastAccountActionWasLocalOnly = false;
+        }
+        return local;
     }
 
     public Task<EmployeeProfileDto> UpdateEmployeeAsync(Guid employeeId, UpdateEmployeeRequest request)

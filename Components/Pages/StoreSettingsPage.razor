@@ -508,6 +508,12 @@
                 </button>
                 @if (Gateway.HasCustomServerUrl)
                 {
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            disabled="@_connectingCentralServer"
+                            @onclick="PushLocalAccountsNowFromSettingsAsync">
+                        ⬆️ Enviar Contas p/ Admin Agora
+                    </button>
                     <button type="button" class="adm-btn adm-btn-outline" @onclick="DisconnectCentralServerFromSettingsAsync">
                         Usar apenas local
                     </button>
@@ -976,12 +982,36 @@
             if (result.Reachable)
             {
                 _centralServerUrlInput = result.NormalizedUrl;
-                _centralServerFeedback = $"✓ Conectado ao servidor {result.NormalizedUrl}! Contas e vendas sincronizam automaticamente.";
+                var syncMsg = string.IsNullOrWhiteSpace(Gateway.LastSyncedAccountsMessage)
+                    ? "Contas e vendas sincronizam automaticamente."
+                    : Gateway.LastSyncedAccountsMessage;
+                _centralServerFeedback = $"✓ Conectado ao servidor {result.NormalizedUrl}! {syncMsg}";
             }
             else
             {
                 _centralServerFeedback = result.ErrorMessage ?? "Não foi possível conectar ao servidor informado.";
             }
+        }
+        finally
+        {
+            _connectingCentralServer = false;
+        }
+    }
+
+    private async Task PushLocalAccountsNowFromSettingsAsync()
+    {
+        _connectingCentralServer = true;
+        _centralServerFeedback = null;
+        try
+        {
+            var res = await Gateway.PushLocalAccountsToServerAsync();
+            _centralServerConnectedOk = true;
+            _centralServerFeedback = $"✓ {res.Message}";
+        }
+        catch (Exception ex)
+        {
+            _centralServerConnectedOk = false;
+            _centralServerFeedback = $"Erro ao enviar contas: {ex.Message}";
         }
         finally
         {

@@ -414,6 +414,19 @@ public class SyncCompatAndMobileCheckoutTests
             Assert.AreEqual("Admin", phoneAcc.RoleName);
             Assert.AreEqual("joao.celular@teste.com", phoneAcc.Email);
 
+            // Celular que havia criado contas offline antes de conectar envia o lote pendente
+            var batchSyncResult = await phoneClient.SyncLocalAccountsAsync(new SyncLocalAccountsRequest([
+                new SyncLocalAccountItemDto("João Repetido", "joao.celular", "joao.celular@teste.com", "11999990000"),
+                new SyncLocalAccountItemDto("Maria Offline", "maria.offline", "maria.offline@teste.com", "11988887777", StoreName: "Atelier Maria")
+            ]));
+            Assert.AreEqual(1, batchSyncResult.ImportedCount);
+            Assert.AreEqual(1, batchSyncResult.SkippedExistingCount);
+
+            var afterBatchSync = await adminClient.GetPlatformAccountsSyncAsync(syncSecret);
+            var syncedOfflineAcc = afterBatchSync.Accounts.FirstOrDefault(a => a.Username == "maria.offline");
+            Assert.IsNotNull(syncedOfflineAcc, "Conta criada offline no celular deve aparecer no YouLink Admin após sincronizar!");
+            Assert.AreEqual("Employee", syncedOfflineAcc!.RoleName, "Sincronização nunca deve elevar usuário adicional para Admin.");
+
             // Admin aplica VIP direto para a conta sincronizada e alterna status ativo
             var vipSettings = await adminClient.ApplyRemoteVipAsync(new RemoteApplyVipRequest(
                 PlanTier: StoreSettings.PlanTierIntermediate,
@@ -482,5 +495,114 @@ public class SyncCompatAndMobileCheckoutTests
             var adminTheme = File.ReadAllText(adminAppThemePath, Encoding.UTF8);
             Assert.IsTrue(adminTheme.Contains("_ => \"theme-system\"", StringComparison.Ordinal), "AdminApp também deve retornar theme-system.");
         }
+    }
+
+    [TestMethod]
+    public async Task PlatformAccountSyncProcessor_AndCrossProcessRepoRefresh_ShouldSyncOfflineUsersIdempotentlyWithoutElevation()
+    {
+        var (_, tempDir, dbPath, hasher, _) = CreateIsolatedEnv();
+        try
+        {
+            var repoAdmin = new ClothingStoreRepository(hasher, dbPath);
+            var jwt = new JwtTokenService(new ConfigurationBuilder().Build());
+            var authAdmin = new AuthService(repoAdmin, hasher, jwt);
+
+            await authAdmin.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                "Giovanni Dono",
+                "gio@youlink.app",
+                "SenhaForte!1",
+                Username: "gio"));
+
+            var initialEmployees = await repoAdmin.GetEmployeesAsync();
+            Assert.AreEqual(1, initialEmployees.Count);
+
+            // Simula outro processo (YouLink Desktop) gravando um usuário diretamente no mesmo DB JSON
+            var repoOtherProcess = new ClothingStoreRepository(hasher, dbPath);
+            var authOtherProcess = new AuthService(repoOtherProcess, hasher, jwt);
+            await authOtherProcess.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                "Maria Loja",
+                "maria.loja@youlink.app",
+                "SenhaForte!2",
+                Username: "maria.loja"));
+            File.SetLastWriteTimeUtc(dbPath, DateTime.UtcNow.AddSeconds(2));
+
+            var reloadedEmployees = await repoAdmin.GetEmployeesAsync();
+            Assert.AreEqual(2, reloadedEmployees.Count, "Repositório do YouLink Admin deve recarregar novo usuário salvo por outro processo.");
+            Assert.IsTrue(reloadedEmployees.Any(e => e.User?.Username == "maria.loja"));
+
+            // Simula lote vindo de um celular offline (tentativa de sobrescrever Admin + novo usuário)
+            var syncResult = await PlatformAccountSyncProcessor.ProcessSyncBatchAsync(
+                new SyncLocalAccountsRequest([
+                    new SyncLocalAccountItemDto("Tentativa Sobrescrever Gio", "gio", "gio@youlink.app", "11999991111"),
+                    new SyncLocalAccountItemDto("Carlos Celular", "carlos.cel", "carlos@youlink.app", "11988882222", StoreName: "Loja Carlos")
+                ]),
+                repoAdmin,
+                hasher);
+
+            Assert.AreEqual(1, syncResult.ImportedCount);
+            Assert.AreEqual(1, syncResult.SkippedExistingCount);
+
+            var syncedUser = await repoAdmin.GetUserByEmailAsync("carlos@youlink.app");
+            Assert.IsNotNull(syncedUser);
+            Assert.AreEqual(RoleNames.Employee, syncedUser!.Role?.Name);
+            Assert.IsFalse(hasher.VerifyPassword("", syncedUser.PasswordHash), "Conta sincronizada não pode aceitar senha vazia.");
+
+            var gioAfter = await repoAdmin.GetUserByEmailAsync("gio@youlink.app");
+            Assert.IsNotNull(gioAfter);
+            Assert.AreEqual(RoleNames.Admin, gioAfter!.Role?.Name);
+            Assert.IsTrue(hasher.VerifyPassword("SenhaForte!1", gioAfter.PasswordHash), "Sync idempotente jamais pode alterar senha de usuário existente.");
+
+            var duplicateSyncResult = await PlatformAccountSyncProcessor.ProcessSyncBatchAsync(
+                new SyncLocalAccountsRequest([
+                    new SyncLocalAccountItemDto("Carlos Celular", "carlos.cel", "carlos@youlink.app", "11988882222")
+                ]),
+                repoAdmin,
+                hasher);
+            Assert.AreEqual(0, duplicateSyncResult.ImportedCount);
+            Assert.AreEqual(1, duplicateSyncResult.SkippedExistingCount);
+        }
+        finally
+        {
+            CleanupDir(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task AdminApiClient_TestServerConnection_ShouldReturnFriendlyPortugueseTimeout_NotRawOperationCanceled()
+    {
+        var handler = new StubHttpHandler(_ => throw new TaskCanceledException("OperationCanceled"));
+        using var http = new HttpClient(handler);
+        var client = new AdminApiClient(http);
+
+        var probe = await client.TestServerConnectionAsync("http://192.168.0.50:5180");
+
+        Assert.IsFalse(probe.Reachable);
+        Assert.AreEqual("http://192.168.0.50:5180", probe.NormalizedUrl);
+        Assert.IsNotNull(probe.ErrorMessage);
+        Assert.IsFalse(probe.ErrorMessage!.Contains("OperationCanceled", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(probe.ErrorMessage.Contains("Tempo esgotado", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public void ClientAndAdminSyncArchitecture_ShouldAvoid900msTimeout_AndWireAutoRefresh()
+    {
+        var root = FindRepoRoot();
+
+        var appMaui = File.ReadAllText(Path.Combine(root, "MauiProgram.cs"), Encoding.UTF8);
+        var adminMaui = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.AdminApp", "MauiProgram.cs"), Encoding.UTF8);
+        Assert.IsFalse(appMaui.Contains("FromMilliseconds(900)", StringComparison.Ordinal), "ConnectTimeout de 900ms causa OperationCanceled em Wi-Fi/Render.");
+        Assert.IsFalse(adminMaui.Contains("FromMilliseconds(900)", StringComparison.Ordinal), "AdminApp também não pode usar ConnectTimeout de 900ms.");
+        Assert.IsTrue(adminMaui.Contains("EmbeddedAdminSyncServer", StringComparison.Ordinal), "YouLink Admin precisa iniciar o Receptor LAN embutido.");
+
+        var gateway = File.ReadAllText(Path.Combine(root, "Services", "MauiAdminGateway.cs"), Encoding.UTF8);
+        Assert.IsTrue(gateway.Contains("PushLocalAccountsToServerAsync", StringComparison.Ordinal));
+        Assert.IsTrue(gateway.Contains("CreateEmployeeAsync", StringComparison.Ordinal) && gateway.Contains("TrySyncLocalAccountsQuietlyAsync", StringComparison.Ordinal));
+
+        var adminStorage = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.AdminApp", "Services", "PlatformAdminStorage.cs"), Encoding.UTF8);
+        Assert.IsTrue(adminStorage.Contains("RefreshFromDiskIfModified", StringComparison.Ordinal), "PlatformAdminStorage precisa recarregar dados gravados por outros processos.");
+
+        var usersPage = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.AdminApp", "Components", "Pages", "UsersAndVipPage.razor"), Encoding.UTF8);
+        Assert.IsTrue(usersPage.Contains("Gateway.DataUpdated", StringComparison.Ordinal), "UsersAndVipPage precisa atualizar ao vivo quando novas contas chegarem.");
+        Assert.IsTrue(usersPage.Contains("CreatePlatformUserAsync", StringComparison.Ordinal), "UsersAndVipPage deve permitir criar usuários direto no Admin.");
     }
 }

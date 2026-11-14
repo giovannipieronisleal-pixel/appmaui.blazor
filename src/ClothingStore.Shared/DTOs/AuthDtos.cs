@@ -205,3 +205,19 @@ public sealed record RemoteToggleUserActiveResponse(
     Guid EmployeeId,
     bool IsActive,
     string Message);
+
+public sealed record SyncLocalAccountItemDto(
+    string FullName,
+    string? Username,
+    string? Email,
+    string? Phone,
+    bool IsActive = true,
+    string? StoreName = null);
+
+public sealed record SyncLocalAccountsRequest(
+    IReadOnlyList<SyncLocalAccountItemDto> Accounts);
+
+public sealed record SyncLocalAccountsResultDto(
+    int ImportedCount,
+    int SkippedExistingCount,
+    string Message);
