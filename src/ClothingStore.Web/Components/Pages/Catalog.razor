@@ -4,7 +4,17 @@
 
 <PageTitle>Catálogo — @(_store?.StoreName ?? "YouLink Loja")</PageTitle>
 
-@if (_store is { IsSiteActive: false })
+@if (_storeNotFound)
+{
+    <section class="lux-empty-card">
+        <span class="lux-hero-eyebrow">Endereço Não Encontrado</span>
+        <h1 class="lux-hero-title">Loja não encontrada</h1>
+        <p class="lux-hero-subtitle" style="margin-left: auto; margin-right: auto;">
+            Nenhuma vitrine ativa encontrada em <strong>/loja/@StoreSlug</strong>.
+        </p>
+    </section>
+}
+else if (_store is { IsSiteActive: false })
 {
     <section class="lux-empty-card">
         <span class="lux-hero-eyebrow">Loja em Atualização</span>
@@ -160,6 +170,7 @@ else
     private CatalogFiltersDto _filters = new([], [], []);
     private IReadOnlyList<CatalogProductCardDto> _products = [];
     private bool _loading = true;
+    private bool _storeNotFound;
 
     private string? _search;
     private string? _selectedCategorySlug;
@@ -172,19 +183,28 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        _storeNotFound = false;
         _selectedCategorySlug ??= !string.IsNullOrWhiteSpace(QueryCategorySlug)
             ? QueryCategorySlug
             : QueryCategoryAlt;
         _search ??= QuerySearch;
 
-        _store = await CatalogDataGateway.GetStoreInfoAsync();
+        _store = await CatalogDataGateway.GetStoreInfoOrNullAsync(StoreSlug);
+        if (!string.IsNullOrWhiteSpace(StoreSlug) && _store is null)
+        {
+            _storeNotFound = true;
+            _loading = false;
+            return;
+        }
+
+        _store ??= await CatalogDataGateway.GetStoreInfoAsync(StoreSlug);
         if (_store?.IsSiteActive == false)
         {
             _loading = false;
             return;
         }
 
-        _filters = await CatalogDataGateway.GetFiltersAsync();
+        _filters = await CatalogDataGateway.GetFiltersAsync(StoreSlug);
         await LoadProductsAsync();
     }
 
@@ -218,7 +238,7 @@ else
                 Size: string.IsNullOrWhiteSpace(_selectedSize) ? null : _selectedSize.Trim(),
                 OnlyInStock: _onlyInStock);
 
-            _products = await CatalogDataGateway.GetProductsAsync(filter);
+            _products = await CatalogDataGateway.GetProductsAsync(filter, StoreSlug);
         }
         finally
         {

@@ -14,6 +14,9 @@ public sealed class StoreOrder
     public const string PaymentMethodWhatsapp = "WhatsApp";
     public const string PaymentMethodCardOrLink = "Cartão / Link";
 
+    public const string PaymentProviderDirectPix = "DirectPix";
+    public const string PaymentProviderMercadoPago = "MercadoPago";
+
     public const string StatusAwaitingPix = "AguardandoPix";
     public const string StatusPaidPreparing = "PagoSeparandoEnvio";
     public const string StatusShipped = "Enviado";
@@ -53,6 +56,10 @@ public sealed class StoreOrder
 
     public string PixKey { get; set; } = string.Empty;
     public string PixBrCode { get; set; } = string.Empty;
+    public string PaymentProvider { get; set; } = PaymentProviderDirectPix;
+    public string? ProviderPaymentId { get; set; }
+    public string? PixQrCodeBase64 { get; set; }
+    public string? PublicStatusToken { get; set; }
 
     public string FulfillmentMethod { get; set; } = FulfillmentPending;
     public string? TrackingCode { get; set; }
@@ -173,6 +180,8 @@ public sealed class StoreOrder
             EstimatedSedexDaysMax = sedexDaysMax,
             PixKey = pixKey.Trim(),
             PixBrCode = pixBrCode.Trim(),
+            PaymentProvider = PaymentProviderDirectPix,
+            PublicStatusToken = Guid.NewGuid().ToString("N"),
             FulfillmentMethod = FulfillmentPending,
             CreatedAt = now,
             UpdatedAt = now
@@ -278,6 +287,28 @@ public sealed class StoreOrder
 
     public bool IsConfirmedSale() =>
         Status is StatusPaidPreparing or StatusShipped or StatusDelivered;
+
+    public void AttachMercadoPagoPayment(
+        string providerPaymentId,
+        string pixBrCode,
+        string? pixQrCodeBase64 = null,
+        string? publicStatusToken = null)
+    {
+        if (string.IsNullOrWhiteSpace(providerPaymentId))
+            throw new DomainException("ID do pagamento no Mercado Pago é obrigatório.");
+        if (string.IsNullOrWhiteSpace(pixBrCode))
+            throw new DomainException("Código Pix Copia e Cola do Mercado Pago é obrigatório.");
+
+        PaymentProvider = PaymentProviderMercadoPago;
+        ProviderPaymentId = providerPaymentId.Trim();
+        PixBrCode = pixBrCode.Trim();
+        PixQrCodeBase64 = string.IsNullOrWhiteSpace(pixQrCodeBase64) ? null : pixQrCodeBase64.Trim();
+        if (!string.IsNullOrWhiteSpace(publicStatusToken))
+            PublicStatusToken = publicStatusToken.Trim();
+        else if (string.IsNullOrWhiteSpace(PublicStatusToken))
+            PublicStatusToken = Guid.NewGuid().ToString("N");
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 
     public string FormatDeliveryAddress()
     {

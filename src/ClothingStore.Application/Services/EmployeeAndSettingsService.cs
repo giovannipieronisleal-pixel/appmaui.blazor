@@ -255,6 +255,7 @@ public sealed class EmployeeAndSettingsService
         }
 
         if (request.DirectPixSalesEnabled.HasValue ||
+            request.PixGatewayMode is not null ||
             request.StorePixKey is not null ||
             request.StorePixReceiverName is not null ||
             request.OriginCep is not null ||
@@ -265,15 +266,24 @@ public sealed class EmployeeAndSettingsService
             request.DefaultPackageWeightGrams.HasValue)
         {
             var effectiveEnabled = request.DirectPixSalesEnabled ?? settings.DirectPixSalesEnabled;
+            var effectiveGatewayMode = request.PixGatewayMode is not null
+                ? StoreSettings.NormalizePixGatewayMode(request.PixGatewayMode)
+                : settings.PixGatewayMode;
+            var usingAutomaticMercadoPago =
+                string.Equals(effectiveGatewayMode, StoreSettings.PixGatewayMercadoPago, StringComparison.OrdinalIgnoreCase) &&
+                settings.HasMercadoPagoConnected;
+
             var rawKey = request.StorePixKey ?? settings.StorePixKey;
             var normalizedKey = string.IsNullOrWhiteSpace(rawKey)
                 ? null
                 : ClothingStore.Shared.Helpers.PixPayloadBuilder.NormalizePixKey(rawKey);
 
-            if (effectiveEnabled && !ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(normalizedKey))
+            if (effectiveEnabled &&
+                !usingAutomaticMercadoPago &&
+                !ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(normalizedKey))
             {
                 throw new DomainException(
-                    "Para ativar as vendas por Pix no app, informe uma Chave Pix válida (CPF, E-mail, Celular ou Chave Aleatória).");
+                    "Para ativar as vendas por Pix no app, informe uma Chave Pix válida (CPF, E-mail, Celular ou Chave Aleatória) ou conecte o Mercado Pago.");
             }
 
             var effOriginCep = request.OriginCep ?? settings.OriginCep;
@@ -303,7 +313,16 @@ public sealed class EmployeeAndSettingsService
                 request.DeliveryScopeMode ?? settings.DeliveryScopeMode,
                 request.MaxDeliveryDistanceKm ?? settings.MaxDeliveryDistanceKm,
                 request.DefaultPackageWeightGrams ?? settings.DefaultPackageWeightGrams,
-                employeeId);
+                employeeId,
+                pixGatewayMode: effectiveGatewayMode);
+        }
+
+        if (request.CentralCatalogBaseUrl is not null)
+        {
+            settings.ConfigureCentralPublishing(
+                request.CentralCatalogBaseUrl,
+                preserveExistingToken: true,
+                employeeId: employeeId);
         }
 
         if (request.ServerHostingMode is not null ||
@@ -484,22 +503,7 @@ public sealed class EmployeeAndSettingsService
         await _repository.UpdateStoreSettingsAsync(settings, ct);
         await _repository.SavePlanActivationCodeAsync(code, ct);
 
-        var expiryMessage = settings.PlanExpiresAt.HasValue
-            ? $"válido até {settings.PlanExpiresAt.Value.ToLocalTime():dd/MM/yyyy}"
-            : "com acesso Vitalício";
-
-        var message = settings.GetEffectivePlanTier() switch
-        {
-            StoreSettings.PlanTierPremium => $"Gift Card {code.Code} resgatado! Plano Premium Moldável ativado ({expiryMessage}).",
-            StoreSettings.PlanTierIntermediate => $"Gift Card {code.Code} resgatado! Plano Intermediário (5 versões pré-prontas) ativado ({expiryMessage}).",
-            _ => $"Gift Card {code.Code} resgatado! Plano Básico Minimalista Luxo ativado ({expiryMessage})."
-        };
-
-        if (code.IsGiftedUnpaid)
-        {
-            message += " Como o plano foi liberado sem pagamento (cortesia), seu servidor fica hospedado na conta YouLink (Servidor Compartilhado) e você pode escolher um domínio grátis ou comprar um domínio próprio!";
-        }
-
+        var message = BuildGiftCardActivationSuccessMessage(code.Code, settings, code.IsGiftedUnpaid);
         var dto = MapToAdminSettingsDto(settings);
         return new RedeemActivationCodeResponse(
             code.Code,
@@ -509,6 +513,278 @@ public sealed class EmployeeAndSettingsService
             message,
             dto);
     }
+
+    /// <summary>
+    /// Valida e marca um Gift Card como resgatado pela loja destinatária sem sobrescrever
+    /// as configurações locais da loja do administrador na central.
+    /// </summary>
+    public async Task<PlatformGiftCardRedeemResponse> RedeemGiftCardForRemoteStoreAsync(
+        PlatformGiftCardRedeemRequest request,
+        CancellationToken ct = default)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Code))
+            throw new DomainException("Digite o código do Gift Card para resgatar seu plano.");
+
+        var normalizedCode = request.Code.Trim().ToUpperInvariant();
+        var code = await _repository.GetPlanActivationCodeByCodeAsync(normalizedCode, ct)
+            ?? throw new DomainException($"Código Gift Card '{normalizedCode}' não encontrado.");
+
+        if (code.IsRevoked)
+            throw new DomainException("Este código Gift Card está pausado/revogado pelo administrador.");
+
+        if (code.IsRedeemed)
+        {
+            var usedBy = string.IsNullOrWhiteSpace(code.RedeemedByStoreName)
+                ? string.Empty
+                : $" por '{code.RedeemedByStoreName}'";
+            throw new DomainException($"Este código Gift Card já foi resgatado{usedBy}.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (code.CodeExpiresAt.HasValue && now >= code.CodeExpiresAt.Value)
+            throw new DomainException("Este código Gift Card expirou antes do resgate.");
+
+        var redeemingStoreName = string.IsNullOrWhiteSpace(request.StoreName)
+            ? "Loja Parceira"
+            : request.StoreName.Trim();
+
+        if (!string.IsNullOrWhiteSpace(code.TargetStoreName) &&
+            !string.Equals(code.TargetStoreName, redeemingStoreName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DomainException($"Este Gift Card foi emitido exclusivamente para a loja '{code.TargetStoreName}'.");
+        }
+
+        DateTimeOffset? appliedExpiry = code.DurationDays.HasValue
+            ? now.AddDays(code.DurationDays.Value)
+            : null;
+
+        code.MarkRedeemed(redeemingStoreName, request.EmployeeId, appliedExpiry, now);
+        await _repository.SavePlanActivationCodeAsync(code, ct);
+
+        return new PlatformGiftCardRedeemResponse(
+            code.Code,
+            StoreSettings.NormalizePlanTier(code.TargetPlanTier),
+            code.DurationDays,
+            appliedExpiry,
+            code.IsGiftedUnpaid,
+            code.SuggestedDomainName,
+            redeemingStoreName,
+            $"Gift Card {code.Code} validado para a loja '{redeemingStoreName}'.");
+    }
+
+    /// <summary>
+    /// Aplica localmente no app da loja destinatária um Gift Card validado remotamente pela central do Admin.
+    /// </summary>
+    public async Task<RedeemActivationCodeResponse> ApplyRedeemedRemoteGiftCardAsync(
+        PlatformGiftCardRedeemResponse grant,
+        Guid? employeeId = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(grant);
+
+        var normalizedCode = grant.Code.Trim().ToUpperInvariant();
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var normalizedTier = StoreSettings.NormalizePlanTier(grant.TargetPlanTier);
+
+        if (!string.Equals(settings.ActiveGiftCardCode, normalizedCode, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(settings.PlanTier, normalizedTier, StringComparison.OrdinalIgnoreCase) ||
+            !settings.IsLicenseActive())
+        {
+            var current = DateTimeOffset.UtcNow;
+            var isSameActiveTier = string.Equals(settings.PlanTier, normalizedTier, StringComparison.OrdinalIgnoreCase)
+                && settings.PlanExpiresAt.HasValue
+                && settings.PlanExpiresAt.Value > current;
+
+            DateTimeOffset? nextExpiry;
+            if (!grant.DurationDays.HasValue)
+            {
+                nextExpiry = null;
+            }
+            else if (isSameActiveTier)
+            {
+                nextExpiry = settings.PlanExpiresAt!.Value.AddDays(grant.DurationDays.Value);
+            }
+            else
+            {
+                nextExpiry = grant.PlanExpiresAt ?? current.AddDays(grant.DurationDays.Value);
+            }
+
+            settings.UpdatePlanAndDesign(normalizedTier);
+            settings.PlanActivatedAt = current;
+            settings.PlanExpiresAt = nextExpiry;
+            settings.ActiveGiftCardCode = normalizedCode;
+            settings.ActivePlanBillingKind = grant.IsGiftedUnpaid
+                ? PlanActivationCode.BillingKindGiftedUnpaid
+                : PlanActivationCode.BillingKindPaid;
+
+            if (grant.IsGiftedUnpaid)
+            {
+                settings.ServerHostingMode = "PlatformShared";
+                settings.OwnServerSyncSecret = null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(grant.SuggestedDomainName))
+            {
+                var suggested = grant.SuggestedDomainName.Trim();
+                var normalizedSuggestedUrl = suggested.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                                             suggested.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                    ? suggested.TrimEnd('/')
+                    : $"https://{suggested.TrimEnd('/')}";
+
+                settings.OnlineBaseUrl = normalizedSuggestedUrl;
+                settings.DomainAcquisitionMode = StoreSettings.InferDomainAcquisitionMode(normalizedSuggestedUrl);
+            }
+
+            settings.ActivateSite(employeeId);
+            await _repository.UpdateStoreSettingsAsync(settings, ct);
+        }
+
+        var localRecord = await _repository.GetPlanActivationCodeByCodeAsync(normalizedCode, ct);
+        if (localRecord is null)
+        {
+            var mirror = PlanActivationCode.Create(
+                normalizedTier,
+                grant.DurationDays,
+                customCode: normalizedCode,
+                targetStoreName: null,
+                notes: $"Gift Card ativado via central para {settings.StoreName}",
+                createdByEmployeeId: employeeId,
+                isGiftedUnpaid: grant.IsGiftedUnpaid,
+                suggestedDomainName: grant.SuggestedDomainName);
+            mirror.MarkRedeemed(settings.StoreName, employeeId, settings.PlanExpiresAt);
+            await _repository.SavePlanActivationCodeAsync(mirror, ct);
+        }
+
+        var message = BuildGiftCardActivationSuccessMessage(normalizedCode, settings, grant.IsGiftedUnpaid);
+        var dto = MapToAdminSettingsDto(settings);
+        return new RedeemActivationCodeResponse(
+            normalizedCode,
+            settings.PlanTier,
+            grant.DurationDays,
+            settings.PlanExpiresAt,
+            message,
+            dto);
+    }
+
+    public async Task<IReadOnlyList<PlatformGiftCardSyncDto>> GetActivationCodesForSyncAsync(CancellationToken ct = default)
+    {
+        var codes = await _repository.GetPlanActivationCodesAsync(ct);
+        return codes.Select(MapToSyncDto).ToList();
+    }
+
+    public async Task<IReadOnlyList<PlatformGiftCardSyncDto>> SyncPlatformGiftCardsAsync(
+        IReadOnlyList<PlatformGiftCardSyncDto>? incoming,
+        CancellationToken ct = default)
+    {
+        if (incoming is not null)
+        {
+            foreach (var dto in incoming)
+            {
+                if (string.IsNullOrWhiteSpace(dto.Code))
+                    continue;
+
+                var normalizedCode = dto.Code.Trim().ToUpperInvariant();
+                var existing = await _repository.GetPlanActivationCodeByCodeAsync(normalizedCode, ct);
+                if (existing is null)
+                {
+                    var created = new PlanActivationCode
+                    {
+                        Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
+                        Code = normalizedCode,
+                        TargetPlanTier = StoreSettings.NormalizePlanTier(dto.TargetPlanTier),
+                        DurationDays = dto.DurationDays,
+                        TargetStoreName = string.IsNullOrWhiteSpace(dto.TargetStoreName) ? null : dto.TargetStoreName.Trim(),
+                        Notes = dto.Notes,
+                        PlanBillingKind = string.Equals(dto.PlanBillingKind, PlanActivationCode.BillingKindGiftedUnpaid, StringComparison.OrdinalIgnoreCase)
+                            ? PlanActivationCode.BillingKindGiftedUnpaid
+                            : PlanActivationCode.BillingKindPaid,
+                        SuggestedDomainName = dto.SuggestedDomainName,
+                        CreatedAt = dto.CreatedAt == default ? DateTimeOffset.UtcNow : dto.CreatedAt,
+                        CodeExpiresAt = dto.CodeExpiresAt,
+                        IsRevoked = dto.IsRevoked,
+                        RedeemedAt = dto.RedeemedAt,
+                        RedeemedByStoreName = dto.RedeemedByStoreName,
+                        RedeemedByEmployeeId = dto.RedeemedByEmployeeId,
+                        AppliedPlanExpiresAt = dto.AppliedPlanExpiresAt,
+                        StatusUpdatedAt = dto.StatusUpdatedAt
+                    };
+                    await _repository.SavePlanActivationCodeAsync(created, ct);
+                    continue;
+                }
+
+                var changed = false;
+                if (dto.RedeemedAt.HasValue && !existing.IsRedeemed)
+                {
+                    existing.IsRevoked = false;
+                    existing.MarkRedeemed(
+                        dto.RedeemedByStoreName ?? "Loja",
+                        dto.RedeemedByEmployeeId,
+                        dto.AppliedPlanExpiresAt,
+                        dto.RedeemedAt);
+                    changed = true;
+                }
+                else if (!existing.IsRedeemed && !dto.RedeemedAt.HasValue)
+                {
+                    var incomingUpdated = dto.StatusUpdatedAt ?? dto.CreatedAt;
+                    var existingUpdated = existing.StatusUpdatedAt ?? existing.CreatedAt;
+                    if (incomingUpdated > existingUpdated && existing.IsRevoked != dto.IsRevoked)
+                    {
+                        existing.IsRevoked = dto.IsRevoked;
+                        existing.StatusUpdatedAt = incomingUpdated;
+                        changed = true;
+                    }
+                }
+
+                if (changed)
+                {
+                    await _repository.SavePlanActivationCodeAsync(existing, ct);
+                }
+            }
+        }
+
+        var all = await _repository.GetPlanActivationCodesAsync(ct);
+        return all.Select(MapToSyncDto).ToList();
+    }
+
+    private static string BuildGiftCardActivationSuccessMessage(string code, StoreSettings settings, bool isGiftedUnpaid)
+    {
+        var expiryMessage = settings.PlanExpiresAt.HasValue
+            ? $"válido até {settings.PlanExpiresAt.Value.ToLocalTime():dd/MM/yyyy}"
+            : "com acesso Vitalício";
+
+        var message = settings.GetEffectivePlanTier() switch
+        {
+            StoreSettings.PlanTierPremium => $"Gift Card {code} resgatado! Plano Premium Moldável ativado ({expiryMessage}).",
+            StoreSettings.PlanTierIntermediate => $"Gift Card {code} resgatado! Plano Intermediário (5 versões pré-prontas) ativado ({expiryMessage}).",
+            _ => $"Gift Card {code} resgatado! Plano Básico Minimalista Luxo ativado ({expiryMessage})."
+        };
+
+        if (isGiftedUnpaid)
+        {
+            message += " Como o plano foi liberado sem pagamento (cortesia), seu servidor fica hospedado na conta YouLink (Servidor Compartilhado) e você pode escolher um domínio grátis ou comprar um domínio próprio!";
+        }
+
+        return message;
+    }
+
+    private static PlatformGiftCardSyncDto MapToSyncDto(PlanActivationCode c) =>
+        new(
+            c.Id,
+            c.Code,
+            c.TargetPlanTier,
+            c.DurationDays,
+            c.TargetStoreName,
+            c.Notes,
+            c.PlanBillingKind,
+            c.SuggestedDomainName,
+            c.CreatedAt,
+            c.CodeExpiresAt,
+            c.IsRevoked,
+            c.RedeemedAt,
+            c.RedeemedByStoreName,
+            c.RedeemedByEmployeeId,
+            c.AppliedPlanExpiresAt,
+            c.StatusUpdatedAt);
 
     public static AdminStoreSettingsDto MapToAdminSettingsDto(StoreSettings s) =>
         new(
@@ -559,7 +835,14 @@ public sealed class EmployeeAndSettingsService
             s.QualifiesForDedicatedServerBenefit(),
             s.ActivePlanBillingKind,
             s.DomainAcquisitionMode,
-            s.ManualSalesEnabled);
+            s.ManualSalesEnabled,
+            s.PixGatewayMode,
+            s.CentralCatalogBaseUrl,
+            !string.IsNullOrWhiteSpace(s.CentralPublishToken),
+            s.HasMercadoPagoConnected,
+            s.MercadoPagoAccountLabel,
+            s.MercadoPagoUserId,
+            s.MercadoPagoConnectedAt);
 
     public async Task<AdminStoreSettingsDto> SyncOwnerPricingAsync(
         UpdateOwnerPricingSyncRequest request,
@@ -583,6 +866,12 @@ public sealed class EmployeeAndSettingsService
         settings.BasicPlanMonthlyPrice = Math.Round(request.BasicPlanMonthlyPrice, 2, MidpointRounding.AwayFromZero);
         settings.IntermediaryPlanMonthlyPrice = Math.Round(request.IntermediaryPlanMonthlyPrice, 2, MidpointRounding.AwayFromZero);
         settings.PremiumPlanMonthlyPrice = Math.Round(request.PremiumPlanMonthlyPrice, 2, MidpointRounding.AwayFromZero);
+        if (request.CentralCatalogServerUrl is not null)
+        {
+            settings.CentralCatalogBaseUrl = string.IsNullOrWhiteSpace(request.CentralCatalogServerUrl)
+                ? null
+                : request.CentralCatalogServerUrl.Trim().TrimEnd('/');
+        }
         settings.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _repository.UpdateStoreSettingsAsync(settings, ct);

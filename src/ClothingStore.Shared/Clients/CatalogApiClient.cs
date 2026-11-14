@@ -16,9 +16,16 @@ public sealed class CatalogApiClient
         _httpClient = httpClient;
     }
 
-    public async Task<PublicStoreSettingsDto> GetStoreInfoAsync(CancellationToken ct = default)
+    private static string BuildStorePrefix(string? storeSlug) =>
+        string.IsNullOrWhiteSpace(storeSlug)
+            ? "/api/public"
+            : $"/api/public/stores/{Uri.EscapeDataString(storeSlug.Trim())}";
+
+    public async Task<PublicStoreSettingsDto> GetStoreInfoAsync(
+        string? storeSlug = null,
+        CancellationToken ct = default)
     {
-        var result = await _httpClient.GetFromJsonAsync<PublicStoreSettingsDto>("/api/public/store-info", ct);
+        var result = await _httpClient.GetFromJsonAsync<PublicStoreSettingsDto>($"{BuildStorePrefix(storeSlug)}/store-info", ct);
         return result ?? new PublicStoreSettingsDto(
             "Aura Vestuário",
             "aura-vestuario",
@@ -28,19 +35,24 @@ public sealed class CatalogApiClient
             DateTimeOffset.UtcNow);
     }
 
-    public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(
+        string? storeSlug = null,
+        CancellationToken ct = default)
     {
-        return await _httpClient.GetFromJsonAsync<List<CategoryDto>>("/api/public/categories", ct) ?? [];
+        return await _httpClient.GetFromJsonAsync<List<CategoryDto>>($"{BuildStorePrefix(storeSlug)}/categories", ct) ?? [];
     }
 
-    public async Task<CatalogFiltersDto> GetFiltersAsync(CancellationToken ct = default)
+    public async Task<CatalogFiltersDto> GetFiltersAsync(
+        string? storeSlug = null,
+        CancellationToken ct = default)
     {
-        var result = await _httpClient.GetFromJsonAsync<CatalogFiltersDto>("/api/public/filters", ct);
+        var result = await _httpClient.GetFromJsonAsync<CatalogFiltersDto>($"{BuildStorePrefix(storeSlug)}/filters", ct);
         return result ?? new CatalogFiltersDto([], [], []);
     }
 
     public async Task<IReadOnlyList<CatalogProductCardDto>> GetProductsAsync(
         CatalogQueryFilter filter,
+        string? storeSlug = null,
         CancellationToken ct = default)
     {
         var query = HttpUtility.ParseQueryString(string.Empty);
@@ -58,13 +70,17 @@ public sealed class CatalogApiClient
             query["onlyInStock"] = "true";
 
         var qs = query.ToString();
-        var url = string.IsNullOrWhiteSpace(qs) ? "/api/public/products" : $"/api/public/products?{qs}";
+        var prefix = BuildStorePrefix(storeSlug);
+        var url = string.IsNullOrWhiteSpace(qs) ? $"{prefix}/products" : $"{prefix}/products?{qs}";
         return await _httpClient.GetFromJsonAsync<List<CatalogProductCardDto>>(url, ct) ?? [];
     }
 
-    public async Task<ProductDetailDto?> GetProductDetailAsync(string slugOrId, CancellationToken ct = default)
+    public async Task<ProductDetailDto?> GetProductDetailAsync(
+        string slugOrId,
+        string? storeSlug = null,
+        CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync($"/api/public/products/{Uri.EscapeDataString(slugOrId)}", ct);
+        var response = await _httpClient.GetAsync($"{BuildStorePrefix(storeSlug)}/products/{Uri.EscapeDataString(slugOrId)}", ct);
         if (!response.IsSuccessStatusCode)
             return null;
 
@@ -80,18 +96,43 @@ public sealed class CatalogApiClient
         return await response.Content.ReadFromJsonAsync<CepAddressLookupDto>(cancellationToken: ct);
     }
 
-    public async Task<ShippingQuoteResponse> QuoteShippingAsync(ShippingQuoteRequest request, CancellationToken ct = default)
+    public async Task<ShippingQuoteResponse> QuoteShippingAsync(
+        ShippingQuoteRequest request,
+        string? storeSlug = null,
+        CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/public/shipping-quote", request, ct);
+        var response = await _httpClient.PostAsJsonAsync($"{BuildStorePrefix(storeSlug)}/shipping-quote", request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<ShippingQuoteResponse>(cancellationToken: ct))!;
     }
 
-    public async Task<StoreOrderDto> PlacePixOrderAsync(CreatePixOrderRequest request, CancellationToken ct = default)
+    public async Task<StoreOrderDto> PlacePixOrderAsync(
+        CreatePixOrderRequest request,
+        string? storeSlug = null,
+        CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/public/orders/pix", request, ct);
+        var response = await _httpClient.PostAsJsonAsync($"{BuildStorePrefix(storeSlug)}/orders/pix", request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<StoreOrderDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<PublicOrderStatusDto?> GetPublicOrderStatusAsync(
+        Guid orderId,
+        string? statusToken,
+        string? storeSlug = null,
+        CancellationToken ct = default)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        if (!string.IsNullOrWhiteSpace(statusToken))
+            query["token"] = statusToken;
+
+        var qs = query.ToString();
+        var url = $"{BuildStorePrefix(storeSlug)}/orders/{orderId}/status" + (string.IsNullOrWhiteSpace(qs) ? string.Empty : $"?{qs}");
+        var response = await _httpClient.GetAsync(url, ct);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadFromJsonAsync<PublicOrderStatusDto>(cancellationToken: ct);
     }
 
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)

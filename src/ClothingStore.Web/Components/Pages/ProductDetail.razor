@@ -1,5 +1,6 @@
 @page "/produto/{Slug}"
 @page "/loja/{StoreSlug}/produto/{Slug}"
+@implements IDisposable
 @inject CatalogDataGateway CatalogDataGateway
 
 <PageTitle>@(_product?.Name ?? "Peça") — @(_store?.StoreName ?? "YouLink Loja")</PageTitle>
@@ -263,23 +264,66 @@ else
                         else
                         {
                             <div style="background: rgba(22,163,74,0.12); border: 1px solid #16A34A; border-radius: 8px; padding: 0.85rem;">
-                                <div style="font-weight: 800; color: #166534; font-size: 1rem;">
-                                    ✅ Pedido @_createdPixOrder.OrderNumber gerado!
-                                </div>
-                                <p style="font-size: 0.82rem; margin: 0.35rem 0 0.65rem;">
-                                    Pague via <strong>Pix</strong> usando a chave ou o código Copia e Cola abaixo. O vendedor recebeu seu endereço em <strong>@_createdPixOrder.DeliveryCity/@_createdPixOrder.DeliveryState</strong> (~@_createdPixOrder.DistanceKmFromSeller.ToString("0.#") km) e preparará o envio!
-                                </p>
-                                <div style="font-size: 0.8rem; margin-bottom: 0.35rem;">
-                                    <strong>Chave Pix do Vendedor:</strong> <code>@_createdPixOrder.PixKey</code>
-                                </div>
-                                <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 0.25rem;">
-                                    Código Pix Copia e Cola (R$ @_createdPixOrder.TotalPixAmount.ToString("N2", new System.Globalization.CultureInfo("pt-BR"))):
-                                </div>
-                                <textarea readonly rows="3" style="width:100%; font-family:monospace; font-size:0.74rem; padding:0.45rem; border-radius:6px; border:1px solid #16A34A; margin-bottom:0.5rem;">@_createdPixOrder.PixBrCode</textarea>
+                                @if (_pixStatus?.IsPaid == true || _createdPixOrder.Status == "PagoSeparandoEnvio")
+                                {
+                                    <div style="background: #16A34A; color: #FFFFFF; border-radius: 8px; padding: 0.85rem; margin-bottom: 0.75rem;">
+                                        <div style="font-weight: 800; font-size: 1.05rem;">
+                                            ✅ Pagamento Pix confirmado automaticamente!
+                                        </div>
+                                        <div style="font-size: 0.84rem; margin-top: 0.25rem;">
+                                            Pedido <strong>@_createdPixOrder.OrderNumber</strong> pago! A loja já recebeu a confirmação e vai separar o envio para <strong>@_createdPixOrder.DeliveryCity/@_createdPixOrder.DeliveryState</strong>.
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="font-weight: 800; color: #166534; font-size: 1rem;">
+                                        ✅ Pedido @_createdPixOrder.OrderNumber gerado!
+                                    </div>
+                                    <p style="font-size: 0.82rem; margin: 0.35rem 0 0.65rem;">
+                                        Pague via <strong>Pix</strong> usando o QR Code ou o código Copia e Cola abaixo.
+                                        @if (string.Equals(_createdPixOrder.PaymentProvider, "MercadoPago", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span>Assim que você pagar no banco, esta tela confirma o pagamento automaticamente em segundos.</span>
+                                        }
+                                        else
+                                        {
+                                            <span>O vendedor recebeu seu endereço em <strong>@_createdPixOrder.DeliveryCity/@_createdPixOrder.DeliveryState</strong> (~@_createdPixOrder.DistanceKmFromSeller.ToString("0.#") km) e preparará o envio!</span>
+                                        }
+                                    </p>
+
+                                    @if (!string.IsNullOrWhiteSpace(_createdPixOrder.PixQrCodeBase64))
+                                    {
+                                        <div style="text-align: center; margin: 0.5rem 0 0.75rem;">
+                                            <img src="@($"data:image/png;base64,{_createdPixOrder.PixQrCodeBase64}")"
+                                                 alt="QR Code Pix"
+                                                 style="max-width: 190px; width: 100%; border-radius: 10px; background: #FFFFFF; padding: 8px; border: 1px solid #16A34A;" />
+                                        </div>
+                                    }
+
+                                    @if (!string.Equals(_createdPixOrder.PaymentProvider, "MercadoPago", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <div style="font-size: 0.8rem; margin-bottom: 0.35rem;">
+                                            <strong>Chave Pix do Vendedor:</strong> <code>@_createdPixOrder.PixKey</code>
+                                        </div>
+                                    }
+
+                                    <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 0.25rem;">
+                                        Código Pix Copia e Cola (R$ @_createdPixOrder.TotalPixAmount.ToString("N2", new System.Globalization.CultureInfo("pt-BR"))):
+                                    </div>
+                                    <textarea readonly rows="3" style="width:100%; font-family:monospace; font-size:0.74rem; padding:0.45rem; border-radius:6px; border:1px solid #16A34A; margin-bottom:0.5rem;">@_createdPixOrder.PixBrCode</textarea>
+                                    @if (string.Equals(_createdPixOrder.PaymentProvider, "MercadoPago", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <div style="font-size: 0.76rem; color: #166534; font-weight: 600; margin-bottom: 0.55rem;">
+                                            ⏳ Verificando confirmação Pix automaticamente a cada 4 segundos...
+                                        </div>
+                                    }
+                                }
+
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
                                     <a href="@BuildOrderProofWhatsAppUrl(_createdPixOrder)" target="_blank" rel="noopener noreferrer"
                                        class="lux-btn lux-btn-whatsapp" style="flex:1;">
-                                        💬 Enviar Comprovante &amp; Combinar Envio no WhatsApp
+                                        💬 Falar com a Loja no WhatsApp
                                     </a>
                                     <button type="button" class="lux-btn lux-btn-outline" @onclick="ResetPixOrderForm">
                                         Novo Pedido
@@ -366,8 +410,15 @@ else
         _loading = true;
         try
         {
-            _store = await CatalogDataGateway.GetStoreInfoAsync();
-            _product = await CatalogDataGateway.GetProductDetailAsync(Slug);
+            _store = await CatalogDataGateway.GetStoreInfoOrNullAsync(StoreSlug);
+            if (!string.IsNullOrWhiteSpace(StoreSlug) && _store is null)
+            {
+                _product = null;
+                return;
+            }
+
+            _store ??= await CatalogDataGateway.GetStoreInfoAsync(StoreSlug);
+            _product = await CatalogDataGateway.GetProductDetailAsync(Slug, StoreSlug);
             _selectedImageUrl = _product?.Images.FirstOrDefault()?.PublicUrl;
 
             var firstInStock = _product?.Variants.FirstOrDefault(v => v.StockQuantity > 0)
@@ -414,6 +465,8 @@ else
     private string? _checkoutError;
     private ShippingQuoteResponse? _shippingQuote;
     private StoreOrderDto? _createdPixOrder;
+    private PublicOrderStatusDto? _pixStatus;
+    private CancellationTokenSource? _pollingCts;
 
     private async Task CheckShippingQuoteAsync()
     {
@@ -441,7 +494,7 @@ else
                 DestinationCity = _buyerCity,
                 DestinationState = _buyerState,
                 WeightGrams = (_store?.DefaultPackageWeightGrams ?? 450) * Math.Max(1, _orderQuantity)
-            });
+            }, StoreSlug);
         }
         catch (Exception ex)
         {
@@ -477,9 +530,15 @@ else
                 City = _buyerCity,
                 State = _buyerState,
                 CustomerNotes = _buyerNotes
-            });
+            }, StoreSlug);
 
             _createdPixOrder = order;
+            _pixStatus = null;
+
+            if (string.Equals(order.PaymentProvider, "MercadoPago", StringComparison.OrdinalIgnoreCase))
+            {
+                StartPixStatusPolling(order);
+            }
         }
         catch (Exception ex)
         {
@@ -491,10 +550,73 @@ else
         }
     }
 
+    private void StartPixStatusPolling(StoreOrderDto order)
+    {
+        StopPixStatusPolling();
+        _pollingCts = new CancellationTokenSource();
+        var ct = _pollingCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+                while (await timer.WaitForNextTickAsync(ct))
+                {
+                    var status = await CatalogDataGateway.GetPublicOrderStatusAsync(
+                        order.Id,
+                        order.PublicStatusToken,
+                        StoreSlug,
+                        ct);
+
+                    if (status is not null)
+                    {
+                        await InvokeAsync(() =>
+                        {
+                            _pixStatus = status;
+                            StateHasChanged();
+                        });
+
+                        if (status.IsPaid || status.Status == "Cancelado")
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+            }
+        }, ct);
+    }
+
+    private void StopPixStatusPolling()
+    {
+        try
+        {
+            _pollingCts?.Cancel();
+            _pollingCts?.Dispose();
+        }
+        catch
+        {
+        }
+        _pollingCts = null;
+    }
+
     private void ResetPixOrderForm()
     {
+        StopPixStatusPolling();
         _createdPixOrder = null;
+        _pixStatus = null;
         _checkoutError = null;
+    }
+
+    public void Dispose()
+    {
+        StopPixStatusPolling();
     }
 
     private string BuildOrderProofWhatsAppUrl(StoreOrderDto order)

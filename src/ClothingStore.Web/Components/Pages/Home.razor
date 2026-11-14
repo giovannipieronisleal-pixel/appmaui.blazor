@@ -12,6 +12,16 @@
         <h2>Preparando as novidades para você...</h2>
     </div>
 }
+else if (_storeNotFound)
+{
+    <section class="lux-empty-card">
+        <span class="lux-hero-eyebrow">Endereço Não Encontrado</span>
+        <h1 class="lux-hero-title">Loja não encontrada</h1>
+        <p class="lux-hero-subtitle" style="margin-left: auto; margin-right: auto;">
+            Nenhuma vitrine publicada foi encontrada para <strong>/loja/@StoreSlug</strong>. Confira o link recebido ou peça o endereço atualizado ao lojista.
+        </p>
+    </section>
+}
 else if (_store is { IsSiteActive: false })
 {
     <section class="lux-empty-card">
@@ -187,6 +197,7 @@ else
     private IReadOnlyList<CategoryDto> _categories = [];
     private IReadOnlyList<CatalogProductCardDto> _featuredProducts = [];
     private bool _loading = true;
+    private bool _storeNotFound;
     private string? _quickSearch;
 
     private string? EffectiveStoreSlug =>
@@ -212,15 +223,23 @@ else
     protected override async Task OnParametersSetAsync()
     {
         _loading = true;
+        _storeNotFound = false;
         try
         {
-            _store = await CatalogDataGateway.GetStoreInfoAsync();
+            _store = await CatalogDataGateway.GetStoreInfoOrNullAsync(StoreSlug);
+            if (!string.IsNullOrWhiteSpace(StoreSlug) && _store is null)
+            {
+                _storeNotFound = true;
+                return;
+            }
+
+            _store ??= await CatalogDataGateway.GetStoreInfoAsync(StoreSlug);
             _design = StoreDesignCssHelper.Sanitize(_store?.Design);
 
             if (_store?.IsSiteActive != false)
             {
-                _categories = await CatalogDataGateway.GetCategoriesAsync();
-                var products = await CatalogDataGateway.GetProductsAsync(new CatalogQueryFilter());
+                _categories = await CatalogDataGateway.GetCategoriesAsync(StoreSlug);
+                var products = await CatalogDataGateway.GetProductsAsync(new CatalogQueryFilter(), StoreSlug);
                 _featuredProducts = products.Take(12).ToList();
             }
         }

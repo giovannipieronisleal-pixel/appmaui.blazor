@@ -46,6 +46,8 @@ public sealed class MauiAdminGateway
     private readonly PlatformSubscriptionService? _subscriptionService;
 
     private DateTimeOffset _skipRemoteApiUntil = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastCentralCatalogCheckAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastOrdersCloudPullAt = DateTimeOffset.MinValue;
 
     public EmployeeProfileDto? CurrentEmployee { get; private set; }
     public string? AccessToken { get; private set; }
@@ -58,6 +60,7 @@ public sealed class MauiAdminGateway
     public int LastSyncedAccountsCount { get; private set; }
     public string? LastSyncedAccountsMessage { get; private set; }
     public bool IsRemoteApiOnline => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
+    public string? LatestAdminCentralServerUrl { get; private set; }
     public string CurrentServerUrl => _apiClient.CurrentBaseAddress ?? string.Empty;
     public ApiCompatibilityStatusDto? LatestCompatibilityStatus { get; private set; }
 
@@ -266,6 +269,9 @@ public sealed class MauiAdminGateway
     private static bool IsConnectionOrTimeoutError(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException or OperationCanceledException or TimeoutException;
 
+    private static bool IsEndpointUnavailableOnHubError(Exception ex) =>
+        AdminApiClient.IsEndpointUnavailableError(ex);
+
     private async Task<T> ExecuteWithFallbackAsync<T>(
         Func<Task<T>> remoteCall,
         Func<Task<T>> localFallback)
@@ -281,30 +287,29 @@ public sealed class MauiAdminGateway
                 // Marca a API remota como offline por 60 segundos para evitar esperas de timeout a cada clique
                 _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
             }
+            catch (Exception ex) when (IsEndpointUnavailableOnHubError(ex))
+            {
+                // O servidor conectado atua como hub central e não expõe endpoints de loja única -> usa fallback local sem marcar offline.
+            }
         }
 
         return await localFallback();
     }
 
-    private async Task ExecuteWithFallbackAsync(
+    private Task ExecuteWithFallbackAsync(
         Func<Task> remoteCall,
-        Func<Task> localFallback)
-    {
-        if (ShouldTryRemoteApi)
-        {
-            try
+        Func<Task> localFallback) =>
+        ExecuteWithFallbackAsync<bool>(
+            async () =>
             {
                 await remoteCall();
-                return;
-            }
-            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+                return true;
+            },
+            async () =>
             {
-                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
-            }
-        }
-
-        await localFallback();
-    }
+                await localFallback();
+                return true;
+            });
 
     private static readonly Guid LegacyDefaultAdminUserId = Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111");
 
@@ -858,7 +863,7 @@ public sealed class MauiAdminGateway
             {
                 _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
             }
-            catch (InvalidOperationException) when (HasCustomServerUrl)
+            catch (InvalidOperationException ex) when (HasCustomServerUrl || IsEndpointUnavailableOnHubError(ex))
             {
                 // Sessão iniciada offline no celular antes de conectar o Servidor Central:
                 // cria localmente e sincroniza a conta para o Receptor LAN / YouLink Admin.
@@ -908,12 +913,34 @@ public sealed class MauiAdminGateway
     public async Task<AdminStoreSettingsDto> GetPlanCatalogSettingsAsync()
     {
         EnsureAuthenticated();
-        if (IsAdmin)
+        var settings = IsAdmin
+            ? await GetStoreSettingsAsync()
+            : await _employeeAndSettingsService.GetAdminStoreSettingsAsync();
+
+        if (!ShouldTryRemoteApi)
+            return settings;
+
+        try
         {
-            return await GetStoreSettingsAsync();
+            var catalog = await _apiClient.GetPlatformPlanCatalogAsync();
+            await ApplyCatalogCentralServerUrlAsync(catalog.CentralCatalogServerUrl);
+            return settings with
+            {
+                BasicPlanMonthlyPrice = catalog.BasicPlanMonthlyPrice > 0m ? catalog.BasicPlanMonthlyPrice : settings.BasicPlanMonthlyPrice,
+                IntermediaryPlanMonthlyPrice = catalog.IntermediaryPlanMonthlyPrice > 0m ? catalog.IntermediaryPlanMonthlyPrice : settings.IntermediaryPlanMonthlyPrice,
+                PremiumPlanMonthlyPrice = catalog.PremiumPlanMonthlyPrice > 0m ? catalog.PremiumPlanMonthlyPrice : settings.PremiumPlanMonthlyPrice
+            };
+        }
+        catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+        {
+            _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+        }
+        catch (InvalidOperationException)
+        {
+            // Mantém os preços locais se o servidor conectado ainda não expõe /api/platform-sync/plan-catalog.
         }
 
-        return await _employeeAndSettingsService.GetAdminStoreSettingsAsync();
+        return settings;
     }
 
     public async Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(
@@ -974,11 +1001,47 @@ public sealed class MauiAdminGateway
     public async Task<RedeemActivationCodeResponse> RedeemActivationCodeAsync(RedeemActivationCodeRequest request)
     {
         EnsureAdminPermission();
-        var response = await ExecuteWithFallbackAsync(
-            () => _apiClient.RedeemActivationCodeAsync(request),
-            () => _employeeAndSettingsService.RedeemActivationCodeAsync(request, CurrentEmployee?.EmployeeId));
+
+        var localSettings = await _employeeAndSettingsService.GetAdminStoreSettingsAsync();
+        var redeemingStoreName = string.IsNullOrWhiteSpace(localSettings.StoreName)
+            ? CurrentEmployee?.FullName ?? "Loja Cliente"
+            : localSettings.StoreName.Trim();
+
+        RedeemActivationCodeResponse? response = null;
+
+        if (HasCustomServerUrl || ShouldTryRemoteApi)
+        {
+            try
+            {
+                var remoteGrant = await _apiClient.RedeemPlatformGiftCardAsync(new PlatformGiftCardRedeemRequest(
+                    Code: request.Code,
+                    StoreName: redeemingStoreName,
+                    EmployeeId: CurrentEmployee?.EmployeeId));
+
+                response = await _employeeAndSettingsService.ApplyRedeemedRemoteGiftCardAsync(
+                    remoteGrant,
+                    CurrentEmployee?.EmployeeId);
+            }
+            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+            {
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+            catch (InvalidOperationException ex) when (IsEndpointUnavailableOnHubError(ex))
+            {
+                // Servidor antigo ainda sem /api/platform-sync/gift-cards/redeem -> fallback para fluxo legado
+            }
+        }
+
+        if (response is null)
+        {
+            response = await ExecuteWithFallbackAsync(
+                () => _apiClient.RedeemActivationCodeAsync(request),
+                () => _employeeAndSettingsService.RedeemActivationCodeAsync(request, CurrentEmployee?.EmployeeId));
+        }
 
         _cloudSyncService?.TriggerAutoSyncIfEnabled();
+        PlanEntitlementActivated?.Invoke(response.UpdatedSettings);
+        AuthStateChanged?.Invoke();
         return response;
     }
 
@@ -1065,13 +1128,134 @@ public sealed class MauiAdminGateway
             null));
     }
 
-    public Task<AdminStoreSettingsDto> ClearGoogleAccountVerificationAsync(CancellationToken ct = default)
+    public async Task<AdminStoreSettingsDto> ClearGoogleAccountVerificationAsync(CancellationToken ct = default)
     {
         EnsureAdminPermission();
         if (_cloudSyncService is not null)
-            return _cloudSyncService.ClearGoogleAccountVerificationAsync(ct);
+            return await _cloudSyncService.ClearGoogleAccountVerificationAsync(ct);
 
-        return _employeeAndSettingsService.ClearGoogleAccountVerificationAsync(CurrentEmployee?.EmployeeId, ct);
+        return await _employeeAndSettingsService.ClearGoogleAccountVerificationAsync(CurrentEmployee?.EmployeeId, ct);
+    }
+
+    public async Task<string?> TrySyncCentralCatalogUrlFromAdminAsync(
+        bool force = false,
+        CancellationToken ct = default)
+    {
+        if (!force && DateTimeOffset.UtcNow - _lastCentralCatalogCheckAt < TimeSpan.FromSeconds(45))
+            return LatestAdminCentralServerUrl ?? GoogleCloudSyncService.GetCachedCentralCatalogUrl();
+
+        _lastCentralCatalogCheckAt = DateTimeOffset.UtcNow;
+
+        if (!ShouldTryRemoteApi)
+            return GoogleCloudSyncService.GetCachedCentralCatalogUrl();
+
+        try
+        {
+            var catalog = await _apiClient.GetPlatformPlanCatalogAsync(ct);
+            await ApplyCatalogCentralServerUrlAsync(catalog.CentralCatalogServerUrl, ct);
+            return LatestAdminCentralServerUrl ?? GoogleCloudSyncService.GetCachedCentralCatalogUrl();
+        }
+        catch
+        {
+            return LatestAdminCentralServerUrl ?? GoogleCloudSyncService.GetCachedCentralCatalogUrl();
+        }
+    }
+
+    private async Task ApplyCatalogCentralServerUrlAsync(string? url, CancellationToken ct = default)
+    {
+        var normalized = GoogleCloudSyncService.NormalizePublicServerUrl(url);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        LatestAdminCentralServerUrl = normalized;
+        if (_cloudSyncService is not null)
+        {
+            await _cloudSyncService.SyncCentralServerUrlFromCatalogAsync(normalized, ct);
+        }
+    }
+
+    public async Task<(bool Success, string PublicStoreUrl, string Message)> PublishToCentralServerAsync(
+        string? centralServerUrl = null,
+        CancellationToken ct = default,
+        IProgress<string>? progress = null)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is null)
+            return (false, string.Empty, "Serviço de publicação na nuvem indisponível.");
+
+        var effectiveCentral = string.IsNullOrWhiteSpace(centralServerUrl)
+            ? await TrySyncCentralCatalogUrlFromAdminAsync(ct: ct)
+            : centralServerUrl;
+
+        return await _cloudSyncService.PublishToCentralServerAsync(
+            effectiveCentral,
+            CurrentEmployee?.Email,
+            ct,
+            progress);
+    }
+
+    public async Task<(bool Success, int UpdatedOrdersCount, string Message)> SyncOrdersFromCloudAsync(
+        CancellationToken ct = default)
+    {
+        EnsureAuthenticated();
+        if (_cloudSyncService is null)
+            return (false, 0, "Sincronização em nuvem indisponível.");
+
+        var res = await _cloudSyncService.PullOrdersFromCloudAsync(
+            CurrentEmployee?.EmployeeId ?? Guid.Empty,
+            ct);
+        _lastOrdersCloudPullAt = DateTimeOffset.UtcNow;
+        return res;
+    }
+
+    public async Task<MercadoPagoStatusDto> GetMercadoPagoStatusAsync(CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is null)
+        {
+            return new MercadoPagoStatusDto(
+                false, false, "DirectPix", null, null, null,
+                "Serviço de pagamento automático indisponível.");
+        }
+
+        return await _cloudSyncService.GetMercadoPagoStatusFromServerAsync(ct);
+    }
+
+    public async Task<(bool BrowserOpened, MercadoPagoOAuthStartResponse StartInfo)> ConnectMercadoPagoViaBrowserAsync(
+        CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is null)
+        {
+            return (false, new MercadoPagoOAuthStartResponse(
+                false, null, null, "Serviço de nuvem indisponível."));
+        }
+
+        var start = await _cloudSyncService.StartMercadoPagoOAuthOnServerAsync(
+            CurrentEmployee?.Email,
+            ct);
+
+        if (!start.IsConfigured || string.IsNullOrWhiteSpace(start.AuthorizationUrl))
+            return (false, start);
+
+        try
+        {
+            await Launcher.Default.OpenAsync(new Uri(start.AuthorizationUrl));
+            return (true, start);
+        }
+        catch
+        {
+            return (false, start);
+        }
+    }
+
+    public async Task<(bool Success, string Message)> DisconnectMercadoPagoAsync(CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        if (_cloudSyncService is null)
+            return (false, "Serviço de nuvem indisponível.");
+
+        return await _cloudSyncService.DisconnectMercadoPagoOnServerAsync(ct);
     }
 
     public async Task<CepAddressLookupDto> LookupCepAsync(string cep, CancellationToken ct = default)
@@ -1099,10 +1283,26 @@ public sealed class MauiAdminGateway
                 : throw new DomainException("Serviço de cálculo de Correios indisponível."));
     }
 
-    public Task<IReadOnlyList<StoreOrderDto>> GetOrdersAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<StoreOrderDto>> GetOrdersAsync(CancellationToken ct = default)
     {
         EnsureAuthenticated();
-        return ExecuteWithFallbackAsync(
+
+        if (_cloudSyncService is not null &&
+            DateTimeOffset.UtcNow - _lastOrdersCloudPullAt > TimeSpan.FromSeconds(3))
+        {
+            _lastOrdersCloudPullAt = DateTimeOffset.UtcNow;
+            try
+            {
+                await _cloudSyncService.PullOrdersFromCloudAsync(
+                    CurrentEmployee?.EmployeeId ?? Guid.Empty,
+                    ct);
+            }
+            catch
+            {
+            }
+        }
+
+        return await ExecuteWithFallbackAsync(
             () => _apiClient.GetOrdersAsync(ct),
             () => _orderAndShippingService is not null
                 ? _orderAndShippingService.GetOrdersAsync(ct)
@@ -1308,6 +1508,9 @@ public sealed class MauiAdminGateway
             {
                 _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
             }
+            catch (Exception ex) when (IsEndpointUnavailableOnHubError(ex))
+            {
+            }
         }
 
         if (_subscriptionService is null)
@@ -1340,6 +1543,9 @@ public sealed class MauiAdminGateway
             catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
             {
                 _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+            catch (Exception ex) when (IsEndpointUnavailableOnHubError(ex))
+            {
             }
         }
 

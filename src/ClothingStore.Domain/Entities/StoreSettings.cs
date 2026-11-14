@@ -48,10 +48,18 @@ public sealed class StoreSettings
 
     // Vendas diretas no app apenas por Pix (exclusivo Meia Versão / Intermediário até Premium), distância e Correios
     // ManualSalesEnabled permite ativar/desativar movimentação e registro de vendas sem Pix (Dinheiro, Cartão, WhatsApp / Balcão).
+    public const string PixGatewayDirect = "DirectPix";
+    public const string PixGatewayMercadoPago = "MercadoPago";
+
     public bool DirectPixSalesEnabled { get; set; } = false;
     public bool ManualSalesEnabled { get; set; } = true;
+    public string PixGatewayMode { get; set; } = PixGatewayDirect;
     public string? StorePixKey { get; set; }
     public string? StorePixReceiverName { get; set; }
+    public bool HasMercadoPagoConnected { get; set; } = false;
+    public string? MercadoPagoAccountLabel { get; set; }
+    public string? MercadoPagoUserId { get; set; }
+    public DateTimeOffset? MercadoPagoConnectedAt { get; set; }
     public string? OriginCep { get; set; }
     public string? OriginCity { get; set; }
     public string? OriginState { get; set; }
@@ -59,7 +67,9 @@ public sealed class StoreSettings
     public int MaxDeliveryDistanceKm { get; set; } = 0;
     public int DefaultPackageWeightGrams { get; set; } = 450;
 
-    // Modo "Meu Servidor Próprio" (BYO Server), Plano Cortesia sem Pagamento & Domínio
+    // Modo Servidor Central YouLink (1-clique) e Modo "Meu Servidor Próprio" (BYO Server)
+    public string? CentralCatalogBaseUrl { get; set; }
+    public string? CentralPublishToken { get; set; }
     public const string DomainModePlatformDefault = "PlataformaPadrao";
     public const string DomainModeFreeDomain = "DominioGratis";
     public const string DomainModePurchasedDomain = "DominioComprado";
@@ -446,6 +456,14 @@ public sealed class StoreSettings
 
         if (Uri.TryCreate(uriText, UriKind.Absolute, out var uri))
         {
+            if (!string.IsNullOrWhiteSpace(CentralCatalogBaseUrl) &&
+                string.Equals(uriText.TrimEnd('/'), CentralCatalogBaseUrl.Trim().TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+            {
+                return uri.AbsolutePath.TrimEnd('/').EndsWith($"/loja/{slug}", StringComparison.OrdinalIgnoreCase)
+                    ? targetBase
+                    : $"{targetBase}/loja/{slug}";
+            }
+
             var host = uri.Host.ToLowerInvariant();
             if (host is "localhost" or "127.0.0.1" || host.EndsWith(".run.app", StringComparison.OrdinalIgnoreCase))
             {
@@ -508,11 +526,69 @@ public sealed class StoreSettings
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 
+    public static string NormalizePixGatewayMode(string? candidate) =>
+        string.Equals((candidate ?? string.Empty).Trim(), PixGatewayMercadoPago, StringComparison.OrdinalIgnoreCase)
+            ? PixGatewayMercadoPago
+            : PixGatewayDirect;
+
+    public bool IsAutomaticPixCheckoutReady(DateTimeOffset? now = null) =>
+        CanUseDirectPixSales(now) &&
+        DirectPixSalesEnabled &&
+        string.Equals(PixGatewayMode, PixGatewayMercadoPago, StringComparison.OrdinalIgnoreCase) &&
+        HasMercadoPagoConnected &&
+        Regex.Replace(OriginCep ?? string.Empty, @"\D", "").Length == 8;
+
     public bool IsDirectPixCheckoutReady(DateTimeOffset? now = null) =>
         CanUseDirectPixSales(now) &&
         DirectPixSalesEnabled &&
-        !string.IsNullOrWhiteSpace(StorePixKey) &&
-        Regex.Replace(OriginCep ?? string.Empty, @"\D", "").Length == 8;
+        Regex.Replace(OriginCep ?? string.Empty, @"\D", "").Length == 8 &&
+        (!string.IsNullOrWhiteSpace(StorePixKey) ||
+         (string.Equals(PixGatewayMode, PixGatewayMercadoPago, StringComparison.OrdinalIgnoreCase) && HasMercadoPagoConnected));
+
+    public void ConfigureMercadoPagoConnection(
+        bool connected,
+        string? userId,
+        string? accountLabel,
+        DateTimeOffset? connectedAt,
+        string? gatewayMode = null,
+        Guid? employeeId = null)
+    {
+        HasMercadoPagoConnected = connected;
+        MercadoPagoUserId = connected && !string.IsNullOrWhiteSpace(userId) ? userId.Trim() : null;
+        MercadoPagoAccountLabel = connected && !string.IsNullOrWhiteSpace(accountLabel) ? accountLabel.Trim() : null;
+        MercadoPagoConnectedAt = connected ? (connectedAt ?? DateTimeOffset.UtcNow) : null;
+
+        if (gatewayMode is not null)
+            PixGatewayMode = NormalizePixGatewayMode(gatewayMode);
+        else if (connected)
+            PixGatewayMode = PixGatewayMercadoPago;
+        else if (!connected && string.Equals(PixGatewayMode, PixGatewayMercadoPago, StringComparison.OrdinalIgnoreCase))
+            PixGatewayMode = PixGatewayDirect;
+
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void ConfigureCentralPublishing(
+        string? centralCatalogBaseUrl,
+        string? centralPublishToken = null,
+        bool preserveExistingToken = true,
+        Guid? employeeId = null)
+    {
+        CentralCatalogBaseUrl = string.IsNullOrWhiteSpace(centralCatalogBaseUrl)
+            ? null
+            : centralCatalogBaseUrl.Trim().TrimEnd('/');
+
+        if (!preserveExistingToken || !string.IsNullOrWhiteSpace(centralPublishToken))
+        {
+            CentralPublishToken = string.IsNullOrWhiteSpace(centralPublishToken)
+                ? null
+                : centralPublishToken.Trim();
+        }
+
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 
     public void ConfigurePixAndShipping(
         bool directPixSalesEnabled,
@@ -525,7 +601,8 @@ public sealed class StoreSettings
         int maxDeliveryDistanceKm,
         int defaultPackageWeightGrams,
         Guid? employeeId = null,
-        DateTimeOffset? now = null)
+        DateTimeOffset? now = null,
+        string? pixGatewayMode = null)
     {
         var eligible = CanUseDirectPixSales(now);
         if (directPixSalesEnabled && !eligible)
@@ -534,11 +611,17 @@ public sealed class StoreSettings
                 "A venda direta no app por Pix está disponível apenas da Meia Versão (Intermediário) até a Premium. Atualize seu plano em Planos para ativar.");
         }
 
+        if (pixGatewayMode is not null)
+            PixGatewayMode = NormalizePixGatewayMode(pixGatewayMode);
+
+        var usingAutomaticMp = string.Equals(PixGatewayMode, PixGatewayMercadoPago, StringComparison.OrdinalIgnoreCase) &&
+                               HasMercadoPagoConnected;
+
         var normalizedPixKey = string.IsNullOrWhiteSpace(storePixKey) ? null : storePixKey.Trim();
-        if (directPixSalesEnabled && (string.IsNullOrWhiteSpace(normalizedPixKey) || normalizedPixKey.Length < 5))
+        if (directPixSalesEnabled && !usingAutomaticMp && (string.IsNullOrWhiteSpace(normalizedPixKey) || normalizedPixKey.Length < 5))
         {
             throw new DomainException(
-                "Para ativar as vendas por Pix no app, informe uma Chave Pix válida (CPF, E-mail, Celular ou Chave Aleatória).");
+                "Para ativar as vendas por Pix no app, informe uma Chave Pix válida (CPF, E-mail, Celular ou Chave Aleatória) ou conecte o Mercado Pago.");
         }
 
         string? formattedOriginCep = null;

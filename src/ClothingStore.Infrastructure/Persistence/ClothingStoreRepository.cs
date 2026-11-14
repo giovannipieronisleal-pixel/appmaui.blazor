@@ -15,8 +15,11 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
     private readonly string _storageFilePath;
     private readonly string _fileMutexName;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly bool _enablePlatformOwnerCompanion;
     private ClothingStoreDatabaseState _state;
     private DateTime _lastLoadedUtc = DateTime.MinValue;
+
+    public string StorageFilePath => _storageFilePath;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -24,9 +27,13 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         PropertyNameCaseInsensitive = true
     };
 
-    public ClothingStoreRepository(IPasswordHasher passwordHasher, string? customStoragePath = null)
+    public ClothingStoreRepository(
+        IPasswordHasher passwordHasher,
+        string? customStoragePath = null,
+        bool enablePlatformOwnerCompanion = true)
     {
         _passwordHasher = passwordHasher;
+        _enablePlatformOwnerCompanion = enablePlatformOwnerCompanion;
         _storageFilePath = string.IsNullOrWhiteSpace(customStoragePath)
             ? Path.Combine(AppContext.BaseDirectory, "App_Data", "clothingstore_db.json")
             : customStoragePath;
@@ -55,7 +62,8 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
                     {
                         HydrateNavigationProperties(loaded);
                         var mutated = PurgeLegacyDefaultAdmin(loaded);
-                        if (PlatformOwnerSettingsStore.ApplyToStoreSettingsIfMissingOrDefault(_storageFilePath, loaded.StoreSettings))
+                        if (_enablePlatformOwnerCompanion &&
+                            PlatformOwnerSettingsStore.ApplyToStoreSettingsIfMissingOrDefault(_storageFilePath, loaded.StoreSettings))
                         {
                             mutated = true;
                         }
@@ -82,7 +90,10 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
 
             var seeded = ClothingStoreDatabaseState.CreateInitialSeed(_passwordHasher);
             HydrateNavigationProperties(seeded);
-            PlatformOwnerSettingsStore.ApplyToStoreSettingsIfMissingOrDefault(_storageFilePath, seeded.StoreSettings);
+            if (_enablePlatformOwnerCompanion)
+            {
+                PlatformOwnerSettingsStore.ApplyToStoreSettingsIfMissingOrDefault(_storageFilePath, seeded.StoreSettings);
+            }
             WriteFileAtomicWithRetry(_storageFilePath, JsonSerializer.Serialize(seeded, JsonOptions));
             _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
             return seeded;
@@ -880,7 +891,10 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         {
             _state.StoreSettings = settings;
             PersistToDisk(_state);
-            PlatformOwnerSettingsStore.SaveFromStoreSettings(_storageFilePath, settings);
+            if (_enablePlatformOwnerCompanion)
+            {
+                PlatformOwnerSettingsStore.SaveFromStoreSettings(_storageFilePath, settings);
+            }
         }
         finally
         {

@@ -7,8 +7,12 @@ dist-installer/
 
 # User-specific files
 .vs/
+.vscode/
 *.user
 *.suo
+
+# Runtime local uploads
+src/*/wwwroot/uploads/
 
 # OS-generated files
 .DS_Store

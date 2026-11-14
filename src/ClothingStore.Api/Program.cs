@@ -98,6 +98,24 @@ builder.Services.AddSingleton<IClothingStoreRepository>(sp =>
     new ClothingStoreRepository(sp.GetRequiredService<IPasswordHasher>(), sharedDbPath));
 
 builder.Services.AddHttpClient();
+
+builder.Services.AddSingleton<IMultiTenantStoreResolver>(sp =>
+    new MultiTenantStoreManager(
+        sp.GetRequiredService<IClothingStoreRepository>(),
+        sp.GetRequiredService<IPasswordHasher>(),
+        Path.GetDirectoryName(sharedDbPath)));
+
+builder.Services.AddSingleton<IMercadoPagoPixService>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new MercadoPagoPixService(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("MercadoPago"),
+        () => MercadoPagoPixService.ReadFromConfig(
+            config["MercadoPago:ClientId"],
+            config["MercadoPago:ClientSecret"],
+            config["MercadoPago:WebhookSecret"]));
+});
+
 builder.Services.AddSingleton<IImageStorageService>(sp =>
 {
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient();
@@ -113,7 +131,19 @@ builder.Services.AddScoped<ProductManagementService>();
 builder.Services.AddScoped<StockManagementService>();
 builder.Services.AddScoped<EmployeeAndSettingsService>();
 builder.Services.AddScoped<CloudSyncStateService>();
-builder.Services.AddScoped<OrderAndShippingService>();
+builder.Services.AddScoped<OrderAndShippingService>(sp =>
+    new OrderAndShippingService(
+        sp.GetRequiredService<IClothingStoreRepository>(),
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<IMercadoPagoPixService>()));
+builder.Services.AddScoped<MultiTenantGatewayService>(sp =>
+    new MultiTenantGatewayService(
+        sp.GetRequiredService<IMultiTenantStoreResolver>(),
+        sp.GetRequiredService<IMercadoPagoPixService>(),
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<IPasswordHasher>(),
+        sp.GetRequiredService<IImageStorageService>(),
+        sp.GetService<IEmailService>()));
 builder.Services.AddScoped<PlatformSubscriptionService>();
 
 // Autenticação JWT + Policies de Autorização verificadas no Backend
@@ -198,46 +228,143 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 // =============================================================================
-// 1. ENDPOINTS PÚBLICOS DO CATÁLOGO (/api/public/...)
+// 1. ENDPOINTS PÚBLICOS DO CATÁLOGO (/api/public/...) + MULTI-TENANT
 // =============================================================================
 var publicGroup = app.MapGroup("/api/public").AllowAnonymous();
 
-publicGroup.MapGet("/store-info", async (CatalogService catalogService, CancellationToken ct) =>
-    Results.Ok(await catalogService.GetPublicStoreSettingsAsync(ct)));
+static string? ResolveApiStoreSlug(HttpContext ctx, string? routeSlug = null)
+{
+    if (!string.IsNullOrWhiteSpace(routeSlug))
+        return routeSlug.Trim();
+    var q = ctx.Request.Query["storeSlug"].FirstOrDefault();
+    if (!string.IsNullOrWhiteSpace(q))
+        return q.Trim();
+    var h = ctx.Request.Headers["X-YouLink-Store-Slug"].FirstOrDefault();
+    return string.IsNullOrWhiteSpace(h) ? null : h.Trim();
+}
 
-publicGroup.MapGet("/categories", async (CatalogService catalogService, CancellationToken ct) =>
-    Results.Ok(await catalogService.GetPublicCategoriesAsync(ct)));
+static string GetApiPublicOrigin(HttpContext ctx)
+{
+    var proto = ctx.Request.Headers["X-Forwarded-Proto"].FirstOrDefault()?.Split(',')[0].Trim();
+    var host = ctx.Request.Headers["X-Forwarded-Host"].FirstOrDefault()?.Split(',')[0].Trim();
+    var scheme = string.IsNullOrWhiteSpace(proto) ? ctx.Request.Scheme : proto;
+    var hostValue = string.IsNullOrWhiteSpace(host) ? ctx.Request.Host.Value : host;
+    return string.IsNullOrWhiteSpace(hostValue) ? string.Empty : $"{scheme}://{hostValue}";
+}
 
-publicGroup.MapGet("/filters", async (CatalogService catalogService, CancellationToken ct) =>
-    Results.Ok(await catalogService.GetCatalogFiltersAsync(ct)));
+publicGroup.MapGet("/store-info", async (HttpContext ctx, MultiTenantGatewayService gateway, CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(ResolveApiStoreSlug(ctx), ct);
+    return repo is null
+        ? Results.NotFound(new { error = "Loja não encontrada." })
+        : Results.Ok(await gateway.CreateCatalogService(repo).GetPublicStoreSettingsAsync(ct));
+});
+
+publicGroup.MapGet("/stores/{storeSlug}/store-info", async (string storeSlug, MultiTenantGatewayService gateway, CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(storeSlug, ct);
+    return repo is null
+        ? Results.NotFound(new { error = "Loja não encontrada." })
+        : Results.Ok(await gateway.CreateCatalogService(repo).GetPublicStoreSettingsAsync(ct));
+});
+
+publicGroup.MapGet("/categories", async (HttpContext ctx, MultiTenantGatewayService gateway, CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(ResolveApiStoreSlug(ctx), ct);
+    return repo is null
+        ? Results.NotFound(new { error = "Loja não encontrada." })
+        : Results.Ok(await gateway.CreateCatalogService(repo).GetPublicCategoriesAsync(ct));
+});
+
+publicGroup.MapGet("/stores/{storeSlug}/categories", async (string storeSlug, MultiTenantGatewayService gateway, CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(storeSlug, ct);
+    return repo is null
+        ? Results.NotFound(new { error = "Loja não encontrada." })
+        : Results.Ok(await gateway.CreateCatalogService(repo).GetPublicCategoriesAsync(ct));
+});
+
+publicGroup.MapGet("/filters", async (HttpContext ctx, MultiTenantGatewayService gateway, CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(ResolveApiStoreSlug(ctx), ct);
+    return repo is null
+        ? Results.NotFound(new { error = "Loja não encontrada." })
+        : Results.Ok(await gateway.CreateCatalogService(repo).GetCatalogFiltersAsync(ct));
+});
+
+publicGroup.MapGet("/stores/{storeSlug}/filters", async (string storeSlug, MultiTenantGatewayService gateway, CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(storeSlug, ct);
+    return repo is null
+        ? Results.NotFound(new { error = "Loja não encontrada." })
+        : Results.Ok(await gateway.CreateCatalogService(repo).GetCatalogFiltersAsync(ct));
+});
 
 publicGroup.MapGet("/products", async (
+    HttpContext ctx,
     string? search,
     Guid? categoryId,
     string? categorySlug,
     string? color,
     string? size,
     bool? onlyInStock,
-    CatalogService catalogService,
+    MultiTenantGatewayService gateway,
     CancellationToken ct) =>
 {
-    var filter = new CatalogQueryFilter(
-        search,
-        categoryId,
-        categorySlug,
-        color,
-        size,
-        onlyInStock ?? false);
+    var repo = await gateway.ResolveReadRepositoryAsync(ResolveApiStoreSlug(ctx), ct);
+    if (repo is null)
+        return Results.NotFound(new { error = "Loja não encontrada." });
 
-    return Results.Ok(await catalogService.GetCatalogProductsAsync(filter, ct));
+    var filter = new CatalogQueryFilter(search, categoryId, categorySlug, color, size, onlyInStock ?? false);
+    return Results.Ok(await gateway.CreateCatalogService(repo).GetCatalogProductsAsync(filter, ct));
+});
+
+publicGroup.MapGet("/stores/{storeSlug}/products", async (
+    string storeSlug,
+    string? search,
+    Guid? categoryId,
+    string? categorySlug,
+    string? color,
+    string? size,
+    bool? onlyInStock,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(storeSlug, ct);
+    if (repo is null)
+        return Results.NotFound(new { error = "Loja não encontrada." });
+
+    var filter = new CatalogQueryFilter(search, categoryId, categorySlug, color, size, onlyInStock ?? false);
+    return Results.Ok(await gateway.CreateCatalogService(repo).GetCatalogProductsAsync(filter, ct));
 });
 
 publicGroup.MapGet("/products/{slugOrId}", async (
+    HttpContext ctx,
     string slugOrId,
-    CatalogService catalogService,
+    MultiTenantGatewayService gateway,
     CancellationToken ct) =>
 {
-    var product = await catalogService.GetPublicProductDetailAsync(slugOrId, ct);
+    var repo = await gateway.ResolveReadRepositoryAsync(ResolveApiStoreSlug(ctx), ct);
+    if (repo is null)
+        return Results.NotFound(new { error = "Loja não encontrada." });
+
+    var product = await gateway.CreateCatalogService(repo).GetPublicProductDetailAsync(slugOrId, ct);
+    return product is not null
+        ? Results.Ok(product)
+        : Results.NotFound(new { error = "Produto não encontrado ou indisponível no catálogo." });
+});
+
+publicGroup.MapGet("/stores/{storeSlug}/products/{slugOrId}", async (
+    string storeSlug,
+    string slugOrId,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(storeSlug, ct);
+    if (repo is null)
+        return Results.NotFound(new { error = "Loja não encontrada." });
+
+    var product = await gateway.CreateCatalogService(repo).GetPublicProductDetailAsync(slugOrId, ct);
     return product is not null
         ? Results.Ok(product)
         : Results.NotFound(new { error = "Produto não encontrado ou indisponível no catálogo." });
@@ -252,23 +379,119 @@ app.MapGet("/api/public/cep/{cep}", async (
 });
 
 app.MapPost("/api/public/shipping-quote", async (
+    HttpContext ctx,
     ShippingQuoteRequest request,
-    OrderAndShippingService orderService,
+    MultiTenantGatewayService gateway,
     CancellationToken ct) =>
 {
-    return Results.Ok(await orderService.QuoteShippingForBuyerAsync(request, ct));
+    var repo = await gateway.ResolveReadRepositoryAsync(ResolveApiStoreSlug(ctx), ct);
+    if (repo is null)
+        return Results.NotFound(new { error = "Loja não encontrada." });
+    return Results.Ok(await gateway.CreateOrderService(repo).QuoteShippingForBuyerAsync(request, ct));
+});
+
+app.MapPost("/api/public/stores/{storeSlug}/shipping-quote", async (
+    string storeSlug,
+    ShippingQuoteRequest request,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var repo = await gateway.ResolveReadRepositoryAsync(storeSlug, ct);
+    if (repo is null)
+        return Results.NotFound(new { error = "Loja não encontrada." });
+    return Results.Ok(await gateway.CreateOrderService(repo).QuoteShippingForBuyerAsync(request, ct));
 });
 
 app.MapPost("/api/public/orders/pix", async (
+    HttpContext ctx,
     CreatePixOrderRequest request,
-    OrderAndShippingService orderService,
+    MultiTenantGatewayService gateway,
     CancellationToken ct) =>
 {
     // Em pedidos públicos anônimos na web, exige cálculo formal de CEP/área de entrega (impede bypass do raio)
     request.ExpressMobileMode = false;
-    var created = await orderService.PlacePixOrderAsync(request, ct);
-    return Results.Created($"/api/orders/{created.Id}", created);
+    var created = await gateway.PlacePixOrderForStoreAsync(
+        ResolveApiStoreSlug(ctx),
+        request,
+        GetApiPublicOrigin(ctx),
+        ct);
+    return Results.Created($"/api/public/orders/{created.Id}/status", created);
 }).RequireRateLimiting("public-orders");
+
+app.MapPost("/api/public/stores/{storeSlug}/orders/pix", async (
+    string storeSlug,
+    HttpContext ctx,
+    CreatePixOrderRequest request,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    request.ExpressMobileMode = false;
+    var created = await gateway.PlacePixOrderForStoreAsync(
+        storeSlug,
+        request,
+        GetApiPublicOrigin(ctx),
+        ct);
+    return Results.Created($"/api/public/stores/{storeSlug}/orders/{created.Id}/status", created);
+}).RequireRateLimiting("public-orders");
+
+app.MapGet("/api/public/orders/{orderId:guid}/status", async (
+    Guid orderId,
+    string? token,
+    HttpContext ctx,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var status = await gateway.GetPublicOrderStatusAsync(ResolveApiStoreSlug(ctx), orderId, token, ct);
+    return status is null ? Results.NotFound(new { error = "Pedido não encontrado." }) : Results.Ok(status);
+}).AllowAnonymous();
+
+app.MapGet("/api/public/stores/{storeSlug}/orders/{orderId:guid}/status", async (
+    string storeSlug,
+    Guid orderId,
+    string? token,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var status = await gateway.GetPublicOrderStatusAsync(storeSlug, orderId, token, ct);
+    return status is null ? Results.NotFound(new { error = "Pedido não encontrado." }) : Results.Ok(status);
+}).AllowAnonymous();
+
+app.MapMethods("/api/public/webhooks/mercadopago", ["POST", "GET"], async (
+    HttpContext ctx,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, leaveOpen: true);
+    var body = ctx.Request.Body.CanRead ? await reader.ReadToEndAsync(ct) : string.Empty;
+    var res = await gateway.ProcessMercadoPagoWebhookAsync(
+        null,
+        ctx.Request.Query["data.id"].FirstOrDefault() ?? ctx.Request.Query["id"].FirstOrDefault(),
+        ctx.Request.Query["topic"].FirstOrDefault() ?? ctx.Request.Query["type"].FirstOrDefault(),
+        ctx.Request.Headers["x-signature"].FirstOrDefault(),
+        ctx.Request.Headers["x-request-id"].FirstOrDefault(),
+        body,
+        ct);
+    return res.IsUnauthorized ? Results.Unauthorized() : Results.Ok(new { received = true, confirmed = res.OrderConfirmed, message = res.Message });
+}).AllowAnonymous();
+
+app.MapMethods("/api/public/webhooks/mercadopago/{storeSlug}", ["POST", "GET"], async (
+    string storeSlug,
+    HttpContext ctx,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, leaveOpen: true);
+    var body = ctx.Request.Body.CanRead ? await reader.ReadToEndAsync(ct) : string.Empty;
+    var res = await gateway.ProcessMercadoPagoWebhookAsync(
+        storeSlug,
+        ctx.Request.Query["data.id"].FirstOrDefault() ?? ctx.Request.Query["id"].FirstOrDefault(),
+        ctx.Request.Query["topic"].FirstOrDefault() ?? ctx.Request.Query["type"].FirstOrDefault(),
+        ctx.Request.Headers["x-signature"].FirstOrDefault(),
+        ctx.Request.Headers["x-request-id"].FirstOrDefault(),
+        body,
+        ct);
+    return res.IsUnauthorized ? Results.Unauthorized() : Results.Ok(new { received = true, confirmed = res.OrderConfirmed, message = res.Message });
+}).AllowAnonymous();
 
 // =============================================================================
 // 2. ENDPOINTS DE AUTENTICAÇÃO E ENTRADA POR E-MAIL (/api/auth/...)
@@ -916,9 +1139,12 @@ app.MapGet("/api/shipping/simulate-correios", async (
 // 9. ENDPOINTS DE STATUS E SINCRONIZAÇÃO EM NUVEM (Google Cloud Run / 24h Online)
 // =============================================================================
 app.MapGet("/api/cloud/status", async (
-    IClothingStoreRepository repository,
+    HttpContext ctx,
+    MultiTenantGatewayService gateway,
     CancellationToken ct) =>
 {
+    var slug = ResolveApiStoreSlug(ctx);
+    var repository = await gateway.ResolveReadRepositoryAsync(slug, ct) ?? gateway.StoreResolver.DefaultRepository;
     var settings = await repository.GetStoreSettingsAsync(ct);
     var hasEnvSecret = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"));
     return Results.Ok(new
@@ -927,8 +1153,12 @@ app.MapGet("/api/cloud/status", async (
         provider = settings.OwnServerProvider,
         hostingMode = settings.ServerHostingMode,
         storeName = settings.StoreName,
+        storeSlug = settings.StoreSlug,
         service = "ClothingStore",
         requiresSyncKey = hasEnvSecret || !string.IsNullOrWhiteSpace(settings.OwnServerSyncSecret),
+        multiTenantEnabled = true,
+        centralPublishReady = true,
+        hasMercadoPagoAppConfigured = gateway.MercadoPago.GetConfiguredApp().IsOAuthConfigured,
         timestamp = DateTimeOffset.UtcNow
     });
 }).AllowAnonymous();
@@ -953,11 +1183,175 @@ app.MapPost("/api/cloud/check-domain", async (
     return Results.Ok(result);
 }).RequireAuthorization();
 
+app.MapPost("/api/cloud/publish-store", async (
+    HttpContext httpContext,
+    CloudCatalogSyncPayload payload,
+    IClothingStoreRepository repository,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var hasJwtAccess = httpContext.User.Identity?.IsAuthenticated == true &&
+        (httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.HasClaim("can_manage_products", "true"));
+
+    var providedKey = httpContext.Request.Headers["X-YouLink-Sync-Key"].FirstOrDefault();
+    var hasValidSyncKey = false;
+    if (!string.IsNullOrWhiteSpace(providedKey))
+    {
+        var settings = await repository.GetStoreSettingsAsync(ct);
+        var expectedKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"))
+            ? Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET")!
+            : settings.OwnServerSyncSecret;
+
+        if (!string.IsNullOrWhiteSpace(expectedKey))
+        {
+            var expectedBytes = Encoding.UTF8.GetBytes(expectedKey.Trim());
+            var providedBytes = Encoding.UTF8.GetBytes(providedKey.Trim());
+            hasValidSyncKey = expectedBytes.Length == providedBytes.Length &&
+                              CryptographicOperations.FixedTimeEquals(expectedBytes, providedBytes);
+        }
+
+        if (!hasValidSyncKey)
+            return Results.Unauthorized();
+    }
+
+    var publishToken = httpContext.Request.Headers["X-YouLink-Publish-Token"].FirstOrDefault();
+    var ownerEmail = httpContext.User.FindFirstValue(ClaimTypes.Email)
+                     ?? httpContext.Request.Headers["X-YouLink-Owner-Email"].FirstOrDefault();
+
+    var response = await gateway.PublishStoreAsync(
+        payload,
+        ResolveApiStoreSlug(httpContext),
+        providedKey,
+        publishToken,
+        hasJwtAccess || hasValidSyncKey,
+        ownerEmail,
+        GetApiPublicOrigin(httpContext),
+        ct);
+
+    if (!response.Success)
+        return Results.Conflict(new { error = response.Message });
+
+    return Results.Ok(response);
+}).AllowAnonymous();
+
+app.MapGet("/api/cloud/orders", async (
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var hasJwtAccess = httpContext.User.Identity?.IsAuthenticated == true &&
+        (httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.HasClaim("can_manage_stock", "true"));
+    var providedKey = httpContext.Request.Headers["X-YouLink-Sync-Key"].FirstOrDefault();
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    var expectedKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"))
+        ? Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET")!
+        : settings.OwnServerSyncSecret;
+    var hasValidSyncKey = !string.IsNullOrWhiteSpace(providedKey) && !string.IsNullOrWhiteSpace(expectedKey) &&
+                          CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expectedKey.Trim()), Encoding.UTF8.GetBytes(providedKey.Trim()));
+
+    var publishToken = httpContext.Request.Headers["X-YouLink-Publish-Token"].FirstOrDefault();
+    var ownerEmail = httpContext.User.FindFirstValue(ClaimTypes.Email)
+                     ?? httpContext.Request.Headers["X-YouLink-Owner-Email"].FirstOrDefault();
+
+    var res = await gateway.GetStoreOrdersForSyncAsync(
+        ResolveApiStoreSlug(httpContext),
+        publishToken,
+        hasJwtAccess || hasValidSyncKey,
+        ownerEmail,
+        ct);
+
+    return res is null ? Results.Unauthorized() : Results.Ok(res);
+}).AllowAnonymous();
+
+app.MapGet("/api/payments/mercadopago/config", (MultiTenantGatewayService gateway) =>
+{
+    var cfg = gateway.MercadoPago.GetConfiguredApp();
+    return Results.Ok(new
+    {
+        isOAuthConfigured = cfg.IsOAuthConfigured,
+        message = cfg.IsOAuthConfigured
+            ? "Mercado Pago pronto para conexão em 1 clique."
+            : "Configure MP_CLIENT_ID e MP_CLIENT_SECRET nas variáveis do servidor central."
+    });
+}).AllowAnonymous();
+
+app.MapPost("/api/payments/mercadopago/oauth/start", async (
+    HttpContext ctx,
+    IClothingStoreRepository repository,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var hasJwtAccess = ctx.User.Identity?.IsAuthenticated == true && ctx.User.IsInRole(RoleNames.Admin);
+    var providedKey = ctx.Request.Headers["X-YouLink-Sync-Key"].FirstOrDefault();
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    var expectedKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"))
+        ? Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET")!
+        : settings.OwnServerSyncSecret;
+    var hasValidSyncKey = !string.IsNullOrWhiteSpace(providedKey) && !string.IsNullOrWhiteSpace(expectedKey) &&
+                          CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expectedKey.Trim()), Encoding.UTF8.GetBytes(providedKey.Trim()));
+
+    var publishToken = ctx.Request.Headers["X-YouLink-Publish-Token"].FirstOrDefault();
+    var ownerEmail = ctx.User.FindFirstValue(ClaimTypes.Email) ?? ctx.Request.Headers["X-YouLink-Owner-Email"].FirstOrDefault();
+    var callbackUri = $"{GetApiPublicOrigin(ctx).TrimEnd('/')}/api/payments/mercadopago/oauth/callback";
+
+    var (startResp, issuedToken) = await gateway.StartMercadoPagoOAuthAsync(
+        ResolveApiStoreSlug(ctx), providedKey, publishToken, hasJwtAccess || hasValidSyncKey, ownerEmail, callbackUri, ct);
+
+    return Results.Ok(new
+    {
+        isConfigured = startResp.IsConfigured,
+        authorizationUrl = startResp.AuthorizationUrl,
+        stateToken = startResp.StateToken,
+        publishToken = issuedToken,
+        message = startResp.Message
+    });
+}).AllowAnonymous();
+
+app.MapGet("/api/payments/mercadopago/oauth/callback", async (
+    string? code,
+    string? state,
+    string? error,
+    string? error_description,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var res = await gateway.CompleteMercadoPagoOAuthCallbackAsync(code, state, error, error_description, ct);
+    return Results.Content(MercadoPagoPixService.BuildOAuthCallbackHtml(res), "text/html; charset=utf-8");
+}).AllowAnonymous();
+
+app.MapGet("/api/payments/mercadopago/status", async (
+    HttpContext ctx,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+    Results.Ok(await gateway.GetMercadoPagoStatusAsync(ResolveApiStoreSlug(ctx), ct))).AllowAnonymous();
+
+app.MapPost("/api/payments/mercadopago/disconnect", async (
+    HttpContext ctx,
+    IClothingStoreRepository repository,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var hasJwtAccess = ctx.User.Identity?.IsAuthenticated == true && ctx.User.IsInRole(RoleNames.Admin);
+    var providedKey = ctx.Request.Headers["X-YouLink-Sync-Key"].FirstOrDefault();
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    var expectedKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET"))
+        ? Environment.GetEnvironmentVariable("YOULINK_SYNC_SECRET")!
+        : settings.OwnServerSyncSecret;
+    var hasValidSyncKey = !string.IsNullOrWhiteSpace(providedKey) && !string.IsNullOrWhiteSpace(expectedKey) &&
+                          CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expectedKey.Trim()), Encoding.UTF8.GetBytes(providedKey.Trim()));
+
+    var publishToken = ctx.Request.Headers["X-YouLink-Publish-Token"].FirstOrDefault();
+    var ownerEmail = ctx.User.FindFirstValue(ClaimTypes.Email) ?? ctx.Request.Headers["X-YouLink-Owner-Email"].FirstOrDefault();
+    var ok = await gateway.DisconnectMercadoPagoAsync(ResolveApiStoreSlug(ctx), publishToken, hasJwtAccess || hasValidSyncKey, ownerEmail, ct);
+    return ok ? Results.Ok(new { disconnected = true }) : Results.Unauthorized();
+}).AllowAnonymous();
+
 app.MapPost("/api/cloud/sync-state", async (
     HttpContext httpContext,
     CloudCatalogSyncPayload payload,
     IClothingStoreRepository repository,
-    CloudSyncStateService syncStateService,
+    MultiTenantGatewayService gateway,
     CancellationToken ct) =>
 {
     var hasJwtAccess = httpContext.User.Identity?.IsAuthenticated == true &&
@@ -981,12 +1375,26 @@ app.MapPost("/api/cloud/sync-state", async (
         }
     }
 
-    if (!hasJwtAccess && !hasValidSyncKey)
+    var publishToken = httpContext.Request.Headers["X-YouLink-Publish-Token"].FirstOrDefault();
+    var ownerEmail = httpContext.User.FindFirstValue(ClaimTypes.Email) ?? httpContext.Request.Headers["X-YouLink-Owner-Email"].FirstOrDefault();
+
+    if (!hasJwtAccess && !hasValidSyncKey && string.IsNullOrWhiteSpace(publishToken))
     {
         return Results.Unauthorized();
     }
 
-    var result = await syncStateService.ApplySyncPayloadAsync(payload, ct);
+    var result = await gateway.PublishStoreAsync(
+        payload,
+        ResolveApiStoreSlug(httpContext),
+        providedKey,
+        publishToken,
+        hasJwtAccess || hasValidSyncKey,
+        ownerEmail,
+        GetApiPublicOrigin(httpContext),
+        ct);
+
+    if (!result.Success)
+        return Results.Unauthorized();
 
     return Results.Ok(new
     {
@@ -996,7 +1404,7 @@ app.MapPost("/api/cloud/sync-state", async (
         productsCount = result.ProductsCount,
         isSiteActive = result.IsSiteActive,
         storeSlug = result.StoreSlug,
-        catalogUrl = result.EffectiveCatalogUrl
+        catalogUrl = result.PublicStoreUrl
     });
 }).AllowAnonymous();
 
@@ -1075,6 +1483,64 @@ app.MapPost("/api/platform-sync/owner-pricing", async (
         return Results.Unauthorized();
 
     return Results.Ok(await settingsService.SyncOwnerPricingAsync(request, ct));
+}).AllowAnonymous();
+
+app.MapPost("/api/platform-sync/gift-cards/redeem", async (
+    PlatformGiftCardRedeemRequest request,
+    EmployeeAndSettingsService settingsService,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var result = await settingsService.RedeemGiftCardForRemoteStoreAsync(request, ct);
+        return Results.Ok(result);
+    }
+    catch (DomainException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).AllowAnonymous().RequireRateLimiting("auth-strict");
+
+app.MapGet("/api/platform-sync/gift-cards", async (
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    EmployeeAndSettingsService settingsService,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    return Results.Ok(await settingsService.GetActivationCodesForSyncAsync(ct));
+}).AllowAnonymous();
+
+app.MapGet("/api/platform-sync/plan-catalog", async (
+    IClothingStoreRepository repository,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    return Results.Ok(new PlatformPlanCatalogDto(
+        BasicPlanMonthlyPrice: settings.BasicPlanMonthlyPrice,
+        IntermediaryPlanMonthlyPrice: settings.IntermediaryPlanMonthlyPrice,
+        PremiumPlanMonthlyPrice: settings.PremiumPlanMonthlyPrice,
+        HasOfficialPixKey: !string.IsNullOrWhiteSpace(settings.PicpayPixKey),
+        CentralCatalogServerUrl: settings.CentralCatalogBaseUrl,
+        HasMercadoPagoAppConfigured: gateway.MercadoPago.GetConfiguredApp().IsOAuthConfigured));
+}).AllowAnonymous();
+
+app.MapPost("/api/platform-sync/gift-cards/sync", async (
+    SyncPlatformGiftCardsRequest request,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    EmployeeAndSettingsService settingsService,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    return Results.Ok(await settingsService.SyncPlatformGiftCardsAsync(request.GiftCards, ct));
 }).AllowAnonymous();
 
 app.Run();

@@ -5,6 +5,7 @@
 .vs/
 .vscode/
 App_Data/
+**/wwwroot/uploads/
 Platforms/
 Resources/
 tests/

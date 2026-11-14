@@ -459,7 +459,10 @@
     </div>
 </div>
 
-<CloudPublishWizard RenderUrl="@_wizardRenderUrl"
+<CloudPublishWizard CentralServerUrl="@_centralCatalogServerUrlInput"
+                    CentralServerUrlChanged="v => _centralCatalogServerUrlInput = v"
+                    IsCentralHostingMode="@string.Equals(_serverHostingMode, "PlatformShared", StringComparison.OrdinalIgnoreCase)"
+                    RenderUrl="@_wizardRenderUrl"
                     RenderUrlChanged="v => _wizardRenderUrl = v"
                     SyncSecret="@_ownServerSyncSecretInput"
                     SyncSecretChanged="v => _ownServerSyncSecretInput = v"
@@ -472,6 +475,7 @@
                     LastSyncedAt="@_form.LastOnlineSyncAt"
                     OfficialCatalogUrl="@storeCatalogUrl"
                     StoreNameHint="@_form.StoreName"
+                    OnCentralPublishRequested="PublishCentralOneClickAsync"
                     OnPublishRequested="PublishOneClickAsync"
                     OnClearSecretRequested="ClearOwnServerSyncSecretAsync"
                     OnCopyCatalogUrl="() => CopyStoreUrlAsync(storeCatalogUrl)"
@@ -670,7 +674,11 @@
                 <span class="pill-badge @(_manualSalesEnabled ? "pill-green" : "pill-slate")">
                     @(_manualSalesEnabled ? "🟢 Vendas s/ Pix Ativas" : "⚪ Vendas s/ Pix Pausadas")
                 </span>
-                @if (_pixEnabled && ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storePixKey) && ClothingStore.Shared.Helpers.BrazilShippingCalculator.TrySanitizeCep(_originCep, out _))
+                @if (_pixEnabled && string.Equals(_pixGatewayMode, "MercadoPago", StringComparison.OrdinalIgnoreCase) && _hasMercadoPagoConnected)
+                {
+                    <span class="pill-badge pill-green">⚡ Pix Automático Ativo</span>
+                }
+                else if (_pixEnabled && ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storePixKey) && ClothingStore.Shared.Helpers.BrazilShippingCalculator.TrySanitizeCep(_originCep, out _))
                 {
                     <span class="pill-badge pill-green">🟢 Pix Direto Ativo</span>
                 }
@@ -716,14 +724,92 @@
                         @(_pixEnabled ? "✅ Vendas diretas pelo catálogo via Pix ATIVADAS (Opcional)" : "Ativar também compras diretas pelo catálogo via Pix (Opcional)")
                     </div>
                     <div style="font-size: 0.78rem; color: var(--adm-muted);">
-                        Opcional: gera Pix Copia e Cola automático no catálogo público com cálculo de distância e Correios — você nunca é obrigado a ativar se preferir vender sem Pix.
+                        Opcional: gera Pix Copia e Cola e QR Code no catálogo público com cálculo de distância e Correios — você nunca é obrigado a ativar se preferir vender sem Pix.
                     </div>
                 </div>
             </label>
 
+            <!-- Modo de Recebimento Pix na Vitrine (Pix Direto 0% vs Mercado Pago Automático) -->
+            <div style="background: var(--adm-input-bg); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.95rem; display: flex; flex-direction: column; gap: 0.7rem;">
+                <div style="font-weight: 800; font-size: 0.9rem; color: var(--adm-text);">
+                    ⚡ Como deseja confirmar os pagamentos Pix das vendas na vitrine?
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.65rem;">
+                    <label style="display: flex; align-items: flex-start; gap: 0.55rem; padding: 0.75rem; border-radius: 8px; border: 1.5px solid @(_pixGatewayMode == "DirectPix" ? "var(--adm-accent)" : "var(--adm-border)"); background: var(--adm-surface-subtle); cursor: pointer;">
+                        <input type="radio" name="pixGatewayMode" value="DirectPix"
+                               checked="@(_pixGatewayMode == "DirectPix")"
+                               @onchange="@(() => _pixGatewayMode = "DirectPix")" />
+                        <div>
+                            <div style="font-weight: 700; font-size: 0.86rem; color: var(--adm-text);">🆓 Pix Direto (Taxa 0%)</div>
+                            <div style="font-size: 0.76rem; color: var(--adm-muted); line-height: 1.4;">
+                                Dinheiro cai direto na sua chave Pix sem intermediários. Você confere no banco e clica em confirmar no app.
+                            </div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: flex-start; gap: 0.55rem; padding: 0.75rem; border-radius: 8px; border: 1.5px solid @(_pixGatewayMode == "MercadoPago" ? "#16A34A" : "var(--adm-border)"); background: var(--adm-surface-subtle); cursor: pointer;">
+                        <input type="radio" name="pixGatewayMode" value="MercadoPago"
+                               checked="@(_pixGatewayMode == "MercadoPago")"
+                               @onchange="@(() => _pixGatewayMode = "MercadoPago")" />
+                        <div>
+                            <div style="font-weight: 700; font-size: 0.86rem; color: var(--adm-text);">⚡ Pix Automático — Mercado Pago</div>
+                            <div style="font-size: 0.76rem; color: var(--adm-muted); line-height: 1.4;">
+                                Confirmação na hora (~0,99% por venda aprovada no Pix do Mercado Pago), sem precisar atualizar ou conferir comprovante!
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                @if (_pixGatewayMode == "MercadoPago" || _hasMercadoPagoConnected)
+                {
+                    <div style="padding: 0.78rem 0.9rem; border-radius: 8px; border: 1px dashed @(_hasMercadoPagoConnected ? "#16A34A" : "var(--adm-accent)"); background: var(--adm-bg); display: flex; flex-direction: column; gap: 0.55rem;">
+                        @if (_hasMercadoPagoConnected)
+                        {
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                                <span style="font-weight: 700; font-size: 0.84rem; color: var(--adm-success);">
+                                    ✓ Conta Mercado Pago conectada@(!string.IsNullOrWhiteSpace(_mpAccountLabel) ? $": {_mpAccountLabel}" : string.Empty)
+                                </span>
+                                <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+                                    <button type="button" class="adm-btn adm-btn-outline" disabled="@_mpBusy" @onclick="RefreshMercadoPagoStatusAsync">
+                                        @(_mpBusy ? "..." : "🔄 Atualizar Status")
+                                    </button>
+                                    <button type="button" class="adm-btn adm-btn-outline" disabled="@_mpBusy" @onclick="DisconnectMercadoPagoAsync">
+                                        ✕ Desconectar
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="font-size: 0.8rem; color: var(--adm-muted); line-height: 1.42;">
+                                Sem criar chave de API nem configurar nada: clique abaixo, entre na sua conta Mercado Pago e autorize o recebimento em segundos.
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                <button type="button" class="adm-btn adm-btn-success" disabled="@_mpBusy" @onclick="ConnectMercadoPagoOneClickAsync">
+                                    @(_mpBusy ? "⏳ Abrindo Mercado Pago..." : "🔗 Conectar Mercado Pago (1 Clique)")
+                                </button>
+                                <button type="button" class="adm-btn adm-btn-outline" disabled="@_mpBusy" @onclick="RefreshMercadoPagoStatusAsync">
+                                    🔄 Já autorizei no navegador
+                                </button>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(_mpFeedback))
+                        {
+                            <div style="font-size: 0.78rem; font-weight: 600; color: @(_mpFeedbackOk ? "var(--adm-success)" : "var(--adm-danger)");">
+                                @_mpFeedback
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
                 <div>
-                    <label class="adm-label">Sua Chave Pix para Receber Vendas *</label>
+                    <label class="adm-label">
+                        @(_pixGatewayMode == "MercadoPago" && _hasMercadoPagoConnected
+                            ? "Chave Pix Reserva da Loja (Opcional com Mercado Pago)"
+                            : "Sua Chave Pix para Receber Vendas *")
+                    </label>
                     <input type="text" class="adm-input" @bind="_storePixKey" @bind:event="oninput"
                            placeholder="CPF, E-mail, +55 Celular ou Chave Aleatória" />
                     <span style="font-size: 0.74rem; color: @(ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storePixKey) ? "var(--adm-success)" : "var(--adm-muted)");">
@@ -973,6 +1059,7 @@
     private bool _qualifiesForDedicatedBenefit;
     private bool _verifyingGoogle;
     private GoogleAccountTierVerificationResult? _googleVerifyResult;
+    private string _centralCatalogServerUrlInput = string.Empty;
     private string _wizardRenderUrl = string.Empty;
     private bool _publishingOneClick;
     private bool _publishWizardSuccess;
@@ -987,6 +1074,7 @@
         Theme.OnThemeChanged += StateHasChanged;
         CloudSync.OnSyncStatusChanged += StateHasChanged;
         _centralServerUrlInput = Gateway.CurrentServerUrl;
+        await Gateway.TrySyncCentralCatalogUrlFromAdminAsync();
         await LoadSettingsAsync();
     }
 
@@ -1516,6 +1604,13 @@
 
     private bool _pixEnabled;
     private bool _manualSalesEnabled = true;
+    private string _pixGatewayMode = "DirectPix";
+    private bool _hasMercadoPagoConnected;
+    private string? _mpAccountLabel;
+    private bool _mpBusy;
+    private bool _mpFeedbackOk;
+    private string? _mpFeedback;
+    private CancellationTokenSource? _mpPollCts;
     private string _storePixKey = string.Empty;
     private string _storePixReceiverName = string.Empty;
     private string _originCep = string.Empty;
@@ -1536,6 +1631,9 @@
     {
         _pixEnabled = s.DirectPixSalesEnabled;
         _manualSalesEnabled = s.ManualSalesEnabled;
+        _pixGatewayMode = string.IsNullOrWhiteSpace(s.PixGatewayMode) ? "DirectPix" : s.PixGatewayMode;
+        _hasMercadoPagoConnected = s.HasMercadoPagoConnected;
+        _mpAccountLabel = s.MercadoPagoAccountLabel;
         _storePixKey = s.StorePixKey ?? string.Empty;
         _storePixReceiverName = s.StorePixReceiverName ?? string.Empty;
         _originCep = s.OriginCep ?? string.Empty;
@@ -1547,6 +1645,145 @@
         _maxDeliveryDistanceKm = s.MaxDeliveryDistanceKm;
         _defaultPackageWeightGrams = s.DefaultPackageWeightGrams >= 100 ? s.DefaultPackageWeightGrams : 450;
         _simTestWeightG = _defaultPackageWeightGrams;
+    }
+
+    private async Task ConnectMercadoPagoOneClickAsync()
+    {
+        _mpFeedback = null;
+        _mpFeedbackOk = false;
+        _mpBusy = true;
+        try
+        {
+            var centralUrl = GoogleCloudSyncService.NormalizePublicServerUrl(_centralCatalogServerUrlInput);
+            if (!string.IsNullOrWhiteSpace(centralUrl))
+            {
+                await CloudSync.SyncCentralServerUrlFromCatalogAsync(centralUrl);
+            }
+
+            var (browserOpened, start) = await Gateway.ConnectMercadoPagoViaBrowserAsync();
+            if (!start.IsConfigured || string.IsNullOrWhiteSpace(start.AuthorizationUrl))
+            {
+                _mpFeedbackOk = false;
+                _mpFeedback = start.Message;
+                return;
+            }
+
+            _mpFeedbackOk = true;
+            _mpFeedback = browserOpened
+                ? "Autorize na tela do Mercado Pago no navegador. Aguardando confirmação automática..."
+                : $"Abra este link no navegador para autorizar: {start.AuthorizationUrl}";
+
+            _mpPollCts?.Cancel();
+            _mpPollCts?.Dispose();
+            _mpPollCts = new CancellationTokenSource();
+            _ = PollMercadoPagoStatusLoopAsync(_mpPollCts.Token);
+        }
+        catch (Exception ex)
+        {
+            _mpFeedbackOk = false;
+            _mpFeedback = ex.Message;
+        }
+        finally
+        {
+            _mpBusy = false;
+        }
+    }
+
+    private async Task PollMercadoPagoStatusLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            for (var i = 0; i < 30 && await timer.WaitForNextTickAsync(ct); i++)
+            {
+                var status = await Gateway.GetMercadoPagoStatusAsync(ct);
+                if (status.IsStoreConnected)
+                {
+                    _hasMercadoPagoConnected = true;
+                    _mpAccountLabel = status.AccountLabel;
+                    _pixGatewayMode = "MercadoPago";
+                    _pixEnabled = true;
+                    _mpFeedbackOk = true;
+                    _mpFeedback = $"✓ Mercado Pago conectado! Recebimento Pix automático ativo{(string.IsNullOrWhiteSpace(status.AccountLabel) ? string.Empty : $" ({status.AccountLabel})")}.";
+
+                    var refreshed = await Gateway.GetStoreSettingsAsync();
+                    SyncUpdatedSettingsToState(refreshed);
+                    await InvokeAsync(StateHasChanged);
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task RefreshMercadoPagoStatusAsync()
+    {
+        _mpFeedback = null;
+        _mpBusy = true;
+        try
+        {
+            var status = await Gateway.GetMercadoPagoStatusAsync();
+            _hasMercadoPagoConnected = status.IsStoreConnected;
+            _mpAccountLabel = status.AccountLabel;
+            if (status.IsStoreConnected)
+            {
+                _pixGatewayMode = "MercadoPago";
+                _pixEnabled = true;
+                _mpFeedbackOk = true;
+                _mpFeedback = status.Message;
+                var refreshed = await Gateway.GetStoreSettingsAsync();
+                SyncUpdatedSettingsToState(refreshed);
+            }
+            else
+            {
+                _mpFeedbackOk = false;
+                _mpFeedback = status.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _mpFeedbackOk = false;
+            _mpFeedback = ex.Message;
+        }
+        finally
+        {
+            _mpBusy = false;
+        }
+    }
+
+    private async Task DisconnectMercadoPagoAsync()
+    {
+        _mpFeedback = null;
+        _mpBusy = true;
+        try
+        {
+            _mpPollCts?.Cancel();
+            var (ok, msg) = await Gateway.DisconnectMercadoPagoAsync();
+            _mpFeedbackOk = ok;
+            _mpFeedback = msg;
+            if (ok)
+            {
+                _hasMercadoPagoConnected = false;
+                _mpAccountLabel = null;
+                _pixGatewayMode = "DirectPix";
+                var refreshed = await Gateway.GetStoreSettingsAsync();
+                SyncUpdatedSettingsToState(refreshed);
+            }
+        }
+        catch (Exception ex)
+        {
+            _mpFeedbackOk = false;
+            _mpFeedback = ex.Message;
+        }
+        finally
+        {
+            _mpBusy = false;
+        }
     }
 
     private void SetDistancePreset(int km)
@@ -1589,6 +1826,7 @@
         {
             _form.ManualSalesEnabled = _manualSalesEnabled;
             _form.DirectPixSalesEnabled = _pixEnabled;
+            _form.PixGatewayMode = _pixGatewayMode;
             _form.StorePixKey = _storePixKey;
             _form.StorePixReceiverName = _storePixReceiverName;
             _form.OriginCep = _originCep;
@@ -1667,9 +1905,25 @@
             ? s.OnlineBaseUrl!
             : string.Empty;
 
+        var resolvedCentral = !string.IsNullOrWhiteSpace(s.CentralCatalogBaseUrl)
+            ? s.CentralCatalogBaseUrl
+            : (!string.IsNullOrWhiteSpace(Gateway.LatestAdminCentralServerUrl)
+                ? Gateway.LatestAdminCentralServerUrl
+                : GoogleCloudSyncService.GetCachedCentralCatalogUrl());
+        if (!string.IsNullOrWhiteSpace(resolvedCentral))
+        {
+            _centralCatalogServerUrlInput = resolvedCentral;
+        }
+        else if (string.Equals(_serverHostingMode, "PlatformShared", StringComparison.OrdinalIgnoreCase) &&
+                 !IsPlaceholderOrLocalUrl(s.OnlineBaseUrl))
+        {
+            _centralCatalogServerUrlInput = s.OnlineBaseUrl!;
+        }
+
         _form.ServerHostingMode = _serverHostingMode;
         _form.OwnServerProvider = _ownServerProvider;
         _form.GoogleOAuthClientId = _googleOAuthClientId;
+        _form.CentralCatalogBaseUrl = GoogleCloudSyncService.NormalizePublicServerUrl(_centralCatalogServerUrlInput);
     }
 
     private static bool IsPlaceholderOrLocalUrl(string? url)
@@ -1728,6 +1982,106 @@
 
         ApplyHostingAndGoogleFields(updated);
         BrandState.ApplyFromAdminSettings(updated);
+    }
+
+    private async Task PublishCentralOneClickAsync()
+    {
+        _error = null;
+        _success = null;
+        _publishWizardMessage = null;
+        _publishWizardSuccess = false;
+
+        if (string.IsNullOrWhiteSpace(_form.StoreName))
+        {
+            _publishWizardMessage = "Preencha o Nome da Loja no card Identidade da Loja & WhatsApp antes de publicar.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_form.WhatsappNumber))
+        {
+            _publishWizardMessage = "Preencha o WhatsApp de Atendimento da loja antes de publicar.";
+            return;
+        }
+
+        _publishingOneClick = true;
+        _publishWizardMessage = "🚀 Publicando sua loja online em 1 clique...";
+        StateHasChanged();
+
+        var progressReporter = new Progress<string>(msg =>
+        {
+            _publishWizardMessage = msg;
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            if (_autoSyncSlugWithName || string.IsNullOrWhiteSpace(_form.StoreSlug))
+            {
+                _form.StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(_form.StoreName);
+            }
+
+            if (string.IsNullOrWhiteSpace(_form.StoreDescription))
+            {
+                _form.StoreDescription = $"Catálogo digital oficial de {_form.StoreName.Trim()}.";
+            }
+
+            var normalizedCentral = GoogleCloudSyncService.NormalizePublicServerUrl(_centralCatalogServerUrlInput);
+            if (!string.IsNullOrWhiteSpace(normalizedCentral))
+            {
+                _form.OnlineBaseUrl = normalizedCentral;
+                _form.CentralCatalogBaseUrl = normalizedCentral;
+            }
+
+            _form.ServerHostingMode = "PlatformShared";
+            _form.AutoSyncOnlineOnSave = true;
+            _form.IsSiteActive = true;
+            _form.PixGatewayMode = _pixGatewayMode;
+
+            if (BrandState.IsPremiumPlan)
+            {
+                _form.Design = _designDraft.Clone();
+            }
+            else if (BrandState.IsIntermediatePlan)
+            {
+                _form.Design = StoreDesignPresets.ResolveByPresetKey(_designDraft.PresetKey);
+            }
+
+            await Gateway.UpdateStoreSettingsAsync(_form, suppressAutoSync: true);
+
+            var (ok, publicUrl, message) = await Gateway.PublishToCentralServerAsync(
+                normalizedCentral,
+                progress: progressReporter);
+
+            var refreshed = await Gateway.GetStoreSettingsAsync();
+            SyncUpdatedSettingsToState(refreshed);
+            ApplyPixAndShippingFields(refreshed);
+
+            if (ok)
+            {
+                var finalUrl = !string.IsNullOrWhiteSpace(publicUrl)
+                    ? publicUrl
+                    : WhatsAppLinkBuilder.BuildStoreCatalogUrl(refreshed.OnlineBaseUrl, refreshed.StoreSlug);
+                _publishWizardSuccess = true;
+                _publishWizardMessage = $"✓ {message} Link da vitrine pronto: {finalUrl}";
+                _success = _publishWizardMessage;
+            }
+            else
+            {
+                _publishWizardSuccess = false;
+                _publishWizardMessage = message;
+                _error = message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _publishWizardSuccess = false;
+            _publishWizardMessage = $"Não foi possível publicar sua loja agora: {ex.Message}";
+            _error = _publishWizardMessage;
+        }
+        finally
+        {
+            _publishingOneClick = false;
+        }
     }
 
     private async Task PublishOneClickAsync()
@@ -1851,7 +2205,7 @@
             else
             {
                 _publishWizardSuccess = false;
-                _publishWizardMessage = $"Servidor respondeu em /api/cloud/status ({health.LatencyMs} ms), mas a sincronização falhou: {syncMessage}";
+                _publishWizardMessage = $"Servidor respondeu normalmente ({health.LatencyMs} ms), mas a sincronização falhou: {syncMessage}";
                 _error = _publishWizardMessage;
             }
         }
@@ -1974,6 +2328,8 @@
 
     public void Dispose()
     {
+        _mpPollCts?.Cancel();
+        _mpPollCts?.Dispose();
         Theme.OnThemeChanged -= StateHasChanged;
         CloudSync.OnSyncStatusChanged -= StateHasChanged;
     }

@@ -1,12 +1,14 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject CatalogDataGateway CatalogDataGateway
+@inject NavigationManager Navigation
 
 <StoreDesignStyleInjector Design="@_store?.Design" />
 
 <div class="lux-shell">
     <header class="lux-header">
         <div class="lux-container lux-header-inner">
-            <a href="/" class="lux-brand-link">
+            <a href="@HomeHref" class="lux-brand-link">
                 @if (WhatsAppLinkBuilder.IsSafeMediaUrl(_store?.LogoPublicUrl))
                 {
                     <img src="@WhatsAppLinkBuilder.SanitizeMediaUrl(_store?.LogoPublicUrl)" alt="@_store?.StoreName" class="lux-brand-logo" />
@@ -23,8 +25,8 @@
             </a>
 
             <nav class="lux-nav" aria-label="Navegação principal">
-                <NavLink href="/" Match="NavLinkMatch.All" class="lux-nav-link">Início</NavLink>
-                <NavLink href="/catalogo" class="lux-nav-link">Ver Roupas</NavLink>
+                <NavLink href="@HomeHref" Match="NavLinkMatch.All" class="lux-nav-link">Início</NavLink>
+                <NavLink href="@CatalogHref" class="lux-nav-link">Ver Roupas</NavLink>
                 <button type="button" class="lux-btn lux-btn-outline lux-btn-sm lux-pwa-install-btn" data-pwa-install>
                     📲 Instalar App
                 </button>
@@ -70,7 +72,7 @@
     @if (_store is { IsSiteActive: true } && !string.IsNullOrWhiteSpace(_store.WhatsappNumber))
     {
         <div class="lux-mobile-wa-bar">
-            <a href="/catalogo" class="lux-btn lux-btn-outline lux-btn-sm" style="flex: 1;">
+            <a href="@CatalogHref" class="lux-btn lux-btn-outline lux-btn-sm" style="flex: 1;">
                 Ver Roupas
             </a>
             <a href="@WhatsAppLinkBuilder.BuildGeneralStoreLink(_store.WhatsappNumber, _store.StoreName)"
@@ -86,6 +88,13 @@
 
 @code {
     private PublicStoreSettingsDto? _store;
+    private string? _activeStoreSlug;
+
+    private string HomeHref =>
+        string.IsNullOrWhiteSpace(_activeStoreSlug) ? "/" : $"/loja/{Uri.EscapeDataString(_activeStoreSlug)}";
+
+    private string CatalogHref =>
+        string.IsNullOrWhiteSpace(_activeStoreSlug) ? "/catalogo" : $"/loja/{Uri.EscapeDataString(_activeStoreSlug)}/catalogo";
 
     private string BrandInitial =>
         string.IsNullOrWhiteSpace(_store?.StoreName)
@@ -101,13 +110,58 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Navigation.LocationChanged += HandleLocationChanged;
+        _activeStoreSlug = ExtractStoreSlugFromUri(Navigation.Uri);
+        await LoadStoreAsync();
+    }
+
+    private async void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var nextSlug = ExtractStoreSlugFromUri(e.Location);
+        if (string.Equals(nextSlug, _activeStoreSlug, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _activeStoreSlug = nextSlug;
+        await InvokeAsync(async () =>
+        {
+            await LoadStoreAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadStoreAsync()
+    {
         try
         {
-            _store = await CatalogDataGateway.GetStoreInfoAsync();
+            _store = await CatalogDataGateway.GetStoreInfoOrNullAsync(_activeStoreSlug);
         }
         catch
         {
             _store = null;
         }
+    }
+
+    private string? ExtractStoreSlugFromUri(string uri)
+    {
+        try
+        {
+            var rel = Navigation.ToBaseRelativePath(uri).TrimStart('/');
+            if (rel.StartsWith("loja/", StringComparison.OrdinalIgnoreCase))
+            {
+                var remainder = rel["loja/".Length..];
+                var slashIdx = remainder.IndexOfAny(['/', '?', '#']);
+                var slug = slashIdx >= 0 ? remainder[..slashIdx] : remainder;
+                return string.IsNullOrWhiteSpace(slug) ? null : Uri.UnescapeDataString(slug);
+            }
+        }
+        catch
+        {
+        }
+        return null;
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
     }
 }

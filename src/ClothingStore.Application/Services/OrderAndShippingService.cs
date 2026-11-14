@@ -7,6 +7,14 @@ using ClothingStore.Shared.Helpers;
 
 namespace ClothingStore.Application.Services;
 
+public sealed record MercadoPagoOrderCheckoutContext(
+    string AccessToken,
+    string? NotificationUrl = null,
+    Func<string, Guid, CancellationToken, Task>? RegisterPaymentIndexAsync = null);
+
+public sealed record MercadoPagoOrderStatusCheckContext(
+    string AccessToken);
+
 /// <summary>
 /// Caso de uso de compras diretas no aplicativo/site exclusivamente via Pix (Meia Versão e Premium),
 /// com endereço completo do comprador, validação de distância/área de entrega configurada pelo vendedor,
@@ -14,13 +22,21 @@ namespace ClothingStore.Application.Services;
 /// </summary>
 public sealed class OrderAndShippingService
 {
+    private static readonly Guid SystemAutoConfirmationEmployeeId =
+        Guid.Parse("11111111-1111-1111-1111-111111111111");
+
     private readonly IClothingStoreRepository _repository;
     private readonly HttpClient? _httpClient;
+    private readonly IMercadoPagoPixService? _mercadoPagoPixService;
 
-    public OrderAndShippingService(IClothingStoreRepository repository, HttpClient? httpClient = null)
+    public OrderAndShippingService(
+        IClothingStoreRepository repository,
+        HttpClient? httpClient = null,
+        IMercadoPagoPixService? mercadoPagoPixService = null)
     {
         _repository = repository;
         _httpClient = httpClient;
+        _mercadoPagoPixService = mercadoPagoPixService;
     }
 
     public async Task<CepAddressLookupDto> LookupCepAsync(string rawCep, CancellationToken ct = default)
@@ -136,8 +152,14 @@ public sealed class OrderAndShippingService
             distanceKm);
     }
 
+    public Task<StoreOrderDto> PlacePixOrderAsync(
+        CreatePixOrderRequest request,
+        CancellationToken ct = default) =>
+        PlacePixOrderAsync(request, null, ct);
+
     public async Task<StoreOrderDto> PlacePixOrderAsync(
         CreatePixOrderRequest request,
+        MercadoPagoOrderCheckoutContext? mpContext,
         CancellationToken ct = default)
     {
         var settings = await _repository.GetStoreSettingsAsync(ct);
@@ -156,7 +178,7 @@ public sealed class OrderAndShippingService
         if (!settings.IsDirectPixCheckoutReady())
         {
             throw new DomainException(
-                "Para receber compras diretas por Pix, o vendedor precisa cadastrar uma Chave Pix válida e um CEP de origem.");
+                "Para receber compras diretas por Pix, o vendedor precisa cadastrar uma Chave Pix válida (ou conectar o Mercado Pago) e um CEP de origem.");
         }
 
         var product = await _repository.GetProductBySlugOrIdAsync(request.ProductId.ToString(), ct);
@@ -245,13 +267,57 @@ public sealed class OrderAndShippingService
         var orderId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         var orderNumber = $"YL-{now:yyyyMMdd}-{orderId.ToString("N")[..4].ToUpperInvariant()}";
-        var normalizedPixKey = PixPayloadBuilder.NormalizePixKey(settings.StorePixKey!);
-        var pixBrCode = PixPayloadBuilder.BuildBrCode(
-            normalizedPixKey,
-            receiverName,
-            settings.OriginCity ?? eligibility.OriginCity,
-            Math.Round(product.BasePrice * request.Quantity, 2),
-            orderNumber.Replace("-", ""));
+        var totalAmount = Math.Round(product.BasePrice * request.Quantity, 2);
+
+        var useAutomaticMercadoPago =
+            settings.IsAutomaticPixCheckoutReady() &&
+            _mercadoPagoPixService is not null &&
+            !string.IsNullOrWhiteSpace(mpContext?.AccessToken);
+
+        string normalizedPixKey;
+        string pixBrCode;
+        MercadoPagoPixPaymentResult? mpPixResult = null;
+
+        if (useAutomaticMercadoPago)
+        {
+            mpPixResult = await _mercadoPagoPixService!.CreatePixPaymentAsync(
+                mpContext!.AccessToken,
+                totalAmount,
+                $"Pedido {orderNumber} — {settings.StoreName}",
+                orderNumber,
+                request.CustomerName,
+                null,
+                mpContext.NotificationUrl,
+                orderId.ToString("N"),
+                ct);
+
+            if (!mpPixResult.Success)
+            {
+                throw new DomainException(
+                    $"Não foi possível gerar a cobrança Pix automática no Mercado Pago: {mpPixResult.ErrorMessage}");
+            }
+
+            normalizedPixKey = !string.IsNullOrWhiteSpace(settings.StorePixKey)
+                ? PixPayloadBuilder.NormalizePixKey(settings.StorePixKey)
+                : $"mercadopago:{settings.MercadoPagoUserId ?? "oauth"}";
+            pixBrCode = mpPixResult.PixQrCode;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(settings.StorePixKey))
+            {
+                throw new DomainException(
+                    "Esta loja utiliza Pix automático pelo Mercado Pago, mas a conexão com o Mercado Pago precisa ser atualizada pelo vendedor.");
+            }
+
+            normalizedPixKey = PixPayloadBuilder.NormalizePixKey(settings.StorePixKey);
+            pixBrCode = PixPayloadBuilder.BuildBrCode(
+                normalizedPixKey,
+                receiverName,
+                settings.OriginCity ?? eligibility.OriginCity,
+                totalAmount,
+                orderNumber.Replace("-", ""));
+        }
 
         var order = StoreOrder.CreatePixOrder(
             orderId,
@@ -282,11 +348,201 @@ public sealed class OrderAndShippingService
             normalizedPixKey,
             pixBrCode);
 
+        if (mpPixResult is not null)
+        {
+            order.AttachMercadoPagoPayment(
+                mpPixResult.ProviderPaymentId,
+                mpPixResult.PixQrCode,
+                mpPixResult.PixQrCodeBase64);
+
+            if (mpContext?.RegisterPaymentIndexAsync is not null)
+            {
+                await mpContext.RegisterPaymentIndexAsync(mpPixResult.ProviderPaymentId, order.Id, ct);
+            }
+        }
+
         await _repository.SaveOrderAsync(order, ct);
         settings.RecordActivity();
         await _repository.UpdateStoreSettingsAsync(settings, ct);
 
         return MapToDto(order);
+    }
+
+    public async Task<StoreOrderDto?> ConfirmAutomaticPixOrderAsync(
+        Guid orderId,
+        string providerPaymentId,
+        CancellationToken ct = default)
+    {
+        var order = await _repository.GetOrderByIdAsync(orderId, ct);
+        if (order is null)
+            return null;
+
+        if (order.Status == StoreOrder.StatusCancelled)
+            return MapToDto(order);
+
+        if (!string.IsNullOrWhiteSpace(order.ProviderPaymentId) &&
+            !string.Equals(order.ProviderPaymentId, providerPaymentId, StringComparison.OrdinalIgnoreCase))
+        {
+            return MapToDto(order);
+        }
+
+        order.ConfirmPixPayment();
+
+        if (!order.StockDeducted)
+        {
+            var actorId = await ResolveDefaultStockEmployeeIdAsync(ct);
+            await DeductStockForOrderItemsFlexibleAsync(
+                order,
+                actorId,
+                $"Pix automático confirmado #{order.OrderNumber} (MP {providerPaymentId})",
+                ct);
+            order.StockDeducted = true;
+        }
+
+        await _repository.SaveOrderAsync(order, ct);
+
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.RecordActivity();
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+
+        return MapToDto(order);
+    }
+
+    public async Task<PublicOrderStatusDto?> GetPublicOrderStatusAsync(
+        Guid orderId,
+        string? statusToken,
+        MercadoPagoOrderStatusCheckContext? mpCheck = null,
+        CancellationToken ct = default)
+    {
+        var order = await _repository.GetOrderByIdAsync(orderId, ct);
+        if (order is null)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(order.PublicStatusToken) &&
+            !string.Equals(order.PublicStatusToken, statusToken?.Trim(), StringComparison.Ordinal))
+        {
+            throw new DomainException("Token de acompanhamento inválido para este pedido.");
+        }
+
+        if (order.Status == StoreOrder.StatusAwaitingPix &&
+            string.Equals(order.PaymentProvider, StoreOrder.PaymentProviderMercadoPago, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(order.ProviderPaymentId) &&
+            _mercadoPagoPixService is not null &&
+            !string.IsNullOrWhiteSpace(mpCheck?.AccessToken))
+        {
+            var lookup = await _mercadoPagoPixService.GetPaymentStatusAsync(
+                mpCheck.AccessToken,
+                order.ProviderPaymentId,
+                ct);
+
+            if (lookup is not null &&
+                lookup.IsApproved &&
+                lookup.TransactionAmount >= order.TotalPixAmount - 0.01m)
+            {
+                await ConfirmAutomaticPixOrderAsync(order.Id, order.ProviderPaymentId, ct);
+                order = await _repository.GetOrderByIdAsync(orderId, ct) ?? order;
+            }
+        }
+
+        var isPaid = order.IsConfirmedSale();
+        var message = isPaid
+            ? "Pagamento Pix confirmado automaticamente! Seu pedido já está sendo separado pela loja."
+            : order.Status == StoreOrder.StatusCancelled
+                ? "Este pedido foi cancelado."
+                : "Aguardando confirmação do pagamento Pix...";
+
+        return new PublicOrderStatusDto(
+            order.Id,
+            order.OrderNumber,
+            order.Status,
+            isPaid,
+            order.PaymentProvider,
+            order.ProviderPaymentId,
+            order.PixConfirmedAt,
+            order.UpdatedAt,
+            message);
+    }
+
+    public async Task<int> MergeRemoteOrdersAsync(
+        IReadOnlyList<StoreOrderDto> remoteOrders,
+        Guid actingEmployeeId,
+        CancellationToken ct = default)
+    {
+        if (remoteOrders is null || remoteOrders.Count == 0)
+            return 0;
+
+        var actorId = actingEmployeeId != Guid.Empty
+            ? actingEmployeeId
+            : await ResolveDefaultStockEmployeeIdAsync(ct);
+
+        var updatedCount = 0;
+        foreach (var remote in remoteOrders)
+        {
+            var existing = await _repository.GetOrderByIdAsync(remote.Id, ct);
+            var remoteIsConfirmed = remote.Status is StoreOrder.StatusPaidPreparing
+                or StoreOrder.StatusShipped
+                or StoreOrder.StatusDelivered;
+
+            if (existing is null)
+            {
+                var created = MapFromDto(remote);
+                if (remoteIsConfirmed && created.StockDeducted)
+                {
+                    // Baixa o estoque no banco local do lojista uma única vez (quando o pedido pago veio da vitrine online)
+                    await DeductStockForOrderItemsFlexibleAsync(
+                        created,
+                        actorId,
+                        $"Venda vitrine online #{created.OrderNumber}",
+                        ct);
+                }
+
+                await _repository.SaveOrderAsync(created, ct);
+                updatedCount++;
+                continue;
+            }
+
+            var changed = false;
+            var wasAwaitingPix = existing.Status == StoreOrder.StatusAwaitingPix;
+
+            if (remoteIsConfirmed && wasAwaitingPix)
+            {
+                existing.ConfirmPixPayment();
+                existing.PixConfirmedAt = remote.PixConfirmedAt ?? existing.PixConfirmedAt ?? DateTimeOffset.UtcNow;
+                changed = true;
+            }
+            else if (remote.Status == StoreOrder.StatusCancelled && existing.Status != StoreOrder.StatusCancelled)
+            {
+                existing.Cancel(remote.SellerNotes);
+                changed = true;
+            }
+
+            if (remoteIsConfirmed && !existing.StockDeducted)
+            {
+                await DeductStockForOrderItemsFlexibleAsync(
+                    existing,
+                    actorId,
+                    $"Venda vitrine online #{existing.OrderNumber}",
+                    ct);
+                existing.StockDeducted = true;
+                changed = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(existing.ProviderPaymentId) && !string.IsNullOrWhiteSpace(remote.ProviderPaymentId))
+            {
+                existing.PaymentProvider = remote.PaymentProvider;
+                existing.ProviderPaymentId = remote.ProviderPaymentId;
+                existing.PixQrCodeBase64 = remote.PixQrCodeBase64;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await _repository.SaveOrderAsync(existing, ct);
+                updatedCount++;
+            }
+        }
+
+        return updatedCount;
     }
 
     public async Task<IReadOnlyList<StoreOrderDto>> GetOrdersAsync(CancellationToken ct = default)
@@ -685,6 +941,110 @@ public sealed class OrderAndShippingService
         return MapToDto(order);
     }
 
+    private async Task<Guid> ResolveDefaultStockEmployeeIdAsync(CancellationToken ct)
+    {
+        var employees = await _repository.GetEmployeesAsync(ct);
+        var candidate = employees.FirstOrDefault(e => e.CanManageStock)?.Id
+                        ?? employees.FirstOrDefault()?.Id;
+        return candidate.HasValue && candidate.Value != Guid.Empty
+            ? candidate.Value
+            : SystemAutoConfirmationEmployeeId;
+    }
+
+    private async Task DeductStockForOrderItemsFlexibleAsync(
+        StoreOrder order,
+        Guid employeeId,
+        string reason,
+        CancellationToken ct)
+    {
+        var products = await _repository.GetProductsAsync(includeArchived: true, ct);
+        foreach (var item in order.Items)
+        {
+            var product = products.FirstOrDefault(p => p.Id == item.ProductId)
+                          ?? products.FirstOrDefault(p => string.Equals(p.Name, item.ProductName, StringComparison.OrdinalIgnoreCase));
+            if (product is null)
+                continue;
+
+            var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
+                          ?? (!string.IsNullOrWhiteSpace(item.Sku)
+                              ? product.Variants.FirstOrDefault(v => string.Equals(v.Sku, item.Sku, StringComparison.OrdinalIgnoreCase))
+                              : null)
+                          ?? product.Variants.FirstOrDefault(v =>
+                              string.Equals(v.Color, item.Color, StringComparison.OrdinalIgnoreCase) &&
+                              string.Equals(v.Size, item.Size, StringComparison.OrdinalIgnoreCase));
+
+            if (variant is null || variant.StockQuantity <= 0)
+                continue;
+
+            var qtyToDeduct = Math.Min(variant.StockQuantity, Math.Max(1, item.Quantity));
+            var movement = variant.ApplyStockMovement(
+                employeeId,
+                StockMovementType.Out,
+                qtyToDeduct,
+                reason);
+
+            await _repository.RecordStockMovementAsync(variant, movement, ct);
+            await _repository.UpdateProductAsync(product, ct);
+        }
+    }
+
+    private static StoreOrder MapFromDto(StoreOrderDto dto) => new()
+    {
+        Id = dto.Id,
+        OrderNumber = dto.OrderNumber,
+        PaymentMethod = dto.PaymentMethod,
+        Status = dto.Status,
+        Items = dto.Items.Select(i => new StoreOrderItem
+        {
+            ProductId = i.ProductId,
+            ProductVariantId = i.ProductVariantId,
+            ProductName = i.ProductName,
+            Sku = i.Sku,
+            Color = i.Color,
+            Size = i.Size,
+            Quantity = i.Quantity,
+            UnitPrice = i.UnitPrice,
+            Subtotal = i.Subtotal
+        }).ToList(),
+        ItemsTotal = dto.ItemsTotal,
+        EstimatedCorreiosPac = dto.EstimatedCorreiosPac,
+        EstimatedCorreiosSedex = dto.EstimatedCorreiosSedex,
+        AgreedShippingCost = dto.AgreedShippingCost,
+        TotalPixAmount = dto.TotalPixAmount,
+        CustomerName = dto.CustomerName,
+        CustomerWhatsapp = dto.CustomerWhatsapp,
+        DeliveryCep = dto.DeliveryCep,
+        DeliveryStreet = dto.DeliveryStreet,
+        DeliveryNumber = dto.DeliveryNumber,
+        DeliveryComplement = dto.DeliveryComplement,
+        DeliveryNeighborhood = dto.DeliveryNeighborhood,
+        DeliveryCity = dto.DeliveryCity,
+        DeliveryState = dto.DeliveryState,
+        CustomerNotes = dto.CustomerNotes,
+        DistanceKmFromSeller = dto.DistanceKmFromSeller,
+        ShippingZoneLabel = dto.ShippingZoneLabel,
+        EstimatedPacDaysMin = dto.EstimatedPacDaysMin,
+        EstimatedPacDaysMax = dto.EstimatedPacDaysMax,
+        EstimatedSedexDaysMin = dto.EstimatedSedexDaysMin,
+        EstimatedSedexDaysMax = dto.EstimatedSedexDaysMax,
+        PixKey = dto.PixKey,
+        PixBrCode = dto.PixBrCode,
+        PaymentProvider = dto.PaymentProvider,
+        ProviderPaymentId = dto.ProviderPaymentId,
+        PixQrCodeBase64 = dto.PixQrCodeBase64,
+        PublicStatusToken = dto.PublicStatusToken,
+        FulfillmentMethod = dto.FulfillmentMethod,
+        TrackingCode = dto.TrackingCode,
+        SellerNotes = dto.SellerNotes,
+        StockDeducted = dto.StockDeducted,
+        CreatedAt = dto.CreatedAt,
+        PixConfirmedAt = dto.PixConfirmedAt,
+        ShippedAt = dto.ShippedAt,
+        DeliveredAt = dto.DeliveredAt,
+        CancelledAt = dto.CancelledAt,
+        UpdatedAt = dto.PixConfirmedAt ?? dto.CreatedAt
+    };
+
     private static StoreOrderDto MapToDto(StoreOrder o) => new(
         o.Id,
         o.OrderNumber,
@@ -732,5 +1092,9 @@ public sealed class OrderAndShippingService
             i.Size,
             i.Quantity,
             i.UnitPrice,
-            i.Subtotal)).ToList());
+            i.Subtotal)).ToList(),
+        o.PaymentProvider,
+        o.ProviderPaymentId,
+        o.PixQrCodeBase64,
+        o.PublicStatusToken);
 }

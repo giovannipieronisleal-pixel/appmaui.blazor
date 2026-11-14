@@ -1,4 +1,5 @@
 @page "/pedidos"
+@implements IDisposable
 @using System.Globalization
 @using ClothingStore.Shared.Helpers
 @inject MauiAdminGateway Gateway
@@ -17,12 +18,13 @@
 
     @if (Gateway.IsAuthenticated)
     {
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+            <span class="pill-badge pill-slate" title="Pedidos e confirmações Pix sincronizam sozinhos">⚡ Auto 8s</span>
             <a href="/vendas" class="adm-btn adm-btn-success">💰 Ver Quanto Vendeu</a>
             <button type="button" class="adm-btn adm-btn-outline" @onclick="() => _showCorreiosSimulator = !_showCorreiosSimulator">
                 @(_showCorreiosSimulator ? "Ocultar Simulador Correios" : "📦 Simulador Correios")
             </button>
-            <button type="button" class="adm-btn adm-btn-outline" @onclick="LoadOrdersAsync">
+            <button type="button" class="adm-btn adm-btn-outline" @onclick="ManualRefreshOrdersAsync">
                 🔄 Atualizar
             </button>
             <a href="/configuracoes-loja" class="adm-btn adm-btn-primary">⚙️ Raio &amp; Chave Pix</a>
@@ -209,7 +211,18 @@ else
                                 <span class="pill-badge @GetStatusPillClass(order.Status)">
                                     @BrazilShippingCalculator.OrderStatuses.LabelFor(order.Status)
                                 </span>
-                                <span class="pill-badge pill-green">💸 Exclusivo Pix</span>
+                                @if (string.Equals(order.PaymentProvider, "MercadoPago", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <span class="pill-badge pill-green">
+                                        ⚡ @(order.Status == BrazilShippingCalculator.OrderStatuses.AwaitingPix
+                                            ? "Pix Automático (Aguardando)"
+                                            : "Pago Automático (Mercado Pago)")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="pill-badge pill-green">💸 Pix Direto (Manual)</span>
+                                }
                             </div>
                             <div style="font-size: 0.8rem; color: var(--adm-muted); margin-top: 0.25rem;">
                                 Realizado em @order.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
@@ -306,7 +319,14 @@ else
                             {
                                 <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid #F59E0B; border-radius: 8px; padding: 0.7rem 0.85rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.85rem;">
                                     <div style="font-size: 0.84rem;">
-                                        <strong>Pix aguardando conferência:</strong> Confira no seu banco se o Pix de <strong>@order.TotalPixAmount.ToString("C", PtBr)</strong> caiu antes de despachar o pacote.
+                                        @if (string.Equals(order.PaymentProvider, "MercadoPago", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span><strong>Pix Automático (Mercado Pago):</strong> Assim que o cliente pagar <strong>@order.TotalPixAmount.ToString("C", PtBr)</strong>, a confirmação e a baixa no estoque acontecem sozinhas (sem precisar clicar em Atualizar).</span>
+                                        }
+                                        else
+                                        {
+                                            <span><strong>Pix aguardando conferência:</strong> Confira no seu banco se o Pix de <strong>@order.TotalPixAmount.ToString("C", PtBr)</strong> caiu antes de despachar o pacote.</span>
+                                        }
                                     </div>
                                     <button type="button" class="adm-btn adm-btn-success" disabled="@_savingOrderId.HasValue" @onclick="() => ConfirmPixAsync(order.Id)">
                                         ✅ Confirmar Pix Recebido &amp; Baixar Estoque
@@ -419,11 +439,15 @@ else
             ? _orders
             : _orders.Where(o => string.Equals(o.Status, _statusFilter, StringComparison.OrdinalIgnoreCase)).ToList();
 
+    private CancellationTokenSource? _autoRefreshCts;
+
     protected override async Task OnInitializedAsync()
     {
         if (Gateway.IsAuthenticated)
         {
-            await LoadOrdersAsync();
+            await LoadOrdersAsync(forceCloudSync: true);
+            _autoRefreshCts = new CancellationTokenSource();
+            _ = AutoRefreshOrdersLoopAsync(_autoRefreshCts.Token);
         }
         else
         {
@@ -431,12 +455,58 @@ else
         }
     }
 
-    private async Task LoadOrdersAsync()
+    private Task ManualRefreshOrdersAsync() => LoadOrdersAsync(forceCloudSync: true);
+
+    private async Task AutoRefreshOrdersLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(8));
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (!Gateway.IsAuthenticated || _savingOrderId.HasValue)
+                    continue;
+
+                try
+                {
+                    await Gateway.SyncOrdersFromCloudAsync(ct);
+                    var freshOrders = await Gateway.GetOrdersAsync(ct);
+                    var freshReport = await Gateway.GetSalesReportAsync("all", ct);
+                    _orders = freshOrders;
+                    _salesReport = freshReport;
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task LoadOrdersAsync(bool forceCloudSync = false)
     {
         _loading = true;
         _error = null;
         try
         {
+            if (forceCloudSync)
+            {
+                try
+                {
+                    await Gateway.SyncOrdersFromCloudAsync();
+                }
+                catch
+                {
+                }
+            }
+
             if (Gateway.IsAdmin)
             {
                 _settings = await Gateway.GetStoreSettingsAsync();
@@ -614,4 +684,10 @@ else
         BrazilShippingCalculator.OrderStatuses.Cancelled => "#71717A",
         _ => "#D97706"
     };
+
+    public void Dispose()
+    {
+        _autoRefreshCts?.Cancel();
+        _autoRefreshCts?.Dispose();
+    }
 }

@@ -27,6 +27,7 @@ public sealed class PlanActivationCode
     public string? RedeemedByStoreName { get; set; }
     public Guid? RedeemedByEmployeeId { get; set; }
     public DateTimeOffset? AppliedPlanExpiresAt { get; set; }
+    public DateTimeOffset? StatusUpdatedAt { get; set; }
 
     public bool IsRedeemed => RedeemedAt.HasValue;
     public bool IsLifetime => !DurationDays.HasValue;
@@ -127,7 +128,9 @@ public sealed class PlanActivationCode
         if (IsRedeemed)
             throw new DomainException("Este código Gift Card já foi resgatado anteriormente.");
 
-        RedeemedAt = now ?? DateTimeOffset.UtcNow;
+        var current = now ?? DateTimeOffset.UtcNow;
+        RedeemedAt = current;
+        StatusUpdatedAt = current;
         RedeemedByStoreName = string.IsNullOrWhiteSpace(storeName) ? "Loja" : storeName.Trim();
         RedeemedByEmployeeId = employeeId;
         AppliedPlanExpiresAt = appliedPlanExpiresAt;
@@ -139,5 +142,15 @@ public sealed class PlanActivationCode
             throw new DomainException("Não é possível revogar um Gift Card que já foi resgatado.");
 
         IsRevoked = true;
+        StatusUpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Reactivate()
+    {
+        if (IsRedeemed)
+            throw new DomainException("Não é possível reativar um Gift Card que já foi resgatado por uma loja.");
+
+        IsRevoked = false;
+        StatusUpdatedAt = DateTimeOffset.UtcNow;
     }
 }

@@ -174,6 +174,33 @@ public static class WhatsAppLinkBuilder
         host is "localhost" or "127.0.0.1" ||
         SharedCloudHostSuffixes.Any(suffix => host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
+    public static string BuildCentralTenantCatalogUrl(string? centralServerBaseUrl, string? storeSlugOrName)
+    {
+        if (string.IsNullOrWhiteSpace(centralServerBaseUrl))
+        {
+            return GenerateDefaultStoreUrl(storeSlugOrName);
+        }
+
+        var cleanBase = centralServerBaseUrl.Trim().TrimEnd('/');
+        var slug = GenerateStoreSlug(storeSlugOrName);
+
+        var uriText = cleanBase.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                      cleanBase.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? cleanBase
+            : $"https://{cleanBase}";
+
+        if (Uri.TryCreate(uriText, UriKind.Absolute, out var uri))
+        {
+            var path = uri.AbsolutePath.TrimEnd('/');
+            if (path.EndsWith($"/loja/{slug}", StringComparison.OrdinalIgnoreCase))
+            {
+                return uriText;
+            }
+        }
+
+        return $"{uriText.TrimEnd('/')}/loja/{slug}";
+    }
+
     public static string BuildStoreCatalogUrl(string? baseSiteUrl, string? storeSlugOrName)
     {
         if (string.IsNullOrWhiteSpace(baseSiteUrl))

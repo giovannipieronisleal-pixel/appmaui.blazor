@@ -27,7 +27,9 @@ public sealed record PublicStoreSettingsDto(
     string? OriginState = null,
     string DeliveryScopeMode = "TodoBrasil",
     int MaxDeliveryDistanceKm = 0,
-    int DefaultPackageWeightGrams = 450);
+    int DefaultPackageWeightGrams = 450,
+    string PixGatewayMode = "DirectPix",
+    bool HasMercadoPagoConnected = false);
 
 public sealed record CategoryDto(
     Guid Id,

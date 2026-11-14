@@ -131,7 +131,22 @@ public sealed record StoreOrderDto(
     DateTimeOffset? ShippedAt,
     DateTimeOffset? DeliveredAt,
     DateTimeOffset? CancelledAt,
-    IReadOnlyList<StoreOrderItemDto> Items);
+    IReadOnlyList<StoreOrderItemDto> Items,
+    string PaymentProvider = "DirectPix",
+    string? ProviderPaymentId = null,
+    string? PixQrCodeBase64 = null,
+    string? PublicStatusToken = null);
+
+public sealed record PublicOrderStatusDto(
+    Guid OrderId,
+    string OrderNumber,
+    string Status,
+    bool IsPaid,
+    string PaymentProvider,
+    string? ProviderPaymentId,
+    DateTimeOffset? PixConfirmedAt,
+    DateTimeOffset UpdatedAt,
+    string Message);
 
 public sealed record RegisterManualSaleRequest(
     Guid ProductId,

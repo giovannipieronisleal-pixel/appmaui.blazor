@@ -11,3 +11,11 @@ services:
         value: Production
       - key: YOULINK_SYNC_SECRET
         generateValue: true
+      - key: YOULINK_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: MP_CLIENT_ID
+        sync: false
+      - key: MP_CLIENT_SECRET
+        sync: false
+      - key: MP_WEBHOOK_SECRET
+        sync: false

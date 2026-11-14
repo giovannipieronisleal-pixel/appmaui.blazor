@@ -216,6 +216,7 @@ public sealed class UpdateStoreSettingsRequest
     // ManualSalesEnabled permite ativar/desativar movimentação e registro de vendas sem Pix (Dinheiro, Cartão, WhatsApp / Balcão).
     public bool? DirectPixSalesEnabled { get; set; }
     public bool? ManualSalesEnabled { get; set; }
+    public string? PixGatewayMode { get; set; }
     public string? StorePixKey { get; set; }
     public string? StorePixReceiverName { get; set; }
     public string? OriginCep { get; set; }
@@ -225,7 +226,8 @@ public sealed class UpdateStoreSettingsRequest
     public int? MaxDeliveryDistanceKm { get; set; }
     public int? DefaultPackageWeightGrams { get; set; }
 
-    // Modo Meu Servidor Próprio (BYO Server) e Verificação de Nível da Conta Google
+    // Servidor Central YouLink (1-clique), Meu Servidor Próprio (BYO Server) e Conta Google
+    public string? CentralCatalogBaseUrl { get; set; }
     public string? ServerHostingMode { get; set; }
     public string? OwnServerProvider { get; set; }
     public string? OwnServerSyncSecret { get; set; }
@@ -282,7 +284,14 @@ public sealed record AdminStoreSettingsDto(
     bool QualifiesForDedicatedServerBenefit = false,
     string ActivePlanBillingKind = "Pago",
     string DomainAcquisitionMode = "PlataformaPadrao",
-    bool ManualSalesEnabled = true);
+    bool ManualSalesEnabled = true,
+    string PixGatewayMode = "DirectPix",
+    string? CentralCatalogBaseUrl = null,
+    bool HasCentralPublishToken = false,
+    bool HasMercadoPagoConnected = false,
+    string? MercadoPagoAccountLabel = null,
+    string? MercadoPagoUserId = null,
+    DateTimeOffset? MercadoPagoConnectedAt = null);
 
 public sealed class CloudCatalogSyncPayload
 {
@@ -457,6 +466,83 @@ public sealed record UpdateOwnerPricingSyncRequest(
     string PicpayPixKey,
     decimal BasicPlanMonthlyPrice,
     decimal IntermediaryPlanMonthlyPrice,
-    decimal PremiumPlanMonthlyPrice);
+    decimal PremiumPlanMonthlyPrice,
+    string? CentralCatalogServerUrl = null);
+
+public sealed record PlatformGiftCardRedeemRequest(
+    string Code,
+    string? StoreName = null,
+    Guid? EmployeeId = null);
+
+public sealed record PlatformGiftCardRedeemResponse(
+    string Code,
+    string TargetPlanTier,
+    int? DurationDays,
+    DateTimeOffset? PlanExpiresAt,
+    bool IsGiftedUnpaid,
+    string? SuggestedDomainName,
+    string RedeemedByStoreName,
+    string Message);
+
+public sealed record PlatformGiftCardSyncDto(
+    Guid Id,
+    string Code,
+    string TargetPlanTier,
+    int? DurationDays,
+    string? TargetStoreName,
+    string? Notes,
+    string PlanBillingKind,
+    string? SuggestedDomainName,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? CodeExpiresAt,
+    bool IsRevoked,
+    DateTimeOffset? RedeemedAt,
+    string? RedeemedByStoreName,
+    Guid? RedeemedByEmployeeId,
+    DateTimeOffset? AppliedPlanExpiresAt,
+    DateTimeOffset? StatusUpdatedAt = null);
+
+public sealed record SyncPlatformGiftCardsRequest(
+    IReadOnlyList<PlatformGiftCardSyncDto> GiftCards);
+
+public sealed record PlatformPlanCatalogDto(
+    decimal BasicPlanMonthlyPrice,
+    decimal IntermediaryPlanMonthlyPrice,
+    decimal PremiumPlanMonthlyPrice,
+    bool HasOfficialPixKey,
+    string? CentralCatalogServerUrl = null,
+    bool HasMercadoPagoAppConfigured = false);
+
+public sealed record CloudStorePublishResponse(
+    bool Success,
+    string StoreSlug,
+    string PublicStoreUrl,
+    string? PublishToken,
+    int CategoriesCount,
+    int ProductsCount,
+    DateTimeOffset SyncedAt,
+    string Message,
+    bool IsSiteActive = true);
+
+public sealed record CloudSyncOrdersResponse(
+    string StoreSlug,
+    int TotalOrders,
+    IReadOnlyList<StoreOrderDto> Orders);
+
+public sealed record MercadoPagoOAuthStartResponse(
+    bool IsConfigured,
+    string? AuthorizationUrl,
+    string? StateToken,
+    string Message);
+
+public sealed record MercadoPagoStatusDto(
+    bool IsAppConfiguredOnServer,
+    bool IsStoreConnected,
+    string PixGatewayMode,
+    string? AccountLabel,
+    string? UserId,
+    DateTimeOffset? ConnectedAt,
+    string Message);
+
 
 

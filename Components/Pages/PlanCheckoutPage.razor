@@ -1,6 +1,7 @@
 @page "/contratar-plano"
 @page "/contratar-plano/{PlanTier?}"
 @using ClothingStore.Application.Services
+@using ClothingStore.Shared.Helpers
 @implements IDisposable
 @inject MauiAdminGateway Gateway
 @inject StoreBrandStateService BrandState
@@ -54,6 +55,27 @@ else
     @if (!string.IsNullOrWhiteSpace(_successMessage))
     {
         <div class="adm-alert adm-alert-success">@_successMessage</div>
+    }
+
+    @if (CurrentPlanPrompt.ShouldPrompt && _activePlanOrder is null)
+    {
+        <section class="adm-card" style="margin-bottom: 1.25rem; border: 1.5px solid var(--adm-accent); background: linear-gradient(135deg, rgba(182,145,88,0.12), transparent 70%); display: flex; justify-content: space-between; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+            <div style="flex: 1 1 260px;">
+                <div style="font-weight: 800; font-size: 0.96rem; color: var(--adm-text);">@CurrentPlanPrompt.Headline</div>
+                <div style="font-size: 0.84rem; color: var(--adm-muted); margin-top: 0.2rem;">@CurrentPlanPrompt.Message</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button type="button" class="adm-btn adm-btn-accent" @onclick="() => _showExistingPlanModal = true">
+                    🔄 Mudar de Plano / Opções
+                </button>
+                @if (Gateway.IsAdmin)
+                {
+                    <a href="/configuracoes-loja" class="adm-btn adm-btn-outline" style="text-decoration: none;">
+                        ✨ Ir para Estúdio
+                    </a>
+                }
+            </div>
+        </section>
     }
 
     <!-- Escolha rápida do Plano -->
@@ -473,6 +495,75 @@ else
             </div>
         </section>
     </div>
+
+    @if (_showExistingPlanModal && CurrentPlanPrompt.ShouldPrompt)
+    {
+        <div class="adm-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="existing-plan-modal-title" style="z-index: 9999;">
+            <div class="adm-card adm-modal-card" style="max-width: 540px; border: 2px solid var(--adm-accent); display: flex; flex-direction: column; gap: 0.95rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem;">
+                    <div>
+                        <span class="pill-badge pill-gold">Plano Atual Ativo</span>
+                        <h2 id="existing-plan-modal-title" style="margin: 0.35rem 0 0; font-size: 1.15rem; font-weight: 800; color: var(--adm-text);">
+                            @CurrentPlanPrompt.Headline
+                        </h2>
+                    </div>
+                    <button type="button"
+                            class="adm-btn adm-btn-outline"
+                            style="padding: 0.3rem 0.6rem;"
+                            @onclick="DismissExistingPlanModal">
+                        ✕
+                    </button>
+                </div>
+
+                <p style="margin: 0; font-size: 0.9rem; color: var(--adm-muted); line-height: 1.5;">
+                    @CurrentPlanPrompt.Message
+                </p>
+
+                <div style="background: var(--adm-surface-subtle); border: 1px solid var(--adm-border); border-radius: 10px; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                    <strong style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--adm-muted);">
+                        Mudar de plano ou fechar para comprar para outra loja:
+                    </strong>
+                    <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+                        <button type="button"
+                                class="adm-btn @(_selectedTier == StoreDesignPresets.PlanBasic ? "adm-btn-primary" : "adm-btn-outline")"
+                                style="font-size: 0.8rem; padding: 0.45rem 0.75rem;"
+                                @onclick="() => SelectTierFromModal(StoreDesignPresets.PlanBasic)">
+                            ● Plano Básico
+                        </button>
+                        <button type="button"
+                                class="adm-btn @(_selectedTier == StoreDesignPresets.PlanIntermediate ? "adm-btn-primary" : "adm-btn-outline")"
+                                style="font-size: 0.8rem; padding: 0.45rem 0.75rem;"
+                                @onclick="() => SelectTierFromModal(StoreDesignPresets.PlanIntermediate)">
+                            ◈ Meia Versão
+                        </button>
+                        <button type="button"
+                                class="adm-btn @(_selectedTier == StoreDesignPresets.PlanPremium ? "adm-btn-primary" : "adm-btn-outline")"
+                                style="font-size: 0.8rem; padding: 0.45rem 0.75rem;"
+                                @onclick="() => SelectTierFromModal(StoreDesignPresets.PlanPremium)">
+                            ✦ Premium Sob Medida
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.55rem; flex-wrap: wrap; justify-content: flex-end; padding-top: 0.35rem; border-top: 1px solid var(--adm-border);">
+                    <a href="/planos" class="adm-btn adm-btn-outline" style="text-decoration: none;">
+                        ← Voltar para Planos
+                    </a>
+                    @if (Gateway.IsAdmin)
+                    {
+                        <a href="/configuracoes-loja" class="adm-btn adm-btn-accent" style="text-decoration: none;">
+                            ✨ Abrir Estúdio &amp; Configurações
+                        </a>
+                    }
+                    <button type="button"
+                            class="adm-btn adm-btn-success"
+                            @onclick="ProceedWithExistingPlanOrderAsync">
+                        @CurrentPlanPrompt.ConfirmActionLabel
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -512,6 +603,12 @@ else
     private PlatformSubscriptionOrderDto? _activePlanOrder;
     private PlatformPlanOrderStatusDto? _planAutoActivatedResult;
     private CancellationTokenSource? _pollingCts;
+    private bool _showExistingPlanModal;
+    private bool _dismissedInitialExistingPlanModal;
+    private bool _confirmedExistingPlanPurchase;
+
+    private ExistingPlanPromptState CurrentPlanPrompt =>
+        PlanCheckoutGuardHelper.EvaluatePurchasePrompt(_settings, _selectedTier, _customerStoreName);
 
     private string? PlanPixBrCode => _activePlanOrder?.PixBrCode;
 
@@ -663,6 +760,11 @@ else
                     StartPlanPollingLoop();
                 }
             }
+
+            if (_activePlanOrder is null && CurrentPlanPrompt.ShouldPrompt && !_dismissedInitialExistingPlanModal)
+            {
+                _showExistingPlanModal = true;
+            }
         }
         catch (Exception ex)
         {
@@ -679,9 +781,31 @@ else
         StopPlanPollingLoop();
         _activePlanOrder = null;
         Gateway.ClearPendingPlanOrder();
+        _confirmedExistingPlanPurchase = false;
         _selectedTier = tier;
         _error = null;
         Navigation.NavigateTo($"/contratar-plano/{tier}", replace: true);
+    }
+
+    private void SelectTierFromModal(string tier)
+    {
+        _dismissedInitialExistingPlanModal = true;
+        _showExistingPlanModal = false;
+        SelectTier(tier);
+    }
+
+    private void DismissExistingPlanModal()
+    {
+        _dismissedInitialExistingPlanModal = true;
+        _showExistingPlanModal = false;
+    }
+
+    private async Task ProceedWithExistingPlanOrderAsync()
+    {
+        _confirmedExistingPlanPurchase = true;
+        _dismissedInitialExistingPlanModal = true;
+        _showExistingPlanModal = false;
+        await ConfirmDirectMobilePlanOrderAsync();
     }
 
     private async Task CopyPixKeyAsync()
@@ -723,6 +847,12 @@ else
     {
         if (_settings is null)
             return;
+
+        if (!_confirmedExistingPlanPurchase && CurrentPlanPrompt.ShouldPrompt)
+        {
+            _showExistingPlanModal = true;
+            return;
+        }
 
         _error = null;
         _successMessage = null;

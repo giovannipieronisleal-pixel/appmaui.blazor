@@ -52,7 +52,9 @@ public sealed class CatalogService
             settings.OriginState,
             settings.DeliveryScopeMode,
             settings.MaxDeliveryDistanceKm,
-            settings.DefaultPackageWeightGrams);
+            settings.DefaultPackageWeightGrams,
+            settings.PixGatewayMode,
+            settings.HasMercadoPagoConnected);
     }
 
     public async Task<IReadOnlyList<CategoryDto>> GetPublicCategoriesAsync(CancellationToken ct = default)

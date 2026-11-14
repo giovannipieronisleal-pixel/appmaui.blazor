@@ -7,6 +7,7 @@ using System.Text.Json;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Application.Services;
 using ClothingStore.Domain.Entities;
+using ClothingStore.Domain.Enums;
 using ClothingStore.Shared.Clients;
 using ClothingStore.Shared.DTOs;
 using ClothingStore.Shared.Helpers;
@@ -19,9 +20,15 @@ namespace appmaui.blazor.Services;
 /// </summary>
 public sealed class GoogleCloudSyncService
 {
+    private const string CentralUrlPreferenceKey = "youlink_central_catalog_url_v1";
+    private const string PublishTokenPreferencePrefix = "youlink_central_publish_token_v1_";
+    public const string HostingModePlatformShared = "PlatformShared";
+
     private readonly IClothingStoreRepository _repository;
     private readonly AdminApiClient _adminApiClient;
     private readonly HttpClient _httpClient;
+    private readonly OrderAndShippingService? _orderAndShippingService;
+    private readonly HttpClient _externalHttpClient;
     private static readonly HttpClient ExternalHttpClient = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
@@ -31,19 +38,129 @@ public sealed class GoogleCloudSyncService
     public string? LastSyncError { get; private set; }
     public DateTimeOffset? LastSyncTime { get; private set; }
     public bool? IsCloudOnline { get; private set; }
+    public DateTimeOffset? LastOrdersSyncTime { get; private set; }
 
     public GoogleCloudSyncService(
         IClothingStoreRepository repository,
         AdminApiClient adminApiClient,
-        HttpClient httpClient)
+        HttpClient httpClient,
+        OrderAndShippingService? orderAndShippingService = null,
+        HttpClient? externalHttpClient = null)
     {
         _repository = repository;
         _adminApiClient = adminApiClient;
         _httpClient = httpClient;
+        _orderAndShippingService = orderAndShippingService;
+        _externalHttpClient = externalHttpClient ?? ExternalHttpClient;
     }
 
+    public static string? GetCachedCentralCatalogUrl()
+    {
+        try
+        {
+            var value = Preferences.Default.Get(CentralUrlPreferenceKey, string.Empty);
+            var normalized = NormalizePublicServerUrl(value);
+            return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void SaveCachedCentralCatalogUrl(string? url)
+    {
+        try
+        {
+            var normalized = NormalizePublicServerUrl(url);
+            if (string.IsNullOrWhiteSpace(normalized))
+                Preferences.Default.Remove(CentralUrlPreferenceKey);
+            else
+                Preferences.Default.Set(CentralUrlPreferenceKey, normalized);
+        }
+        catch
+        {
+        }
+    }
+
+    private static string? GetCachedPublishToken(string? storeSlug)
+    {
+        if (string.IsNullOrWhiteSpace(storeSlug))
+            return null;
+
+        try
+        {
+            var key = $"{PublishTokenPreferencePrefix}{storeSlug.Trim().ToLowerInvariant()}";
+            var value = Preferences.Default.Get(key, string.Empty);
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void SaveCachedPublishToken(string? storeSlug, string? token)
+    {
+        if (string.IsNullOrWhiteSpace(storeSlug) || string.IsNullOrWhiteSpace(token))
+            return;
+
+        try
+        {
+            var key = $"{PublishTokenPreferencePrefix}{storeSlug.Trim().ToLowerInvariant()}";
+            Preferences.Default.Set(key, token.Trim());
+        }
+        catch
+        {
+        }
+    }
+
+    public static string ResolveEffectiveStoreSlug(StoreSettings settings) =>
+        string.IsNullOrWhiteSpace(settings.StoreSlug)
+            ? WhatsAppLinkBuilder.GenerateStoreSlug(settings.StoreName)
+            : WhatsAppLinkBuilder.GenerateStoreSlug(settings.StoreSlug);
+
+    public static string ResolveCentralServerBaseUrl(StoreSettings settings, string? explicitUrl = null)
+    {
+        var explicitNormalized = NormalizePublicServerUrl(explicitUrl);
+        if (!string.IsNullOrWhiteSpace(explicitNormalized))
+            return explicitNormalized;
+
+        var settingsCentral = NormalizePublicServerUrl(settings.CentralCatalogBaseUrl);
+        if (!string.IsNullOrWhiteSpace(settingsCentral))
+            return settingsCentral;
+
+        var cachedCentral = GetCachedCentralCatalogUrl();
+        if (!string.IsNullOrWhiteSpace(cachedCentral))
+            return cachedCentral;
+
+        var isSharedMode = string.Equals(
+            settings.ServerHostingMode,
+            HostingModePlatformShared,
+            StringComparison.OrdinalIgnoreCase);
+
+        if (isSharedMode || string.IsNullOrWhiteSpace(settings.OwnServerSyncSecret))
+        {
+            var onlineNormalized = NormalizePublicServerUrl(settings.OnlineBaseUrl);
+            if (!string.IsNullOrWhiteSpace(onlineNormalized))
+                return onlineNormalized;
+        }
+
+        return string.Empty;
+    }
+
+    private static string? ResolvePublishToken(StoreSettings settings, string effectiveSlug) =>
+        !string.IsNullOrWhiteSpace(settings.CentralPublishToken)
+            ? settings.CentralPublishToken.Trim()
+            : GetCachedPublishToken(effectiveSlug);
+
+    private static string BuildCloudStatusUrl(string cleanBaseUrl, string? storeSlug) =>
+        string.IsNullOrWhiteSpace(storeSlug)
+            ? $"{cleanBaseUrl}/api/cloud/status"
+            : $"{cleanBaseUrl}/api/cloud/status?storeSlug={Uri.EscapeDataString(storeSlug)}";
+
     /// <summary>
-    /// Testa se o site hospedado no Google Cloud está ativo e respondendo 24h por dia.
+    /// Testa se o site hospedado na nuvem está ativo e respondendo 24h por dia.
     /// </summary>
     public async Task<bool> CheckCloudOnlineStatusAsync(string? targetUrl = null, CancellationToken ct = default)
     {
@@ -59,20 +176,28 @@ public sealed class GoogleCloudSyncService
                 return false;
             }
 
-            var cleanUrl = url.TrimEnd('/');
+            var cleanUrl = NormalizePublicServerUrl(url);
+            if (string.IsNullOrWhiteSpace(cleanUrl))
+            {
+                IsCloudOnline = false;
+                OnSyncStatusChanged?.Invoke();
+                return false;
+            }
+
+            var slug = ResolveEffectiveStoreSlug(settings);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(25));
 
-            // Testa endpoint de status ou health check do Google Cloud Run / servidor próprio
-            var checkUrl = $"{cleanUrl}/api/cloud/status";
-            var resp = await ExternalHttpClient.GetAsync(checkUrl, cts.Token);
+            var checkUrl = BuildCloudStatusUrl(cleanUrl, slug);
+            var resp = await _externalHttpClient.GetAsync(checkUrl, cts.Token);
             var isOk = resp.IsSuccessStatusCode;
 
             if (!isOk)
             {
-                // Fallback para rota pública da loja
-                var publicUrl = $"{cleanUrl}/api/public/store-info";
-                var resp2 = await ExternalHttpClient.GetAsync(publicUrl, cts.Token);
+                var publicUrl = string.IsNullOrWhiteSpace(slug)
+                    ? $"{cleanUrl}/api/public/store-info"
+                    : $"{cleanUrl}/api/public/store-info?storeSlug={Uri.EscapeDataString(slug)}";
+                var resp2 = await _externalHttpClient.GetAsync(publicUrl, cts.Token);
                 isOk = resp2.IsSuccessStatusCode;
             }
 
@@ -134,7 +259,8 @@ public sealed class GoogleCloudSyncService
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 cts.CancelAfter(TimeSpan.FromSeconds(45));
 
-                using var statusResp = await ExternalHttpClient.GetAsync($"{raw}/api/cloud/status", cts.Token);
+                var statusUrl = BuildCloudStatusUrl(raw, null);
+                using var statusResp = await _externalHttpClient.GetAsync(statusUrl, cts.Token);
                 if (statusResp.IsSuccessStatusCode)
                 {
                     sw.Stop();
@@ -175,7 +301,7 @@ public sealed class GoogleCloudSyncService
                     continue;
                 }
 
-                using var fallbackResp = await ExternalHttpClient.GetAsync($"{raw}/api/public/store-info", cts.Token);
+                using var fallbackResp = await _externalHttpClient.GetAsync($"{raw}/api/public/store-info", cts.Token);
                 sw.Stop();
                 if (fallbackResp.IsSuccessStatusCode)
                 {
@@ -466,6 +592,7 @@ public sealed class GoogleCloudSyncService
                 PicpayPixKey = settings.PicpayPixKey,
                 Design = StoreDesignMapper.ToDto(settings.GetEffectivePublicDesign()),
                 DirectPixSalesEnabled = settings.DirectPixSalesEnabled,
+                PixGatewayMode = settings.PixGatewayMode,
                 StorePixKey = settings.StorePixKey,
                 StorePixReceiverName = settings.StorePixReceiverName,
                 OriginCep = settings.OriginCep,
@@ -475,7 +602,8 @@ public sealed class GoogleCloudSyncService
                 MaxDeliveryDistanceKm = settings.MaxDeliveryDistanceKm,
                 DefaultPackageWeightGrams = settings.DefaultPackageWeightGrams,
                 ServerHostingMode = settings.ServerHostingMode,
-                OwnServerProvider = settings.OwnServerProvider
+                OwnServerProvider = settings.OwnServerProvider,
+                CentralCatalogBaseUrl = settings.CentralCatalogBaseUrl
             },
             Categories = categories.Select(c => new SaveCategoryRequest
             {
@@ -540,7 +668,88 @@ public sealed class GoogleCloudSyncService
     }
 
     /// <summary>
-    /// Sincroniza o catálogo local com o site 24h no servidor online (Render / servidor próprio).
+    /// Armazena a URL do servidor central recebida automaticamente do YouLink Admin.
+    /// </summary>
+    public async Task SyncCentralServerUrlFromCatalogAsync(
+        string? centralCatalogServerUrl,
+        CancellationToken ct = default)
+    {
+        var normalized = NormalizePublicServerUrl(centralCatalogServerUrl);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        SaveCachedCentralCatalogUrl(normalized);
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+
+        if (string.IsNullOrWhiteSpace(settings.CentralCatalogBaseUrl) ||
+            (string.Equals(settings.ServerHostingMode, HostingModePlatformShared, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(settings.CentralCatalogBaseUrl, normalized, StringComparison.OrdinalIgnoreCase)))
+        {
+            settings.ConfigureCentralPublishing(normalized, settings.CentralPublishToken, preserveExistingToken: true);
+            await _repository.UpdateStoreSettingsAsync(settings, ct);
+            OnSyncStatusChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Publica e sincroniza a loja no Servidor Central em 1 clique, sem exigir Render ou senhas técnicas.
+    /// </summary>
+    public async Task<(bool Success, string PublicStoreUrl, string Message)> PublishToCentralServerAsync(
+        string? centralServerUrl = null,
+        string? ownerEmailOverride = null,
+        CancellationToken ct = default,
+        IProgress<string>? progress = null)
+    {
+        await _syncLock.WaitAsync(ct);
+        try
+        {
+            IsSyncing = true;
+            LastSyncError = null;
+            OnSyncStatusChanged?.Invoke();
+
+            var settings = await _repository.GetStoreSettingsAsync(ct);
+            var targetBase = ResolveCentralServerBaseUrl(settings, centralServerUrl);
+            if (string.IsNullOrWhiteSpace(targetBase))
+            {
+                const string missingMsg = "Informe o endereço do Servidor Central YouLink (ou conecte ao YouLink Admin para recebê-lo automaticamente).";
+                LastSyncError = missingMsg;
+                OnSyncStatusChanged?.Invoke();
+                return (false, string.Empty, missingMsg);
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.StoreSlug))
+            {
+                settings.StoreSlug = WhatsAppLinkBuilder.GenerateStoreSlug(settings.StoreName);
+            }
+
+            SaveCachedCentralCatalogUrl(targetBase);
+            settings.ConfigureCentralPublishing(targetBase, settings.CentralPublishToken, preserveExistingToken: true);
+            await _repository.UpdateStoreSettingsAsync(settings, ct);
+
+            return await PublishStoreToCentralCoreAsync(
+                settings,
+                targetBase,
+                ownerEmailOverride,
+                ct,
+                progress);
+        }
+        catch (Exception ex)
+        {
+            LastSyncError = $"Erro ao publicar no servidor central: {ex.Message}";
+            IsCloudOnline = false;
+            OnSyncStatusChanged?.Invoke();
+            return (false, string.Empty, LastSyncError);
+        }
+        finally
+        {
+            IsSyncing = false;
+            _syncLock.Release();
+            OnSyncStatusChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Sincroniza o catálogo local com o site 24h (Servidor Central 1-clique ou servidor próprio Render).
     /// </summary>
     public async Task<(bool Success, string Message)> SyncCatalogToCloudAsync(
         CancellationToken ct = default,
@@ -554,71 +763,38 @@ public sealed class GoogleCloudSyncService
             OnSyncStatusChanged?.Invoke();
 
             var settings = await _repository.GetStoreSettingsAsync(ct);
-            var categories = await _repository.GetCategoriesAsync(onlyActive: false, ct);
-            var products = await _repository.GetProductsAsync(includeArchived: false, ct);
+            var cleanSecret = NormalizeSyncSecretInput(settings.OwnServerSyncSecret);
+            var slug = ResolveEffectiveStoreSlug(settings);
+            var publishToken = ResolvePublishToken(settings, slug);
+            var isSharedMode = string.Equals(
+                settings.ServerHostingMode,
+                HostingModePlatformShared,
+                StringComparison.OrdinalIgnoreCase);
+
+            var centralBase = ResolveCentralServerBaseUrl(settings);
+            var shouldUseCentralPublish =
+                isSharedMode ||
+                !string.IsNullOrWhiteSpace(publishToken) ||
+                (string.IsNullOrWhiteSpace(cleanSecret) && !string.IsNullOrWhiteSpace(centralBase));
+
+            if (shouldUseCentralPublish && !string.IsNullOrWhiteSpace(centralBase))
+            {
+                var centralRes = await PublishStoreToCentralCoreAsync(
+                    settings,
+                    centralBase,
+                    ownerEmailOverride: null,
+                    ct,
+                    progress);
+                return (centralRes.Success, centralRes.Message);
+            }
 
             var normalizedUrl = NormalizePublicServerUrl(settings.OnlineBaseUrl);
             if (string.IsNullOrWhiteSpace(normalizedUrl))
             {
-                return (false, "URL do site não configurada. Cole a URL gerada no Render (ex.: https://sua-loja.onrender.com).");
+                return (false, "URL do site não configurada. Publique em 1 clique no Servidor Central ou cole a URL gerada no Render.");
             }
 
-            var payload = BuildCatalogSyncPayload(settings, categories, products);
-            var cloudEndpoint = $"{normalizedUrl}/api/cloud/sync-state";
-            var cleanSecret = NormalizeSyncSecretInput(settings.OwnServerSyncSecret);
-            const int maxAttempts = 3;
-
-            for (var attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Post, cloudEndpoint)
-                {
-                    Content = JsonContent.Create(payload)
-                };
-
-                if (!string.IsNullOrWhiteSpace(cleanSecret))
-                {
-                    request.Headers.TryAddWithoutValidation("X-YouLink-Sync-Key", cleanSecret);
-                }
-
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                cts.CancelAfter(TimeSpan.FromSeconds(45));
-
-                try
-                {
-                    var response = await ExternalHttpClient.SendAsync(request, cts.Token);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        settings.LastOnlineSyncAt = DateTimeOffset.UtcNow;
-                        await _repository.UpdateStoreSettingsAsync(settings, ct);
-
-                        LastSyncTime = settings.LastOnlineSyncAt;
-                        IsCloudOnline = true;
-                        OnSyncStatusChanged?.Invoke();
-                        return (true, $"Catálogo online atualizado com sucesso! ({products.Count} produtos e {categories.Count} categorias sincronizados).");
-                    }
-
-                    if (IsTransientWakeupStatus(response.StatusCode) && attempt < maxAttempts)
-                    {
-                        progress?.Report($"⏳ Finalizando ativação no Render (tentativa {attempt + 1}/{maxAttempts})...");
-                        await Task.Delay(TimeSpan.FromSeconds(4), ct);
-                        continue;
-                    }
-
-                    var errorBody = await response.Content.ReadAsStringAsync(cts.Token);
-                    LastSyncError = FormatSyncHttpError((int)response.StatusCode, errorBody);
-                    OnSyncStatusChanged?.Invoke();
-                    return (false, LastSyncError);
-                }
-                catch (Exception ex) when (attempt < maxAttempts && !ct.IsCancellationRequested && IsTransientWakeupException(ex))
-                {
-                    progress?.Report($"⏳ Aguardando resposta do Render (tentativa {attempt + 1}/{maxAttempts})...");
-                    await Task.Delay(TimeSpan.FromSeconds(4), ct);
-                }
-            }
-
-            LastSyncError = "O servidor gratuito demorou para responder. Aguarde alguns segundos e clique novamente.";
-            OnSyncStatusChanged?.Invoke();
-            return (false, LastSyncError);
+            return await SyncOwnServerCoreAsync(settings, normalizedUrl, cleanSecret, ct, progress);
         }
         catch (Exception ex)
         {
@@ -635,13 +811,504 @@ public sealed class GoogleCloudSyncService
         }
     }
 
-    private static string FormatSyncHttpError(int statusCode, string? responseBody)
+    /// <summary>
+    /// Busca pedidos e confirmações automáticas de Pix realizados na vitrine online e aplica no estoque local.
+    /// </summary>
+    public async Task<(bool Success, int UpdatedOrdersCount, string Message)> PullOrdersFromCloudAsync(
+        Guid actingEmployeeId = default,
+        CancellationToken ct = default)
     {
-        if (statusCode is 401 or 403)
+        try
         {
-            return "Chave YOULINK_SYNC_SECRET inválida ou ausente (HTTP 401). Copie exatamente o valor da variável YOULINK_SYNC_SECRET no painel do Render.";
+            var settings = await _repository.GetStoreSettingsAsync(ct);
+            return await PullOrdersFromCloudCoreAsync(settings, actingEmployeeId, ct);
+        }
+        catch (Exception ex)
+        {
+            return (false, 0, $"Não foi possível buscar pedidos online: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Consulta no servidor se a conta Mercado Pago da loja está conectada para recebimento Pix automático.
+    /// </summary>
+    public async Task<MercadoPagoStatusDto> GetMercadoPagoStatusFromServerAsync(CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var baseUrl = ResolveStoreControlBaseUrl(settings);
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return new MercadoPagoStatusDto(
+                IsAppConfiguredOnServer: false,
+                IsStoreConnected: settings.HasMercadoPagoConnected,
+                PixGatewayMode: settings.PixGatewayMode,
+                AccountLabel: settings.MercadoPagoAccountLabel,
+                UserId: settings.MercadoPagoUserId,
+                ConnectedAt: settings.MercadoPagoConnectedAt,
+                Message: "Publique sua loja online primeiro para verificar a conexão com o Mercado Pago.");
         }
 
+        var slug = ResolveEffectiveStoreSlug(settings);
+        var url = $"{baseUrl}/api/payments/mercadopago/status?storeSlug={Uri.EscapeDataString(slug)}";
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(25));
+
+        using var resp = await _externalHttpClient.GetAsync(url, cts.Token);
+        if (!resp.IsSuccessStatusCode)
+        {
+            return new MercadoPagoStatusDto(
+                IsAppConfiguredOnServer: false,
+                IsStoreConnected: settings.HasMercadoPagoConnected,
+                PixGatewayMode: settings.PixGatewayMode,
+                AccountLabel: settings.MercadoPagoAccountLabel,
+                UserId: settings.MercadoPagoUserId,
+                ConnectedAt: settings.MercadoPagoConnectedAt,
+                Message: $"Servidor respondeu HTTP {(int)resp.StatusCode} ao consultar o Mercado Pago.");
+        }
+
+        var status = await resp.Content.ReadFromJsonAsync<MercadoPagoStatusDto>(cancellationToken: cts.Token);
+        if (status is null)
+        {
+            return new MercadoPagoStatusDto(
+                false,
+                settings.HasMercadoPagoConnected,
+                settings.PixGatewayMode,
+                settings.MercadoPagoAccountLabel,
+                settings.MercadoPagoUserId,
+                settings.MercadoPagoConnectedAt,
+                "Resposta inválida do servidor ao consultar Mercado Pago.");
+        }
+
+        var modeChanged = !string.Equals(settings.PixGatewayMode, status.PixGatewayMode, StringComparison.OrdinalIgnoreCase);
+        var connChanged = settings.HasMercadoPagoConnected != status.IsStoreConnected ||
+                          !string.Equals(settings.MercadoPagoUserId, status.UserId, StringComparison.Ordinal);
+
+        if (connChanged || modeChanged)
+        {
+            settings.ConfigureMercadoPagoConnection(
+                status.IsStoreConnected,
+                status.UserId,
+                status.AccountLabel,
+                status.ConnectedAt,
+                status.PixGatewayMode);
+            await _repository.UpdateStoreSettingsAsync(settings, ct);
+            OnSyncStatusChanged?.Invoke();
+        }
+
+        return status;
+    }
+
+    /// <summary>
+    /// Inicia a conexão OAuth em 1 clique do Mercado Pago no servidor online e retorna a URL para abrir no navegador.
+    /// </summary>
+    public async Task<MercadoPagoOAuthStartResponse> StartMercadoPagoOAuthOnServerAsync(
+        string? ownerEmailOverride = null,
+        CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var baseUrl = ResolveStoreControlBaseUrl(settings);
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return new MercadoPagoOAuthStartResponse(
+                false,
+                null,
+                null,
+                "Configure ou publique a loja em um Servidor Central primeiro antes de conectar o Mercado Pago.");
+        }
+
+        var slug = ResolveEffectiveStoreSlug(settings);
+        var publishToken = ResolvePublishToken(settings, slug);
+        var ownerEmail = await ResolveOwnerEmailAsync(settings, ownerEmailOverride, ct);
+        var url = $"{baseUrl}/api/payments/mercadopago/oauth/start?storeSlug={Uri.EscapeDataString(slug)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+        };
+        ApplyStoreControlHeaders(request, settings, slug, publishToken, ownerEmail, includeSyncSecretIfByo: true);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+        using var resp = await _externalHttpClient.SendAsync(request, cts.Token);
+        var raw = await resp.Content.ReadAsStringAsync(cts.Token);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            return new MercadoPagoOAuthStartResponse(false, null, null, FormatSyncHttpError((int)resp.StatusCode, raw));
+        }
+
+        using var doc = JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        var isConfigured = root.TryGetProperty("isConfigured", out var ic) && ic.ValueKind == JsonValueKind.True;
+        var authUrl = root.TryGetProperty("authorizationUrl", out var au) ? au.GetString() : null;
+        var stateToken = root.TryGetProperty("stateToken", out var st) ? st.GetString() : null;
+        var issuedToken = root.TryGetProperty("publishToken", out var pt) ? pt.GetString() : null;
+        var msg = root.TryGetProperty("message", out var mg) ? mg.GetString() : null;
+
+        if (!string.IsNullOrWhiteSpace(issuedToken))
+        {
+            SaveCachedPublishToken(slug, issuedToken);
+            settings.ConfigureCentralPublishing(baseUrl, issuedToken);
+            await _repository.UpdateStoreSettingsAsync(settings, ct);
+        }
+
+        return new MercadoPagoOAuthStartResponse(
+            isConfigured,
+            authUrl,
+            stateToken,
+            msg ?? (isConfigured ? "Autorização iniciada." : "Aplicativo Mercado Pago não configurado no servidor."));
+    }
+
+    /// <summary>
+    /// Desconecta a conta Mercado Pago desta loja e volta para Pix Direto gratuito.
+    /// </summary>
+    public async Task<(bool Success, string Message)> DisconnectMercadoPagoOnServerAsync(CancellationToken ct = default)
+    {
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var baseUrl = ResolveStoreControlBaseUrl(settings);
+        var slug = ResolveEffectiveStoreSlug(settings);
+
+        if (!string.IsNullOrWhiteSpace(baseUrl))
+        {
+            var publishToken = ResolvePublishToken(settings, slug);
+            var ownerEmail = await ResolveOwnerEmailAsync(settings, null, ct);
+            var url = $"{baseUrl}/api/payments/mercadopago/disconnect?storeSlug={Uri.EscapeDataString(slug)}";
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            };
+            ApplyStoreControlHeaders(request, settings, slug, publishToken, ownerEmail, includeSyncSecretIfByo: true);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(25));
+            using var resp = await _externalHttpClient.SendAsync(request, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync(cts.Token);
+                return (false, FormatSyncHttpError((int)resp.StatusCode, body));
+            }
+        }
+
+        settings.ConfigureMercadoPagoConnection(false, null, null, null, StoreSettings.PixGatewayDirect);
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        OnSyncStatusChanged?.Invoke();
+        return (true, "Mercado Pago desconectado. Sua loja voltou para o Pix Direto Gratuito (Taxa 0%).");
+    }
+
+    private async Task<(bool Success, string PublicStoreUrl, string Message)> PublishStoreToCentralCoreAsync(
+        StoreSettings settings,
+        string targetBase,
+        string? ownerEmailOverride,
+        CancellationToken ct,
+        IProgress<string>? progress)
+    {
+        // Puxa pedidos pagos na vitrine antes de enviar o catálogo para não sobrescrever baixas de estoque
+        await PullOrdersFromCloudCoreAsync(settings, Guid.Empty, ct);
+
+        settings = await _repository.GetStoreSettingsAsync(ct);
+        var categories = await _repository.GetCategoriesAsync(onlyActive: false, ct);
+        var products = await _repository.GetProductsAsync(includeArchived: false, ct);
+
+        var slug = ResolveEffectiveStoreSlug(settings);
+        var publishToken = ResolvePublishToken(settings, slug);
+        var ownerEmail = await ResolveOwnerEmailAsync(settings, ownerEmailOverride, ct);
+
+        settings.OnlineBaseUrl = targetBase;
+        settings.ServerHostingMode = HostingModePlatformShared;
+        settings.ConfigureCentralPublishing(targetBase, publishToken, preserveExistingToken: true);
+
+        var payload = BuildCatalogSyncPayload(settings, categories, products);
+        var endpoint = $"{targetBase}/api/cloud/publish-store?storeSlug={Uri.EscapeDataString(slug)}";
+        const int maxAttempts = 3;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            {
+                Content = JsonContent.Create(payload)
+            };
+            ApplyStoreControlHeaders(request, settings, slug, publishToken, ownerEmail, includeSyncSecretIfByo: false);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(45));
+
+            try
+            {
+                var response = await _externalHttpClient.SendAsync(request, cts.Token);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<CloudStorePublishResponse>(cancellationToken: cts.Token);
+                    var effectiveSlug = string.IsNullOrWhiteSpace(result?.StoreSlug) ? slug : result.StoreSlug.Trim();
+                    var effectiveToken = !string.IsNullOrWhiteSpace(result?.PublishToken)
+                        ? result.PublishToken!.Trim()
+                        : publishToken;
+
+                    if (!string.IsNullOrWhiteSpace(effectiveToken))
+                    {
+                        SaveCachedPublishToken(effectiveSlug, effectiveToken);
+                    }
+
+                    settings.StoreSlug = effectiveSlug;
+                    settings.OnlineBaseUrl = targetBase;
+                    settings.ServerHostingMode = HostingModePlatformShared;
+                    settings.AutoSyncOnlineOnSave = true;
+                    settings.IsSiteActive = result?.IsSiteActive ?? true;
+                    settings.LastOnlineSyncAt = result?.SyncedAt ?? DateTimeOffset.UtcNow;
+                    settings.ConfigureCentralPublishing(targetBase, effectiveToken, preserveExistingToken: true);
+                    await _repository.UpdateStoreSettingsAsync(settings, ct);
+
+                    LastSyncTime = settings.LastOnlineSyncAt;
+                    IsCloudOnline = true;
+                    OnSyncStatusChanged?.Invoke();
+
+                    var publicUrl = !string.IsNullOrWhiteSpace(result?.PublicStoreUrl)
+                        ? result.PublicStoreUrl
+                        : WhatsAppLinkBuilder.BuildStoreCatalogUrl(targetBase, effectiveSlug);
+
+                    return (
+                        true,
+                        publicUrl,
+                        $"Site da loja publicado em 1 clique! ({products.Count} produtos e {categories.Count} categorias no ar)");
+                }
+
+                if (response.StatusCode == HttpStatusCode.NotFound &&
+                    !string.IsNullOrWhiteSpace(NormalizeSyncSecretInput(settings.OwnServerSyncSecret)))
+                {
+                    var legacyRes = await SyncOwnServerCoreAsync(
+                        settings,
+                        targetBase,
+                        NormalizeSyncSecretInput(settings.OwnServerSyncSecret),
+                        ct,
+                        progress);
+                    var fallbackUrl = WhatsAppLinkBuilder.BuildStoreCatalogUrl(targetBase, slug);
+                    return (legacyRes.Success, fallbackUrl, legacyRes.Message);
+                }
+
+                if (IsTransientWakeupStatus(response.StatusCode) && attempt < maxAttempts)
+                {
+                    progress?.Report($"⏳ Acordando o Servidor Central (tentativa {attempt + 1}/{maxAttempts})...");
+                    await Task.Delay(TimeSpan.FromSeconds(4), ct);
+                    continue;
+                }
+
+                var errorBody = await response.Content.ReadAsStringAsync(cts.Token);
+                LastSyncError = FormatSyncHttpError((int)response.StatusCode, errorBody);
+                OnSyncStatusChanged?.Invoke();
+                return (false, string.Empty, LastSyncError);
+            }
+            catch (Exception ex) when (attempt < maxAttempts && !ct.IsCancellationRequested && IsTransientWakeupException(ex))
+            {
+                progress?.Report($"⏳ Aguardando resposta do servidor online (tentativa {attempt + 1}/{maxAttempts})...");
+                await Task.Delay(TimeSpan.FromSeconds(4), ct);
+            }
+        }
+
+        LastSyncError = "O servidor demorou para responder. Aguarde alguns segundos e clique novamente.";
+        OnSyncStatusChanged?.Invoke();
+        return (false, string.Empty, LastSyncError);
+    }
+
+    private async Task<(bool Success, string Message)> SyncOwnServerCoreAsync(
+        StoreSettings settings,
+        string normalizedUrl,
+        string cleanSecret,
+        CancellationToken ct,
+        IProgress<string>? progress)
+    {
+        await PullOrdersFromCloudCoreAsync(settings, Guid.Empty, ct);
+        settings = await _repository.GetStoreSettingsAsync(ct);
+
+        var categories = await _repository.GetCategoriesAsync(onlyActive: false, ct);
+        var products = await _repository.GetProductsAsync(includeArchived: false, ct);
+        var payload = BuildCatalogSyncPayload(settings, categories, products);
+        var cloudEndpoint = $"{normalizedUrl}/api/cloud/sync-state";
+        const int maxAttempts = 3;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, cloudEndpoint)
+            {
+                Content = JsonContent.Create(payload)
+            };
+
+            if (!string.IsNullOrWhiteSpace(cleanSecret))
+            {
+                request.Headers.TryAddWithoutValidation("X-YouLink-Sync-Key", cleanSecret);
+            }
+
+            var slug = ResolveEffectiveStoreSlug(settings);
+            if (!string.IsNullOrWhiteSpace(slug))
+            {
+                request.Headers.TryAddWithoutValidation("X-YouLink-Store-Slug", slug);
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(45));
+
+            try
+            {
+                var response = await _externalHttpClient.SendAsync(request, cts.Token);
+                if (response.IsSuccessStatusCode)
+                {
+                    settings.LastOnlineSyncAt = DateTimeOffset.UtcNow;
+                    await _repository.UpdateStoreSettingsAsync(settings, ct);
+
+                    LastSyncTime = settings.LastOnlineSyncAt;
+                    IsCloudOnline = true;
+                    OnSyncStatusChanged?.Invoke();
+                    return (true, $"Catálogo online atualizado com sucesso! ({products.Count} produtos e {categories.Count} categorias sincronizados).");
+                }
+
+                if (IsTransientWakeupStatus(response.StatusCode) && attempt < maxAttempts)
+                {
+                    progress?.Report($"⏳ Finalizando ativação no Render (tentativa {attempt + 1}/{maxAttempts})...");
+                    await Task.Delay(TimeSpan.FromSeconds(4), ct);
+                    continue;
+                }
+
+                var errorBody = await response.Content.ReadAsStringAsync(cts.Token);
+                LastSyncError = FormatSyncHttpError((int)response.StatusCode, errorBody);
+                OnSyncStatusChanged?.Invoke();
+                return (false, LastSyncError);
+            }
+            catch (Exception ex) when (attempt < maxAttempts && !ct.IsCancellationRequested && IsTransientWakeupException(ex))
+            {
+                progress?.Report($"⏳ Aguardando resposta do Render (tentativa {attempt + 1}/{maxAttempts})...");
+                await Task.Delay(TimeSpan.FromSeconds(4), ct);
+            }
+        }
+
+        LastSyncError = "O servidor gratuito demorou para responder. Aguarde alguns segundos e clique novamente.";
+        OnSyncStatusChanged?.Invoke();
+        return (false, LastSyncError);
+    }
+
+    private async Task<(bool Success, int UpdatedOrdersCount, string Message)> PullOrdersFromCloudCoreAsync(
+        StoreSettings settings,
+        Guid actingEmployeeId,
+        CancellationToken ct)
+    {
+        var baseUrl = ResolveStoreControlBaseUrl(settings);
+        if (string.IsNullOrWhiteSpace(baseUrl) ||
+            baseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
+            baseUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, 0, "Servidor online não configurado para buscar pedidos.");
+        }
+
+        var slug = ResolveEffectiveStoreSlug(settings);
+        var publishToken = ResolvePublishToken(settings, slug);
+        var cleanSecret = NormalizeSyncSecretInput(settings.OwnServerSyncSecret);
+        if (string.IsNullOrWhiteSpace(publishToken) && string.IsNullOrWhiteSpace(cleanSecret))
+        {
+            return (false, 0, "Loja ainda não sincronizada para leitura remota de pedidos.");
+        }
+
+        var ownerEmail = await ResolveOwnerEmailAsync(settings, null, ct);
+        var endpoint = $"{baseUrl}/api/cloud/orders?storeSlug={Uri.EscapeDataString(slug)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+        ApplyStoreControlHeaders(request, settings, slug, publishToken, ownerEmail, includeSyncSecretIfByo: true);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        using var resp = await _externalHttpClient.SendAsync(request, cts.Token);
+        if (!resp.IsSuccessStatusCode)
+        {
+            return (false, 0, $"HTTP {(int)resp.StatusCode} ao buscar pedidos online.");
+        }
+
+        var remote = await resp.Content.ReadFromJsonAsync<CloudSyncOrdersResponse>(cancellationToken: cts.Token);
+        if (remote is null)
+            return (false, 0, "Resposta vazia ao buscar pedidos online.");
+
+        var updated = 0;
+        if (_orderAndShippingService is not null && remote.Orders.Count > 0)
+        {
+            updated = await _orderAndShippingService.MergeRemoteOrdersAsync(remote.Orders, actingEmployeeId, ct);
+        }
+
+        LastOrdersSyncTime = DateTimeOffset.UtcNow;
+        if (updated > 0)
+        {
+            OnSyncStatusChanged?.Invoke();
+        }
+
+        return (true, updated, $"Pedidos atualizados ({remote.Orders.Count} no servidor, {updated} atualizações locais).");
+    }
+
+    private string ResolveStoreControlBaseUrl(StoreSettings settings)
+    {
+        var online = NormalizePublicServerUrl(settings.OnlineBaseUrl);
+        if (!string.IsNullOrWhiteSpace(online))
+            return online;
+
+        return ResolveCentralServerBaseUrl(settings);
+    }
+
+    private async Task<string?> ResolveOwnerEmailAsync(
+        StoreSettings settings,
+        string? explicitEmail,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitEmail))
+            return explicitEmail.Trim();
+
+        if (!string.IsNullOrWhiteSpace(settings.GoogleAccountEmail))
+            return settings.GoogleAccountEmail.Trim();
+
+        try
+        {
+            var employees = await _repository.GetEmployeesAsync(ct);
+            var admin = employees.FirstOrDefault(e =>
+                            e.IsActive &&
+                            string.Equals(e.User?.Role?.Name, RoleNames.Admin, StringComparison.OrdinalIgnoreCase) &&
+                            !string.IsNullOrWhiteSpace(e.User?.Email))
+                        ?? employees.FirstOrDefault(e => e.IsActive && !string.IsNullOrWhiteSpace(e.User?.Email));
+            return admin?.User?.Email?.Trim();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void ApplyStoreControlHeaders(
+        HttpRequestMessage request,
+        StoreSettings settings,
+        string slug,
+        string? publishToken,
+        string? ownerEmail,
+        bool includeSyncSecretIfByo)
+    {
+        if (!string.IsNullOrWhiteSpace(slug))
+            request.Headers.TryAddWithoutValidation("X-YouLink-Store-Slug", slug);
+
+        if (!string.IsNullOrWhiteSpace(publishToken))
+            request.Headers.TryAddWithoutValidation("X-YouLink-Publish-Token", publishToken.Trim());
+
+        if (!string.IsNullOrWhiteSpace(ownerEmail))
+            request.Headers.TryAddWithoutValidation("X-YouLink-Owner-Email", ownerEmail.Trim());
+
+        var isSharedMode = string.Equals(
+            settings.ServerHostingMode,
+            HostingModePlatformShared,
+            StringComparison.OrdinalIgnoreCase);
+
+        if (includeSyncSecretIfByo && !isSharedMode)
+        {
+            var cleanSecret = NormalizeSyncSecretInput(settings.OwnServerSyncSecret);
+            if (!string.IsNullOrWhiteSpace(cleanSecret))
+            {
+                request.Headers.TryAddWithoutValidation("X-YouLink-Sync-Key", cleanSecret);
+            }
+        }
+    }
+
+    private static string FormatSyncHttpError(int statusCode, string? responseBody)
+    {
         if (!string.IsNullOrWhiteSpace(responseBody))
         {
             try
@@ -651,12 +1318,17 @@ public sealed class GoogleCloudSyncService
                     err.ValueKind == JsonValueKind.String &&
                     !string.IsNullOrWhiteSpace(err.GetString()))
                 {
-                    return $"Falha ao sincronizar (HTTP {statusCode}): {err.GetString()}";
+                    return $"Falha na operação online (HTTP {statusCode}): {err.GetString()}";
                 }
             }
             catch
             {
             }
+        }
+
+        if (statusCode is 401 or 403)
+        {
+            return "Chave YOULINK_SYNC_SECRET inválida ou ausente (HTTP 401). Copie exatamente o valor da variável YOULINK_SYNC_SECRET no painel do Render.";
         }
 
         return $"Falha ao sincronizar com o servidor online: HTTP {statusCode}";
@@ -684,8 +1356,8 @@ public sealed class GoogleCloudSyncService
     }
 
     /// <summary>
-    /// Se o servidor gratuito na nuvem (ex.: plano Free do Render) reiniciou após hibernação
-    /// e acordou vazio, reenvia o catálogo automaticamente para manter o link oficial sempre atualizado.
+    /// Se o servidor gratuito na nuvem reiniciou após hibernação e acordou vazio,
+    /// reenvia o catálogo automaticamente para manter o link oficial sempre atualizado.
     /// </summary>
     public async Task EnsureCloudMirrorPopulatedAsync(CancellationToken ct = default)
     {
@@ -703,9 +1375,11 @@ public sealed class GoogleCloudSyncService
                 return;
             }
 
+            var slug = ResolveEffectiveStoreSlug(settings);
+            var statusUrl = BuildCloudStatusUrl(normalizedUrl, slug);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(25));
-            using var resp = await ExternalHttpClient.GetAsync($"{normalizedUrl}/api/cloud/status", cts.Token);
+            using var resp = await _externalHttpClient.GetAsync(statusUrl, cts.Token);
             if (!resp.IsSuccessStatusCode)
                 return;
 

@@ -11,8 +11,21 @@ namespace ClothingStore.Shared.Clients;
 /// </summary>
 public sealed class AdminApiClient
 {
+    private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly HttpClient _httpClient;
     private string? _accessToken;
+
+    private static ByteArrayContent CreateBufferedJsonContent<T>(T payload)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, WebJsonOptions);
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
+        return content;
+    }
+
+    private Task<HttpResponseMessage> PostBufferedJsonAsync<T>(string relativePath, T payload, CancellationToken ct) =>
+        _httpClient.PostAsync(Endpoint(relativePath), CreateBufferedJsonContent(payload), ct);
 
     public EmployeeProfileDto? CurrentEmployee { get; private set; }
     public bool IsAuthenticated => !string.IsNullOrWhiteSpace(_accessToken) && CurrentEmployee is not null;
@@ -59,7 +72,7 @@ public sealed class AdminApiClient
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/login"), request, ct);
+        var response = await PostBufferedJsonAsync("/api/auth/login", request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var loginResult = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
         SetSession(loginResult.AccessToken, loginResult.Employee);
@@ -132,7 +145,7 @@ public sealed class AdminApiClient
 
     public async Task<LoginResponse> RegisterUserAccountAsync(RegisterUserAccountRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/register"), request, ct);
+        var response = await PostBufferedJsonAsync("/api/auth/register", request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var login = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: ct))!;
         SetSession(login.AccessToken, login.Employee);
@@ -141,7 +154,7 @@ public sealed class AdminApiClient
 
     public async Task<LoginChallengeResponse> LoginWithChallengeAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/auth/login-challenge"), request, ct);
+        var response = await PostBufferedJsonAsync("/api/auth/login-challenge", request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         var challenge = (await response.Content.ReadFromJsonAsync<LoginChallengeResponse>(cancellationToken: ct))!;
         if (!challenge.RequiresTwoFactor && challenge.AuthResult is not null)
@@ -249,7 +262,7 @@ public sealed class AdminApiClient
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint("/api/platform-sync/sync-accounts"))
         {
-            Content = JsonContent.Create(request)
+            Content = CreateBufferedJsonContent(request)
         };
         if (!string.IsNullOrWhiteSpace(syncSecret))
             req.Headers.Add("X-YouLink-Sync-Key", syncSecret.Trim());
@@ -266,7 +279,7 @@ public sealed class AdminApiClient
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint("/api/platform-sync/apply-vip"))
         {
-            Content = JsonContent.Create(request)
+            Content = CreateBufferedJsonContent(request)
         };
         if (!string.IsNullOrWhiteSpace(syncSecret))
             req.Headers.Add("X-YouLink-Sync-Key", syncSecret.Trim());
@@ -667,7 +680,7 @@ public sealed class AdminApiClient
         CreatePlatformPlanOrderRequest request,
         CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/platform-sync/plan-orders"), request, ct);
+        var response = await PostBufferedJsonAsync("/api/platform-sync/plan-orders", request, ct);
         await EnsureSuccessOrThrowAsync(response, ct);
         return (await response.Content.ReadFromJsonAsync<PlatformSubscriptionOrderDto>(cancellationToken: ct))!;
     }
@@ -708,7 +721,40 @@ public sealed class AdminApiClient
         UpdateOwnerPricingSyncRequest request,
         string? syncSecret,
         CancellationToken ct = default) =>
-        SendSyncRequestAsync<AdminStoreSettingsDto>(HttpMethod.Post, "/api/platform-sync/owner-pricing", syncSecret, JsonContent.Create(request), ct);
+        SendSyncRequestAsync<AdminStoreSettingsDto>(HttpMethod.Post, "/api/platform-sync/owner-pricing", syncSecret, CreateBufferedJsonContent(request), ct);
+
+    public async Task<PlatformGiftCardRedeemResponse> RedeemPlatformGiftCardAsync(
+        PlatformGiftCardRedeemRequest request,
+        CancellationToken ct = default)
+    {
+        var response = await PostBufferedJsonAsync("/api/platform-sync/gift-cards/redeem", request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<PlatformGiftCardRedeemResponse>(cancellationToken: ct))!;
+    }
+
+    public async Task<IReadOnlyList<PlatformGiftCardSyncDto>> GetPlatformGiftCardsSyncAsync(
+        string? syncSecret,
+        CancellationToken ct = default) =>
+        await SendSyncRequestAsync<List<PlatformGiftCardSyncDto>>(HttpMethod.Get, "/api/platform-sync/gift-cards", syncSecret, content: null, ct);
+
+    public async Task<IReadOnlyList<PlatformGiftCardSyncDto>> SyncPlatformGiftCardsAsync(
+        IReadOnlyList<PlatformGiftCardSyncDto> giftCards,
+        string? syncSecret,
+        CancellationToken ct = default) =>
+        await SendSyncRequestAsync<List<PlatformGiftCardSyncDto>>(
+            HttpMethod.Post,
+            "/api/platform-sync/gift-cards/sync",
+            syncSecret,
+            CreateBufferedJsonContent(new SyncPlatformGiftCardsRequest(giftCards.ToList())),
+            ct);
+
+    public async Task<PlatformPlanCatalogDto> GetPlatformPlanCatalogAsync(
+        CancellationToken ct = default)
+    {
+        var response = await _httpClient.GetAsync(Endpoint("/api/platform-sync/plan-catalog"), ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<PlatformPlanCatalogDto>(cancellationToken: ct))!;
+    }
 
     private async Task<T> SendSyncRequestAsync<T>(
         HttpMethod method,
@@ -755,5 +801,11 @@ public sealed class AdminApiClient
 
         throw new InvalidOperationException($"Erro HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
     }
+
+    public static bool IsEndpointUnavailableError(Exception ex) =>
+        ex is InvalidOperationException inv &&
+        (inv.Message.Contains("HTTP 404", StringComparison.OrdinalIgnoreCase) ||
+         inv.Message.Contains("Endpoint não encontrado", StringComparison.OrdinalIgnoreCase) ||
+         inv.Message.Contains("Not Found", StringComparison.OrdinalIgnoreCase));
 }
 

@@ -23,7 +23,8 @@ public static class PlatformOwnerSettingsStore
         decimal BasicPlanMonthlyPrice,
         decimal IntermediaryPlanMonthlyPrice,
         decimal PremiumPlanMonthlyPrice,
-        DateTimeOffset UpdatedAt);
+        DateTimeOffset UpdatedAt,
+        string? CentralCatalogServerUrl = null);
 
     public static string GetCompanionPath(string storageFilePath)
     {
@@ -64,9 +65,10 @@ public static class PlatformOwnerSettingsStore
             settings.BasicPlanMonthlyPrice != 49.90m ||
             settings.IntermediaryPlanMonthlyPrice != 89.90m ||
             settings.PremiumPlanMonthlyPrice != 129.90m;
+        var hasCentralUrl = !string.IsNullOrWhiteSpace(settings.CentralCatalogBaseUrl);
 
         // Nunca sobrescrever uma chave Pix real já salva com o placeholder padrão ao recriar uma loja.
-        if (!hasCustomPix && !hasCustomPrices && existing is null)
+        if (!hasCustomPix && !hasCustomPrices && !hasCentralUrl && existing is null)
             return;
 
         var effectivePix = hasCustomPix
@@ -75,12 +77,17 @@ public static class PlatformOwnerSettingsStore
                 ? existing.PicpayPixKey
                 : DefaultPlaceholderPixKey);
 
+        var effectiveCentralUrl = hasCentralUrl
+            ? settings.CentralCatalogBaseUrl!.Trim().TrimEnd('/')
+            : existing?.CentralCatalogServerUrl;
+
         var snapshot = new Snapshot(
             PicpayPixKey: effectivePix,
             BasicPlanMonthlyPrice: settings.BasicPlanMonthlyPrice,
             IntermediaryPlanMonthlyPrice: settings.IntermediaryPlanMonthlyPrice,
             PremiumPlanMonthlyPrice: settings.PremiumPlanMonthlyPrice,
-            UpdatedAt: DateTimeOffset.UtcNow);
+            UpdatedAt: DateTimeOffset.UtcNow,
+            CentralCatalogServerUrl: effectiveCentralUrl);
 
         try
         {
@@ -132,6 +139,13 @@ public static class PlatformOwnerSettingsStore
         if (settings.PremiumPlanMonthlyPrice == 129.90m && snapshot.PremiumPlanMonthlyPrice != 129.90m)
         {
             settings.PremiumPlanMonthlyPrice = snapshot.PremiumPlanMonthlyPrice;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.CentralCatalogBaseUrl) &&
+            !string.IsNullOrWhiteSpace(snapshot.CentralCatalogServerUrl))
+        {
+            settings.CentralCatalogBaseUrl = snapshot.CentralCatalogServerUrl.Trim().TrimEnd('/');
             changed = true;
         }
 
