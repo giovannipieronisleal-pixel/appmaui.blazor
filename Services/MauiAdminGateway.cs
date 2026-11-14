@@ -762,6 +762,21 @@ public sealed class MauiAdminGateway
             () => _employeeAndSettingsService.GetAdminStoreSettingsAsync());
     }
 
+    /// <summary>
+    /// Retorna configurações da loja incluindo a chave Pix/preços dos planos para qualquer usuário autenticado,
+    /// sem sobrescrever com placeholder quando não for administrador.
+    /// </summary>
+    public async Task<AdminStoreSettingsDto> GetPlanCatalogSettingsAsync()
+    {
+        EnsureAuthenticated();
+        if (IsAdmin)
+        {
+            return await GetStoreSettingsAsync();
+        }
+
+        return await _employeeAndSettingsService.GetAdminStoreSettingsAsync();
+    }
+
     public async Task<AdminStoreSettingsDto> UpdateStoreSettingsAsync(
         UpdateStoreSettingsRequest request,
         bool suppressAutoSync = false)

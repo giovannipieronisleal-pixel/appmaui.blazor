@@ -549,42 +549,8 @@ else
         _error = null;
         try
         {
-            if (Gateway.IsAdmin)
-            {
-                _settings = await Gateway.GetStoreSettingsAsync();
-                BrandState.ApplyFromAdminSettings(_settings);
-            }
-            else
-            {
-                var pub = await CatalogService.GetPublicStoreSettingsAsync();
-                _settings = new AdminStoreSettingsDto(
-                    Guid.Empty,
-                    pub.StoreName,
-                    pub.StoreSlug,
-                    pub.WhatsappNumber,
-                    pub.StoreDescription,
-                    null,
-                    pub.LogoPublicUrl,
-                    3,
-                    pub.UpdatedAt,
-                    pub.OnlineBaseUrl,
-                    pub.AutoSyncOnlineOnSave,
-                    pub.LastOnlineSyncAt,
-                    pub.IsSiteActive,
-                    pub.DeactivationReason,
-                    pub.LastActivityAt,
-                    pub.StoreName,
-                    pub.PlanTier,
-                    49.90m,
-                    129.90m,
-                    "picpay.me/sua-conta",
-                    pub.Design,
-                    pub.PlanActivatedAt,
-                    null,
-                    null,
-                    89.90m);
-                BrandState.ApplyFromPublicSettings(pub);
-            }
+            _settings = await Gateway.GetPlanCatalogSettingsAsync();
+            BrandState.ApplyFromAdminSettings(_settings);
 
             var currentPreset = _settings.Design?.PresetKey;
             _activePresetKey = StoreDesignPresets.ResolveByPresetKey(currentPreset).PresetKey;

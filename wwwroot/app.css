@@ -192,6 +192,10 @@ html, body {
 }
 
 .adm-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
     width: 268px;
     flex-shrink: 0;
     background-color: var(--adm-sidebar, #141416);
@@ -311,6 +315,9 @@ html, body {
 }
 
 .adm-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
     background-color: var(--adm-surface);
     border-bottom: 1px solid var(--adm-border);
     padding: 0.95rem 1.85rem;
@@ -854,6 +861,7 @@ html, body {
 
     .adm-sidebar {
         position: fixed;
+        top: auto;
         bottom: 0;
         left: 0;
         right: 0;

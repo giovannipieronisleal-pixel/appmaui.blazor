@@ -40,7 +40,7 @@
                     </div>
                 </div>
 
-                <NavMenu />
+                <NavMenu OnOpenProfile="OpenUserProfileModal" OnLogoutRequested="HandleLogout" />
             </aside>
 
             <div class="adm-main">
@@ -130,8 +130,9 @@
                         <button type="button"
                                 class="adm-btn adm-btn-outline"
                                 style="padding: 0.4rem 0.65rem; min-height: 36px; font-size: 0.8rem;"
+                                title="Sair ou trocar de conta"
                                 @onclick="HandleLogout">
-                            Sair
+                            🚪 <span class="adm-topbar-hide-xs">Trocar Conta / </span>Sair
                         </button>
                     </div>
                 </header>
@@ -163,7 +164,7 @@
         </div>
     }
 
-    <appmaui.blazor.Components.Pages.UserProfileModal @bind-IsOpen="_showUserProfileModal" />
+    <appmaui.blazor.Components.Pages.UserProfileModal @bind-IsOpen="_showUserProfileModal" OnLogoutRequested="HandleLogout" />
     <appmaui.blazor.Components.Shared.AppUpdateModal />
 </div>
 
@@ -303,6 +304,8 @@
         {
         }
     }
+
+    private void OpenUserProfileModal() => _showUserProfileModal = true;
 
     private void HandleLogout()
     {

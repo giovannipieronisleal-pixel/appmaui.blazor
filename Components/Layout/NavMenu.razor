@@ -76,6 +76,32 @@
     </button>
 </nav>
 
+@if (Gateway.IsAuthenticated && Gateway.CurrentEmployee is not null)
+{
+    <div class="adm-sidebar-footer">
+        <div class="adm-sidebar-account-card">
+            <div class="adm-sidebar-account-row">
+                <span class="adm-sidebar-avatar">@GetUserInitials(Gateway.CurrentEmployee.FullName)</span>
+                <div class="adm-sidebar-account-meta">
+                    <strong class="adm-sidebar-account-name">@Gateway.CurrentEmployee.FullName</strong>
+                    <span class="adm-sidebar-account-sub">@(!string.IsNullOrWhiteSpace(Gateway.CurrentEmployee.Email) ? Gateway.CurrentEmployee.Email : Gateway.CurrentEmployee.EffectiveUsername)</span>
+                </div>
+                <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")" style="font-size: 0.65rem; padding: 0.12rem 0.42rem;">
+                    @(Gateway.IsAdmin ? "Admin" : "Equipe")
+                </span>
+            </div>
+            <div class="adm-sidebar-account-actions">
+                <button type="button" class="adm-sidebar-acc-btn" @onclick="OpenProfileAsync">
+                    👤 Perfil &amp; 2FA
+                </button>
+                <button type="button" class="adm-sidebar-acc-btn adm-sidebar-acc-btn-logout" @onclick="LogoutAsync">
+                    🚪 Trocar Conta
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_mobileMoreOpen)
 {
     <div class="adm-mobile-sheet-backdrop" @onclick="CloseMobileMore">
@@ -90,6 +116,31 @@
                 </div>
                 <button type="button" class="adm-mobile-sheet-close" @onclick="CloseMobileMore" aria-label="Fechar menu">✕</button>
             </div>
+            @if (Gateway.IsAuthenticated && Gateway.CurrentEmployee is not null)
+            {
+                <div class="adm-mobile-account-box">
+                    <div class="adm-mobile-account-info">
+                        <span class="adm-mobile-account-avatar">@GetUserInitials(Gateway.CurrentEmployee.FullName)</span>
+                        <div class="adm-mobile-account-text">
+                            <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                                <strong class="adm-mobile-account-name">@Gateway.CurrentEmployee.FullName</strong>
+                                <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")">
+                                    @(Gateway.IsAdmin ? "Admin" : "Equipe")
+                                </span>
+                            </div>
+                            <span class="adm-mobile-account-email">@(!string.IsNullOrWhiteSpace(Gateway.CurrentEmployee.Email) ? Gateway.CurrentEmployee.Email : Gateway.CurrentEmployee.EffectiveUsername)</span>
+                        </div>
+                    </div>
+                    <div class="adm-mobile-account-actions">
+                        <button type="button" class="adm-mobile-account-btn" @onclick="OpenProfileAsync">
+                            👤 Meu Perfil &amp; 2FA
+                        </button>
+                        <button type="button" class="adm-mobile-account-btn adm-mobile-account-btn-danger" @onclick="LogoutAsync">
+                            🚪 Sair / Trocar Conta
+                        </button>
+                    </div>
+                </div>
+            }
             <div class="adm-mobile-sheet-grid">
                 <NavLink class="adm-mobile-sheet-link" href="/estoque" @onclick="CloseMobileMore">
                     <span class="adm-mobile-sheet-icon">📦</span>
@@ -159,6 +210,9 @@
 }
 
 @code {
+    [Parameter] public EventCallback OnOpenProfile { get; set; }
+    [Parameter] public EventCallback OnLogoutRequested { get; set; }
+
     private string _storeSlug = "minha-loja";
     private bool _mobileMoreOpen;
 
@@ -171,6 +225,41 @@
 
     private void ToggleMobileMore() => _mobileMoreOpen = !_mobileMoreOpen;
     private void CloseMobileMore() => _mobileMoreOpen = false;
+
+    private async Task OpenProfileAsync()
+    {
+        _mobileMoreOpen = false;
+        if (OnOpenProfile.HasDelegate)
+        {
+            await OnOpenProfile.InvokeAsync();
+        }
+    }
+
+    private async Task LogoutAsync()
+    {
+        _mobileMoreOpen = false;
+        if (OnLogoutRequested.HasDelegate)
+        {
+            await OnLogoutRequested.InvokeAsync();
+        }
+        else
+        {
+            Gateway.Logout();
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private static string GetUserInitials(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return "U";
+
+        var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1)
+            return parts[0][..1].ToUpperInvariant();
+
+        return $"{parts[0][..1]}{parts[^1][..1]}".ToUpperInvariant();
+    }
 
     private bool IsSecondaryRouteActive()
     {

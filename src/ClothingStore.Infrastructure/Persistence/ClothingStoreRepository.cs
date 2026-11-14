@@ -54,7 +54,13 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
                     if (loaded is not null && loaded.Roles.Count > 0)
                     {
                         HydrateNavigationProperties(loaded);
-                        if (PurgeLegacyDefaultAdmin(loaded))
+                        var mutated = PurgeLegacyDefaultAdmin(loaded);
+                        if (PlatformOwnerSettingsStore.ApplyToStoreSettingsIfMissingOrDefault(_storageFilePath, loaded.StoreSettings))
+                        {
+                            mutated = true;
+                        }
+
+                        if (mutated)
                         {
                             PersistToDisk(loaded);
                         }
@@ -76,6 +82,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
 
             var seeded = ClothingStoreDatabaseState.CreateInitialSeed(_passwordHasher);
             HydrateNavigationProperties(seeded);
+            PlatformOwnerSettingsStore.ApplyToStoreSettingsIfMissingOrDefault(_storageFilePath, seeded.StoreSettings);
             WriteFileAtomicWithRetry(_storageFilePath, JsonSerializer.Serialize(seeded, JsonOptions));
             _lastLoadedUtc = File.GetLastWriteTimeUtc(_storageFilePath);
             return seeded;
@@ -853,6 +860,10 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         try
         {
             RefreshFromDiskIfModified();
+            if (PlatformOwnerSettingsStore.ApplyToStoreSettingsIfMissingOrDefault(_storageFilePath, _state.StoreSettings))
+            {
+                PersistToDisk(_state);
+            }
             return _state.StoreSettings;
         }
         finally
@@ -868,6 +879,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         {
             _state.StoreSettings = settings;
             PersistToDisk(_state);
+            PlatformOwnerSettingsStore.SaveFromStoreSettings(_storageFilePath, settings);
         }
         finally
         {

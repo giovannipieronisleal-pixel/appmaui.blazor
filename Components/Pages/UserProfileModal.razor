@@ -1,6 +1,7 @@
 @using ClothingStore.Application.Services
 @using ClothingStore.Domain.Common
 @inject MauiAdminGateway Gateway
+@inject NavigationManager Navigation
 
 @if (IsOpen)
 {
@@ -279,6 +280,21 @@
                     }
                 </div>
             }
+
+            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--adm-border); display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <button type="button"
+                        class="adm-btn adm-btn-danger"
+                        style="min-height: 42px; font-weight: 700;"
+                        @onclick="LogoutAndSwitchAccountAsync">
+                    🚪 Sair / Trocar de Conta
+                </button>
+                <button type="button"
+                        class="adm-btn adm-btn-outline"
+                        style="min-height: 42px;"
+                        @onclick="Close">
+                    Fechar
+                </button>
+            </div>
         </div>
     </div>
 }
@@ -286,6 +302,7 @@
 @code {
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback OnLogoutRequested { get; set; }
 
     private string _currentTab = "profile";
     private bool _isBusy;
@@ -337,6 +354,20 @@
     {
         IsOpen = false;
         await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task LogoutAndSwitchAccountAsync()
+    {
+        await Close();
+        if (OnLogoutRequested.HasDelegate)
+        {
+            await OnLogoutRequested.InvokeAsync();
+        }
+        else
+        {
+            Gateway.Logout();
+            Navigation.NavigateTo("/");
+        }
     }
 
     private static string GetInitials(string? fullName)

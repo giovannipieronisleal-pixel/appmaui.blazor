@@ -306,4 +306,170 @@
         flex-shrink: 0;
         line-height: 1;
     }
+
+    .adm-mobile-account-box {
+        background: var(--adm-card, #FFFFFF);
+        border: 1.5px solid var(--adm-border, #E7E2DA);
+        border-radius: 16px;
+        padding: 0.85rem;
+        margin-bottom: 0.9rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .adm-mobile-account-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    .adm-mobile-account-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: var(--adm-accent, #B69158);
+        color: #141416;
+        font-weight: 800;
+        font-size: 1rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .adm-mobile-account-text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.12rem;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .adm-mobile-account-name {
+        font-size: 1rem;
+        font-weight: 800;
+        color: var(--adm-text, #18181B);
+        overflow-wrap: anywhere;
+    }
+
+    .adm-mobile-account-email {
+        font-size: 0.82rem;
+        color: var(--adm-muted, #57534E);
+        overflow-wrap: anywhere;
+    }
+
+    .adm-mobile-account-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .adm-mobile-account-btn {
+        min-height: 46px;
+        padding: 0.55rem 0.7rem;
+        border-radius: 11px;
+        border: 1.5px solid var(--adm-border, #E7E2DA);
+        background: var(--adm-surface-subtle, rgba(182, 145, 88, 0.12));
+        color: var(--adm-text, #18181B);
+        font-size: 0.86rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .adm-mobile-account-btn-danger {
+        border-color: color-mix(in srgb, var(--adm-danger, #DC2626) 45%, transparent);
+        background: color-mix(in srgb, var(--adm-danger, #DC2626) 14%, transparent);
+        color: var(--adm-danger, #DC2626);
+    }
+}
+
+.adm-sidebar-account-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(182, 145, 88, 0.28);
+    border-radius: 12px;
+    padding: 0.72rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.62rem;
+}
+
+.adm-sidebar-account-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+}
+
+.adm-sidebar-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--brand-accent, #B69158);
+    color: #141416;
+    font-size: 0.78rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.adm-sidebar-account-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.adm-sidebar-account-name {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #FAF8F5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.adm-sidebar-account-sub {
+    font-size: 0.72rem;
+    color: var(--adm-sidebar-muted, #B8B2A8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.adm-sidebar-account-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+}
+
+.adm-sidebar-acc-btn {
+    padding: 0.42rem 0.45rem;
+    min-height: 34px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: #FAF8F5;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.adm-sidebar-acc-btn:hover {
+    background: rgba(182, 145, 88, 0.22);
+    border-color: var(--brand-accent, #B69158);
+}
+
+.adm-sidebar-acc-btn-logout {
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #FCA5A5;
+}
+
+.adm-sidebar-acc-btn-logout:hover {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: rgba(239, 68, 68, 0.7);
 }

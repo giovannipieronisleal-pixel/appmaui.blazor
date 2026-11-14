@@ -490,6 +490,83 @@ public class SecurityHardeningAndSingleInstanceTests
         }
     }
 
+    [TestMethod]
+    public async Task PlatformOwnerSettingsStore_PreservesOwnerPixKeyAcrossDbRecreation_WithoutAllowingAdminAdminPublicLogin()
+    {
+        var tempDir = CreateSafeTempDir("youlink_owner_pix_persist");
+        try
+        {
+            var dbPath = Path.Combine(tempDir, "clothingstore_db.json");
+            var hasher = new Pbkdf2PasswordHasher();
+
+            var repo1 = new ClothingStoreRepository(hasher, dbPath);
+            var settings1 = await repo1.GetStoreSettingsAsync();
+            settings1.UpdatePlanAndDesign(
+                planTier: null,
+                basicPlanMonthlyPrice: 54.90m,
+                premiumPlanMonthlyPrice: 149.90m,
+                picpayPixKey: "recebimentos.owner@gmail.com",
+                intermediaryPlanMonthlyPrice: 99.90m);
+            await repo1.UpdateStoreSettingsAsync(settings1);
+
+            var companionPath = PlatformOwnerSettingsStore.GetCompanionPath(dbPath);
+            Assert.IsTrue(File.Exists(companionPath), "Backup platform_owner_settings.json deve ser criado ao salvar Pix do dono.");
+
+            // Simula apagar o banco da loja e recriar outra loja do zero no mesmo diretório
+            File.Delete(dbPath);
+            Assert.IsFalse(File.Exists(dbPath));
+
+            var repo2 = new ClothingStoreRepository(hasher, dbPath);
+            var restoredSettings = await repo2.GetStoreSettingsAsync();
+
+            Assert.AreEqual("recebimentos.owner@gmail.com", restoredSettings.PicpayPixKey);
+            Assert.AreEqual(54.90m, restoredSettings.BasicPlanMonthlyPrice);
+            Assert.AreEqual(99.90m, restoredSettings.IntermediaryPlanMonthlyPrice);
+            Assert.AreEqual(149.90m, restoredSettings.PremiumPlanMonthlyPrice);
+
+            // Segurança do app público permanece estrita: admin / admin NÃO deve funcionar no AuthService público
+            var auth = new AuthService(repo2, hasher, new JwtTokenService(
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Jwt:SecretKey"] = "unit-test-super-secret-signing-key-32bytes!"
+                    })
+                    .Build()));
+            await Assert.ThrowsExceptionAsync<DomainException>(() =>
+                auth.LoginAsync(new LoginRequest("admin", "admin")));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public void NavigationAndPlanCheckout_ExposeVisibleAccountSwitch_StickyTopbar_AndNoHardcodedPlaceholderPix()
+    {
+        var root = FindRepoRoot();
+        var navMenu = File.ReadAllText(Path.Combine(root, "Components", "Layout", "NavMenu.razor"), Encoding.UTF8);
+        var mainLayout = File.ReadAllText(Path.Combine(root, "Components", "Layout", "MainLayout.razor"), Encoding.UTF8);
+        var profileModal = File.ReadAllText(Path.Combine(root, "Components", "Pages", "UserProfileModal.razor"), Encoding.UTF8);
+        var appCss = File.ReadAllText(Path.Combine(root, "wwwroot", "app.css"), Encoding.UTF8);
+        var plansPage = File.ReadAllText(Path.Combine(root, "Components", "Pages", "PlansPage.razor"), Encoding.UTF8);
+        var checkoutPage = File.ReadAllText(Path.Combine(root, "Components", "Pages", "PlanCheckoutPage.razor"), Encoding.UTF8);
+
+        Assert.IsTrue(navMenu.Contains("adm-sidebar-account-card", StringComparison.Ordinal));
+        Assert.IsTrue(navMenu.Contains("adm-mobile-account-box", StringComparison.Ordinal));
+        Assert.IsTrue(navMenu.Contains("Sair / Trocar Conta", StringComparison.Ordinal));
+        Assert.IsTrue(mainLayout.Contains("OnOpenProfile=\"OpenUserProfileModal\"", StringComparison.Ordinal));
+        Assert.IsTrue(mainLayout.Contains("OnLogoutRequested=\"HandleLogout\"", StringComparison.Ordinal));
+        Assert.IsTrue(profileModal.Contains("OnLogoutRequested", StringComparison.Ordinal));
+        Assert.IsTrue(profileModal.Contains("Sair / Trocar de Conta", StringComparison.Ordinal));
+        Assert.IsTrue(appCss.Contains("position: sticky;", StringComparison.Ordinal));
+
+        Assert.IsTrue(plansPage.Contains("Gateway.GetPlanCatalogSettingsAsync()", StringComparison.Ordinal));
+        Assert.IsTrue(checkoutPage.Contains("Gateway.GetPlanCatalogSettingsAsync()", StringComparison.Ordinal));
+        Assert.IsFalse(plansPage.Contains("\"picpay.me/sua-conta\"", StringComparison.Ordinal));
+        Assert.IsFalse(checkoutPage.Contains("\"picpay.me/sua-conta\"", StringComparison.Ordinal));
+    }
+
     private static string Base64Url(string text) => Base64UrlBytes(Encoding.UTF8.GetBytes(text));
 
     private static string Base64UrlBytes(byte[] bytes) =>
