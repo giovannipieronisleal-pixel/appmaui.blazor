@@ -662,6 +662,73 @@ public sealed class AdminApiClient
         return (await response.Content.ReadFromJsonAsync<CorreiosQuoteDto>(cancellationToken: ct))!;
     }
 
+    // Compra automática de planos via Pix (liberação da chave somente ao clicar em comprar + confirmação no Admin)
+    public async Task<PlatformSubscriptionOrderDto> CreatePlatformPlanOrderAsync(
+        CreatePlatformPlanOrderRequest request,
+        CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync(Endpoint("/api/platform-sync/plan-orders"), request, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<PlatformSubscriptionOrderDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<PlatformPlanOrderStatusDto> GetPlatformPlanOrderStatusAsync(
+        string orderNumber,
+        string claimToken,
+        CancellationToken ct = default)
+    {
+        var qs = $"orderNumber={Uri.EscapeDataString(orderNumber)}&claimToken={Uri.EscapeDataString(claimToken)}";
+        var response = await _httpClient.GetAsync(Endpoint($"/api/platform-sync/plan-orders/status?{qs}"), ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<PlatformPlanOrderStatusDto>(cancellationToken: ct))!;
+    }
+
+    public async Task<IReadOnlyList<PlatformSubscriptionOrderDto>> GetPlatformPlanOrdersAsync(
+        string? syncSecret,
+        CancellationToken ct = default) =>
+        await SendSyncRequestAsync<List<PlatformSubscriptionOrderDto>>(HttpMethod.Get, "/api/platform-sync/plan-orders", syncSecret, content: null, ct);
+
+    public Task<PlatformSubscriptionOrderDto> ApprovePlatformPlanOrderRemoteAsync(
+        Guid orderId,
+        string? syncSecret,
+        string? adminName = null,
+        CancellationToken ct = default)
+    {
+        var qs = string.IsNullOrWhiteSpace(adminName) ? string.Empty : $"?adminName={Uri.EscapeDataString(adminName)}";
+        return SendSyncRequestAsync<PlatformSubscriptionOrderDto>(HttpMethod.Post, $"/api/platform-sync/plan-orders/{orderId}/approve{qs}", syncSecret, content: null, ct);
+    }
+
+    public Task<PlatformSubscriptionOrderDto> CancelPlatformPlanOrderRemoteAsync(
+        Guid orderId,
+        string? syncSecret,
+        CancellationToken ct = default) =>
+        SendSyncRequestAsync<PlatformSubscriptionOrderDto>(HttpMethod.Post, $"/api/platform-sync/plan-orders/{orderId}/cancel", syncSecret, content: null, ct);
+
+    public Task<AdminStoreSettingsDto> PushOwnerPricingSyncAsync(
+        UpdateOwnerPricingSyncRequest request,
+        string? syncSecret,
+        CancellationToken ct = default) =>
+        SendSyncRequestAsync<AdminStoreSettingsDto>(HttpMethod.Post, "/api/platform-sync/owner-pricing", syncSecret, JsonContent.Create(request), ct);
+
+    private async Task<T> SendSyncRequestAsync<T>(
+        HttpMethod method,
+        string relativePath,
+        string? syncSecret,
+        HttpContent? content,
+        CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(method, Endpoint(relativePath))
+        {
+            Content = content
+        };
+        if (!string.IsNullOrWhiteSpace(syncSecret))
+            req.Headers.Add("X-YouLink-Sync-Key", syncSecret.Trim());
+
+        var response = await _httpClient.SendAsync(req, ct);
+        await EnsureSuccessOrThrowAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct))!;
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)
     {
         if (response.IsSuccessStatusCode)

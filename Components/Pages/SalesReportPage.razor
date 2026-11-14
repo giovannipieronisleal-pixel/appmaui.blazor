@@ -13,7 +13,7 @@
     <div>
         <h1 class="adm-page-title" style="margin: 0;">💰 Vendas &amp; Quanto Vendeu</h1>
         <p class="adm-page-subtitle" style="margin: 0.25rem 0 0;">
-            Acompanhe o faturamento confirmado por período, ranking das peças mais vendidas e vendas feitas direto pelo celular (Pix) ou no balcão.
+            Acompanhe seu faturamento, registre vendas em Dinheiro, Cartão, Transferência, WhatsApp ou Pix opcional, ou movimente o estoque sem venda.
         </p>
     </div>
 
@@ -119,15 +119,53 @@ else
             </span>
         </div>
 
+        <section class="adm-card" style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                <span class="pill-badge @(_storeSettings?.ManualSalesEnabled != false ? "pill-green" : "pill-slate")">
+                    @(_storeSettings?.ManualSalesEnabled != false ? "🟢 Vendas sem Pix: ATIVADAS" : "⚪ Vendas sem Pix: DESATIVADAS")
+                </span>
+                <span class="pill-badge @(_storeSettings?.DirectPixSalesReady == true ? "pill-green" : "pill-slate")">
+                    @(_storeSettings?.DirectPixSalesReady == true ? "💸 Pix no Catálogo: Ativado" : "💸 Pix no Catálogo: Opcional / Desligado")
+                </span>
+                <span style="font-size: 0.8rem; color: var(--adm-muted);">
+                    Você nunca precisa usar Pix neste plano — movimentações normais de estoque funcionam sem venda.
+                </span>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                @if (Gateway.IsAdmin && _storeSettings is not null)
+                {
+                    <button type="button"
+                            class="adm-btn @(_storeSettings.ManualSalesEnabled ? "adm-btn-outline" : "adm-btn-success")"
+                            disabled="@_togglingManualSales"
+                            @onclick="ToggleManualSalesAsync">
+                        @(_togglingManualSales
+                            ? "Salvando..."
+                            : _storeSettings.ManualSalesEnabled
+                                ? "⏸ Desativar Vendas sem Pix"
+                                : "▶ Ativar Vendas sem Pix")
+                    </button>
+                }
+                <a href="/estoque" class="adm-btn adm-btn-outline">📦 Movimentar Estoque (Sem Venda)</a>
+            </div>
+        </section>
+
         @if (_showManualSaleForm && Gateway.CanManageStock)
         {
             <section class="adm-card" style="margin-bottom: 1.15rem; border-left: 4px solid var(--adm-success);">
                 <h2 style="font-size: 1.05rem; font-weight: 800; margin: 0 0 0.3rem;">
-                    📝 Registrar Venda (WhatsApp, Balcão ou Pix Direto)
+                    📝 Registrar Venda (Dinheiro, Cartão, Transferência, WhatsApp ou Pix)
                 </h2>
                 <p style="font-size: 0.83rem; color: var(--adm-muted); margin: 0 0 0.85rem;">
                     Dá baixa automática no estoque da variante escolhida e soma imediatamente no seu total vendido.
                 </p>
+
+                @if (_storeSettings is not null && !_storeSettings.ManualSalesEnabled && !string.Equals(_salePaymentMethod, "Pix", StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="adm-alert adm-alert-error" style="margin-bottom: 0.75rem;">
+                        A movimentação de vendas sem Pix está desativada agora. Clique em <strong>▶ Ativar Vendas sem Pix</strong> acima (ou em Loja &amp; Visual) para liberar vendas em Dinheiro/Cartão/WhatsApp, ou use a aba <a href="/estoque" style="font-weight: 800;">Estoque</a> para movimentações normais sem venda.
+                    </div>
+                }
 
                 <div class="sales-manual-grid">
                     <div>
@@ -162,10 +200,11 @@ else
                     <div>
                         <label class="adm-label">Forma de Pagamento</label>
                         <select class="adm-input" @bind="_salePaymentMethod">
-                            <option value="Pix">Pix (Direto no Celular)</option>
+                            <option value="Dinheiro">Dinheiro (Sem Pix)</option>
                             <option value="Cartão / Link">Cartão / Link</option>
-                            <option value="Dinheiro">Dinheiro</option>
-                            <option value="WhatsApp">WhatsApp (Opcional)</option>
+                            <option value="Transferência">Transferência / Outro</option>
+                            <option value="WhatsApp">WhatsApp (Combinar Entrega)</option>
+                            <option value="Pix">Pix (Opcional)</option>
                         </select>
                     </div>
 
@@ -427,6 +466,8 @@ else
     private bool _loading = true;
     private bool _showManualSaleForm;
     private bool _savingManualSale;
+    private bool _togglingManualSales;
+    private bool _paymentMethodInitialized;
     private bool _copiedCsv;
     private bool _copiedManualPix;
     private AdminStoreSettingsDto? _storeSettings;
@@ -436,7 +477,7 @@ else
     private string _selectedProductId = string.Empty;
     private string _selectedVariantId = string.Empty;
     private int _saleQuantity = 1;
-    private string _salePaymentMethod = "Pix";
+    private string _salePaymentMethod = "Dinheiro";
     private string _saleCustomerName = string.Empty;
     private string _saleCustomerWhatsapp = string.Empty;
     private decimal? _saleShippingCost;
@@ -503,6 +544,11 @@ else
                 try
                 {
                     _storeSettings = await Gateway.GetStoreSettingsAsync();
+                    if (!_paymentMethodInitialized)
+                    {
+                        _salePaymentMethod = _storeSettings.DirectPixSalesEnabled ? "Pix" : "Dinheiro";
+                        _paymentMethodInitialized = true;
+                    }
                 }
                 catch
                 {
@@ -516,6 +562,32 @@ else
         finally
         {
             _loading = false;
+        }
+    }
+
+    private async Task ToggleManualSalesAsync()
+    {
+        if (_storeSettings is null)
+            return;
+
+        _error = null;
+        _success = null;
+        _togglingManualSales = true;
+        try
+        {
+            var nextValue = !_storeSettings.ManualSalesEnabled;
+            _storeSettings = await Gateway.SetManualSalesEnabledAsync(nextValue);
+            _success = nextValue
+                ? "✅ Movimentação de vendas sem Pix ATIVADA! Já pode registrar em Dinheiro, Cartão, Transferência ou WhatsApp."
+                : "⏸ Movimentação de vendas sem Pix desativada. O controle normal em Estoque continua livre.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _togglingManualSales = false;
         }
     }
 
@@ -578,10 +650,7 @@ else
         if (EstimatedManualSaleTotal <= 0m || _storeSettings is null)
             return null;
 
-        var rawKey = ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storeSettings.StorePixKey)
-            ? _storeSettings.StorePixKey
-            : _storeSettings.PicpayPixKey;
-
+        var rawKey = _storeSettings.StorePixKey;
         if (!ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(rawKey))
             return null;
 

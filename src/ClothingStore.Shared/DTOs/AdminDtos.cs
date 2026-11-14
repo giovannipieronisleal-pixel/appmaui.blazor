@@ -213,7 +213,9 @@ public sealed class UpdateStoreSettingsRequest
     public StoreDesignDto? Design { get; set; }
 
     // Vendas por Pix no app (exclusivo Intermediário e Premium, ativação explícita), distância máxima e CEP Correios
+    // ManualSalesEnabled permite ativar/desativar movimentação e registro de vendas sem Pix (Dinheiro, Cartão, WhatsApp / Balcão).
     public bool? DirectPixSalesEnabled { get; set; }
+    public bool? ManualSalesEnabled { get; set; }
     public string? StorePixKey { get; set; }
     public string? StorePixReceiverName { get; set; }
     public string? OriginCep { get; set; }
@@ -279,7 +281,8 @@ public sealed record AdminStoreSettingsDto(
     DateTimeOffset? GoogleAccountVerifiedAt = null,
     bool QualifiesForDedicatedServerBenefit = false,
     string ActivePlanBillingKind = "Pago",
-    string DomainAcquisitionMode = "PlataformaPadrao");
+    string DomainAcquisitionMode = "PlataformaPadrao",
+    bool ManualSalesEnabled = true);
 
 public sealed class CloudCatalogSyncPayload
 {
@@ -398,5 +401,62 @@ public sealed record OwnServerHealthCheckResult(
     string? StoreNameDetected,
     long LatencyMs,
     string StatusMessage);
+
+public sealed record CreatePlatformPlanOrderRequest(
+    string PlanTier,
+    int DurationMonths,
+    decimal Amount,
+    string StoreName,
+    string? StoreSlug = null,
+    string? DesiredDomain = null,
+    bool UseOwnDedicatedServer = false,
+    Guid? BuyerUserId = null,
+    string? BuyerUsername = null,
+    string? BuyerEmail = null,
+    string? BuyerFullName = null);
+
+public sealed record PlatformSubscriptionOrderDto(
+    Guid Id,
+    string OrderNumber,
+    string ClaimToken,
+    string PlanTier,
+    int DurationMonths,
+    int DurationDays,
+    decimal Amount,
+    string StoreName,
+    string StoreSlug,
+    string DesiredDomain,
+    bool UseOwnDedicatedServer,
+    Guid? BuyerUserId,
+    string BuyerUsername,
+    string BuyerEmail,
+    string BuyerFullName,
+    string PixKeyUsed,
+    string PixBrCode,
+    string Status,
+    string? IssuedGiftCardCode,
+    DateTimeOffset? AppliedPlanExpiresAt,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ApprovedAt,
+    string? ApprovedByAdminName,
+    string Message);
+
+public sealed record PlatformPlanOrderStatusDto(
+    string OrderNumber,
+    string Status,
+    bool IsApproved,
+    string PlanTier,
+    int DurationDays,
+    DateTimeOffset? AppliedPlanExpiresAt,
+    string? IssuedGiftCardCode,
+    DateTimeOffset? ApprovedAt,
+    string Message,
+    string? DesiredDomain = null);
+
+public sealed record UpdateOwnerPricingSyncRequest(
+    string PicpayPixKey,
+    decimal BasicPlanMonthlyPrice,
+    decimal IntermediaryPlanMonthlyPrice,
+    decimal PremiumPlanMonthlyPrice);
 
 

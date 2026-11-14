@@ -17,6 +17,7 @@ public sealed class MauiAdminGateway
     private const string SessionStorageKey = "clothingstore_auth_session_v1";
     private const string ServerUrlPreferenceKey = "youlink_api_base_url_v1";
     private const string PendingAccountSyncPreferenceKey = "youlink_pending_account_sync_v1";
+    private const string PendingPlanOrderPreferenceKey = "youlink_pending_plan_order_v1";
     private static string ResolveCurrentClientAppVersion()
     {
         try
@@ -42,6 +43,7 @@ public sealed class MauiAdminGateway
     private readonly EmployeeAndSettingsService _employeeAndSettingsService;
     private readonly GoogleCloudSyncService? _cloudSyncService;
     private readonly OrderAndShippingService? _orderAndShippingService;
+    private readonly PlatformSubscriptionService? _subscriptionService;
 
     private DateTimeOffset _skipRemoteApiUntil = DateTimeOffset.MinValue;
 
@@ -60,6 +62,7 @@ public sealed class MauiAdminGateway
     public ApiCompatibilityStatusDto? LatestCompatibilityStatus { get; private set; }
 
     public event Action? AuthStateChanged;
+    public event Action<AdminStoreSettingsDto>? PlanEntitlementActivated;
 
     public MauiAdminGateway(
         AdminApiClient apiClient,
@@ -68,7 +71,8 @@ public sealed class MauiAdminGateway
         StockManagementService stockService,
         EmployeeAndSettingsService employeeAndSettingsService,
         GoogleCloudSyncService? cloudSyncService = null,
-        OrderAndShippingService? orderAndShippingService = null)
+        OrderAndShippingService? orderAndShippingService = null,
+        PlatformSubscriptionService? subscriptionService = null)
     {
         _apiClient = apiClient;
         _authService = authService;
@@ -77,6 +81,7 @@ public sealed class MauiAdminGateway
         _employeeAndSettingsService = employeeAndSettingsService;
         _cloudSyncService = cloudSyncService;
         _orderAndShippingService = orderAndShippingService;
+        _subscriptionService = subscriptionService;
 
         LoadSavedServerUrl();
     }
@@ -1164,6 +1169,218 @@ public sealed class MauiAdminGateway
 
         _cloudSyncService?.TriggerAutoSyncIfEnabled();
         return created;
+    }
+
+    public async Task<AdminStoreSettingsDto> SetManualSalesEnabledAsync(bool enabled, CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+        var current = await GetStoreSettingsAsync();
+        var request = new UpdateStoreSettingsRequest
+        {
+            StoreName = current.StoreName,
+            StoreSlug = current.StoreSlug,
+            WhatsappNumber = current.WhatsappNumber,
+            StoreDescription = current.StoreDescription,
+            DefaultLowStockThreshold = current.DefaultLowStockThreshold,
+            OnlineBaseUrl = current.OnlineBaseUrl,
+            AutoSyncOnlineOnSave = current.AutoSyncOnlineOnSave,
+            ManualSalesEnabled = enabled
+        };
+
+        return await UpdateStoreSettingsAsync(request);
+    }
+
+    private sealed record PendingPlanOrderTicket(
+        Guid Id,
+        string OrderNumber,
+        string ClaimToken,
+        string PlanTier,
+        int DurationMonths,
+        int DurationDays,
+        decimal Amount,
+        string StoreName,
+        string StoreSlug,
+        string DesiredDomain,
+        string PixKeyUsed,
+        string PixBrCode,
+        DateTimeOffset CreatedAt);
+
+    public PlatformSubscriptionOrderDto? GetPendingPlanOrder()
+    {
+        var ticket = GetPendingPlanOrderTicket();
+        if (ticket is null)
+            return null;
+
+        return new PlatformSubscriptionOrderDto(
+            ticket.Id,
+            ticket.OrderNumber,
+            ticket.ClaimToken,
+            ticket.PlanTier,
+            ticket.DurationMonths,
+            ticket.DurationDays,
+            ticket.Amount,
+            ticket.StoreName,
+            ticket.StoreSlug,
+            ticket.DesiredDomain,
+            false,
+            CurrentEmployee?.UserId,
+            CurrentEmployee?.Username ?? string.Empty,
+            CurrentEmployee?.Email ?? string.Empty,
+            CurrentEmployee?.FullName ?? string.Empty,
+            ticket.PixKeyUsed,
+            ticket.PixBrCode,
+            "Pendente",
+            null,
+            null,
+            ticket.CreatedAt,
+            null,
+            null,
+            "Pedido aguardando confirmação do Pix pelo administrador.");
+    }
+
+    public void ClearPendingPlanOrder()
+    {
+        try
+        {
+            Preferences.Default.Remove(PendingPlanOrderPreferenceKey);
+        }
+        catch
+        {
+        }
+    }
+
+    private PendingPlanOrderTicket? GetPendingPlanOrderTicket()
+    {
+        try
+        {
+            var json = Preferences.Default.Get(PendingPlanOrderPreferenceKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+            return JsonSerializer.Deserialize<PendingPlanOrderTicket>(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void SavePendingPlanOrderTicket(PlatformSubscriptionOrderDto order)
+    {
+        try
+        {
+            var ticket = new PendingPlanOrderTicket(
+                order.Id,
+                order.OrderNumber,
+                order.ClaimToken,
+                order.PlanTier,
+                order.DurationMonths,
+                order.DurationDays,
+                order.Amount,
+                order.StoreName,
+                order.StoreSlug,
+                order.DesiredDomain,
+                order.PixKeyUsed,
+                order.PixBrCode,
+                order.CreatedAt);
+            Preferences.Default.Set(PendingPlanOrderPreferenceKey, JsonSerializer.Serialize(ticket));
+        }
+        catch
+        {
+        }
+    }
+
+    public async Task<PlatformSubscriptionOrderDto> CreatePlatformPlanPurchaseOrderAsync(
+        CreatePlatformPlanOrderRequest request,
+        CancellationToken ct = default)
+    {
+        EnsureAdminPermission();
+
+        PlatformSubscriptionOrderDto created;
+        if (HasCustomServerUrl || ShouldTryRemoteApi)
+        {
+            try
+            {
+                created = await _apiClient.CreatePlatformPlanOrderAsync(request, ct);
+                SavePendingPlanOrderTicket(created);
+                return created;
+            }
+            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+            {
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+        }
+
+        if (_subscriptionService is null)
+            throw new DomainException("Serviço de pedidos de plano indisponível.");
+
+        created = await _subscriptionService.CreatePlanOrderAsync(request, ct);
+        SavePendingPlanOrderTicket(created);
+        return created;
+    }
+
+    public async Task<PlatformPlanOrderStatusDto?> CheckAndApplyPendingPlanOrderAsync(
+        string? orderNumber = null,
+        string? claimToken = null,
+        CancellationToken ct = default)
+    {
+        var ticket = GetPendingPlanOrderTicket();
+        var effectiveOrderNumber = string.IsNullOrWhiteSpace(orderNumber) ? ticket?.OrderNumber : orderNumber.Trim();
+        var effectiveClaimToken = string.IsNullOrWhiteSpace(claimToken) ? ticket?.ClaimToken : claimToken.Trim();
+
+        if (string.IsNullOrWhiteSpace(effectiveOrderNumber) || string.IsNullOrWhiteSpace(effectiveClaimToken))
+            return null;
+
+        PlatformPlanOrderStatusDto? status = null;
+        if (HasCustomServerUrl || ShouldTryRemoteApi)
+        {
+            try
+            {
+                status = await _apiClient.GetPlatformPlanOrderStatusAsync(effectiveOrderNumber, effectiveClaimToken, ct);
+            }
+            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+            {
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+        }
+
+        if (status is null && _subscriptionService is not null)
+        {
+            status = await _subscriptionService.GetPlanOrderStatusAsync(effectiveOrderNumber, effectiveClaimToken, ct);
+        }
+
+        if (status is null)
+            return null;
+
+        if (status.IsApproved)
+        {
+            var activated = await _employeeAndSettingsService.ApplyApprovedRemotePlanAsync(
+                status,
+                CurrentEmployee?.EmployeeId,
+                ct);
+
+            ClearPendingPlanOrder();
+            _cloudSyncService?.TriggerAutoSyncIfEnabled();
+            PlanEntitlementActivated?.Invoke(activated);
+            AuthStateChanged?.Invoke();
+        }
+        else if (string.Equals(status.Status, "Cancelado", StringComparison.OrdinalIgnoreCase))
+        {
+            ClearPendingPlanOrder();
+        }
+
+        return status;
+    }
+
+    public async Task<PlatformPlanOrderStatusDto?> TryAutoDeliverPendingPlanAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await CheckAndApplyPendingPlanOrderAsync(ct: ct);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void EnsureAuthenticated()

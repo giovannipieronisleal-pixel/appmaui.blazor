@@ -58,6 +58,7 @@ builder.Services.AddScoped<ProductManagementService>();
 builder.Services.AddScoped<EmployeeAndSettingsService>();
 builder.Services.AddScoped<CloudSyncStateService>();
 builder.Services.AddScoped<OrderAndShippingService>();
+builder.Services.AddScoped<PlatformSubscriptionService>();
 builder.Services.AddScoped<CatalogDataGateway>();
 
 var app = builder.Build();

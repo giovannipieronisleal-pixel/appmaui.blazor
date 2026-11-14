@@ -157,6 +157,17 @@
                     </div>
                 }
 
+                @if (!string.IsNullOrWhiteSpace(_autoActivatedPlanBanner))
+                {
+                    <div class="adm-compat-banner" style="display: flex; align-items: center; justify-content: space-between; gap: 0.65rem; flex-wrap: wrap; padding: 0.65rem 1rem; background: rgba(22, 163, 74, 0.14); border-bottom: 1px solid var(--adm-success); font-size: 0.84rem;">
+                        <span>@_autoActivatedPlanBanner</span>
+                        <div style="display: flex; gap: 0.45rem; align-items: center;">
+                            <a href="/planos" class="adm-btn adm-btn-success" style="padding: 0.3rem 0.65rem; font-size: 0.78rem;">Ver Meu Plano</a>
+                            <button type="button" class="adm-btn adm-btn-outline" style="padding: 0.3rem 0.55rem; font-size: 0.76rem;" @onclick="() => _autoActivatedPlanBanner = null">Dispensar</button>
+                        </div>
+                    </div>
+                }
+
                 <main class="adm-content">
                     @Body
                 </main>
@@ -175,6 +186,7 @@
     private bool _showUserProfileModal;
     private ApiCompatibilityStatusDto? _compatibilityStatus;
     private bool _dismissedUpdateBanner;
+    private string? _autoActivatedPlanBanner;
 
     private static string GetUserInitials(string? fullName)
     {
@@ -191,6 +203,7 @@
     protected override async Task OnInitializedAsync()
     {
         Gateway.AuthStateChanged += OnAuthStateChanged;
+        Gateway.PlanEntitlementActivated += OnPlanEntitlementActivated;
         Navigation.LocationChanged += OnLocationChanged;
         Theme.OnThemeChanged += OnThemeChanged;
         BrandState.OnBrandChanged += OnBrandChanged;
@@ -223,11 +236,32 @@
 
     private async Task RunStartupBackgroundChecksAsync()
     {
+        await TryDeliverPendingPlanQuietlyAsync();
         await RefreshUpdatesInBackgroundAsync();
 
         try
         {
             await CloudSync.EnsureCloudMirrorPopulatedAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task TryDeliverPendingPlanQuietlyAsync()
+    {
+        if (!Gateway.IsAuthenticated)
+            return;
+
+        try
+        {
+            var status = await Gateway.TryAutoDeliverPendingPlanAsync();
+            if (status?.IsApproved == true)
+            {
+                await RefreshStoreInfoAsync();
+                _autoActivatedPlanBanner = $"🎉 Pagamento Pix do pedido {status.OrderNumber} confirmado! Seu plano {status.PlanTier} foi ativado automaticamente.";
+                await InvokeAsync(StateHasChanged);
+            }
         }
         catch
         {
@@ -258,6 +292,7 @@
 
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
+        await TryDeliverPendingPlanQuietlyAsync();
         await RefreshStoreInfoAsync();
         _ = RefreshUpdatesInBackgroundAsync();
         await InvokeAsync(StateHasChanged);
@@ -266,6 +301,17 @@
     private void OnAuthStateChanged()
     {
         _ = RefreshUpdatesInBackgroundAsync();
+        _ = TryDeliverPendingPlanQuietlyAsync();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnPlanEntitlementActivated(AdminStoreSettingsDto updated)
+    {
+        _storeName = updated.StoreName;
+        _storeSlug = updated.StoreSlug;
+        _onlineBaseUrl = updated.OnlineBaseUrl;
+        BrandState.ApplyFromAdminSettings(updated);
+        _autoActivatedPlanBanner ??= $"🎉 Pagamento Pix confirmado! Seu plano {updated.PlanTier} foi liberado automaticamente.";
         InvokeAsync(StateHasChanged);
     }
 
@@ -316,6 +362,7 @@
     public void Dispose()
     {
         Gateway.AuthStateChanged -= OnAuthStateChanged;
+        Gateway.PlanEntitlementActivated -= OnPlanEntitlementActivated;
         Navigation.LocationChanged -= OnLocationChanged;
         Theme.OnThemeChanged -= OnThemeChanged;
         BrandState.OnBrandChanged -= OnBrandChanged;

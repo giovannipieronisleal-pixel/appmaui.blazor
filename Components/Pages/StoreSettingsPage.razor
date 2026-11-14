@@ -654,24 +654,30 @@
                 Exclusivo Meia Versão &amp; Premium
             </div>
             <h2 style="font-size: 1.15rem; font-weight: 800; margin: 0.2rem 0 0; color: var(--adm-text);">
-                💸 Vendas pelo App apenas por Pix, Distância &amp; Correios
+                💰 Formas de Venda no App (Vendas sem Pix &amp; Pix Opcional)
             </h2>
             <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0.25rem 0 0; line-height: 1.45;">
-                Ative para o cliente comprar direto pelo catálogo usando <strong>apenas Pix</strong> (sem CNPJ/cartão), informando o endereço completo dele. Você define até onde entrega e consulta na hora quanto custará enviar pelos Correios.
+                Você decide como quer vender: ative ou desative <strong>vendas sem Pix</strong> (Dinheiro, Cartão, WhatsApp, Balcão) e, se quiser, habilite também <strong>Pix direto no catálogo</strong> com envio pelos Correios. O controle de estoque normal em <strong>Estoque</strong> continua sempre liberado.
             </p>
         </div>
-        <div>
+        <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
             @if (!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan)
             {
-                <span class="pill-badge pill-slate">🔒 Plano Básico</span>
-            }
-            else if (_pixEnabled && ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storePixKey) && ClothingStore.Shared.Helpers.BrazilShippingCalculator.TrySanitizeCep(_originCep, out _))
-            {
-                <span class="pill-badge pill-green">🟢 Vendas Pix Ativas no App</span>
+                <span class="pill-badge pill-slate">🔒 Recursos Avançados na Meia Versão / Premium</span>
             }
             else
             {
-                <span class="pill-badge pill-gold">⚙️ Desativado / Falta Configurar</span>
+                <span class="pill-badge @(_manualSalesEnabled ? "pill-green" : "pill-slate")">
+                    @(_manualSalesEnabled ? "🟢 Vendas s/ Pix Ativas" : "⚪ Vendas s/ Pix Pausadas")
+                </span>
+                @if (_pixEnabled && ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_storePixKey) && ClothingStore.Shared.Helpers.BrazilShippingCalculator.TrySanitizeCep(_originCep, out _))
+                {
+                    <span class="pill-badge pill-green">🟢 Pix Direto Ativo</span>
+                }
+                else
+                {
+                    <span class="pill-badge pill-slate">ℹ️ Pix Opcional</span>
+                }
             }
         </div>
     </div>
@@ -683,7 +689,7 @@
                 Recurso liberado a partir da Meia Versão (Intermediário) até a Premium
             </div>
             <p style="font-size: 0.84rem; color: var(--adm-muted); margin: 0 0 0.85rem; line-height: 1.45;">
-                No Plano Básico as clientes consultam você pelo WhatsApp. Na <strong>Meia Versão</strong> e <strong>Premium</strong>, você pode ativar a compra direta no app por Pix, limitar a distância de envio e ver o custo dos Correios (PAC e SEDEX).
+                No Plano Básico você movimenta seu <strong>Estoque</strong> normalmente e atende pelo WhatsApp. Na <strong>Meia Versão</strong> e <strong>Premium</strong>, você registra vendas sem Pix (Dinheiro, Cartão, Transferência), e também pode ativar vendas diretas por Pix se desejar — sem obrigação!
             </p>
             <a href="/planos" class="adm-btn adm-btn-accent">💎 Conhecer Meia Versão / Premium &rarr;</a>
         </div>
@@ -691,14 +697,26 @@
     else
     {
         <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+            <label style="display: flex; align-items: center; gap: 0.65rem; background: var(--adm-input-bg); border: 1.5px solid @(_manualSalesEnabled ? "#16A34A" : "var(--adm-border)"); border-radius: 10px; padding: 0.85rem 1rem; cursor: pointer;">
+                <input type="checkbox" @bind="_manualSalesEnabled" style="width: 18px; height: 18px;" />
+                <div>
+                    <div style="font-weight: 800; color: var(--adm-text);">
+                        @(_manualSalesEnabled ? "✅ Movimentação de vendas sem Pix ATIVADA (Dinheiro, Cartão, Transferência, WhatsApp)" : "⚪ Movimentação de vendas sem Pix DESATIVADA")
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--adm-muted);">
+                        Permite registrar vendas normais fora do Pix com baixa automática no estoque e cálculo do faturamento. Mesmo se desativar aqui, você continua movimentando o estoque normalmente na aba <strong>Estoque</strong>.
+                    </div>
+                </div>
+            </label>
+
             <label style="display: flex; align-items: center; gap: 0.65rem; background: var(--adm-input-bg); border: 1.5px solid @(_pixEnabled ? "#16A34A" : "var(--adm-border)"); border-radius: 10px; padding: 0.85rem 1rem; cursor: pointer;">
                 <input type="checkbox" @bind="_pixEnabled" style="width: 18px; height: 18px;" />
                 <div>
                     <div style="font-weight: 800; color: var(--adm-text);">
-                        @(_pixEnabled ? "✅ Vendas diretas pelo celular (Pix) ATIVADAS" : "Ativar vendas diretas pelo celular (Apenas Pix)")
+                        @(_pixEnabled ? "✅ Vendas diretas pelo catálogo via Pix ATIVADAS (Opcional)" : "Ativar também compras diretas pelo catálogo via Pix (Opcional)")
                     </div>
                     <div style="font-size: 0.78rem; color: var(--adm-muted);">
-                        Venda diretamente pelo celular gerando Pix Copia e Cola — sem depender do WhatsApp, sem cartão e sem CNPJ.
+                        Opcional: gera Pix Copia e Cola automático no catálogo público com cálculo de distância e Correios — você nunca é obrigado a ativar se preferir vender sem Pix.
                     </div>
                 </div>
             </label>
@@ -779,9 +797,10 @@
 
             <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; align-items: center;">
                 <button type="button" class="adm-btn adm-btn-success" style="font-weight: 800; padding: 0.7rem 1.2rem;" disabled="@_savingPixShipping" @onclick="SavePixAndShippingSettingsAsync">
-                    @(_savingPixShipping ? "Salvando..." : "💾 Salvar Vendas Pix, Distância & Correios")
+                    @(_savingPixShipping ? "Salvando..." : "💾 Salvar Formas de Venda, Pix & Entrega")
                 </button>
-                <a href="/pedidos" class="adm-btn adm-btn-outline">🧾 Ver Pedidos Recebidos</a>
+                <a href="/vendas" class="adm-btn adm-btn-outline">💰 Ir para Vendas</a>
+                <a href="/estoque" class="adm-btn adm-btn-outline">📦 Movimentar Estoque</a>
             </div>
 
             <!-- Simulador Rápido Correios & Distância -->
@@ -1058,7 +1077,8 @@
                 DeactivationReason = current.DeactivationReason,
                 LastActivityAt = current.LastActivityAt,
                 PublishedStoreName = current.PublishedStoreName,
-                PlanTier = current.PlanTier
+                PlanTier = current.PlanTier,
+                ManualSalesEnabled = current.ManualSalesEnabled
             };
             _planTier = current.PlanTier;
             _planExpiresAt = current.PlanExpiresAt;
@@ -1495,6 +1515,7 @@
     }
 
     private bool _pixEnabled;
+    private bool _manualSalesEnabled = true;
     private string _storePixKey = string.Empty;
     private string _storePixReceiverName = string.Empty;
     private string _originCep = string.Empty;
@@ -1514,6 +1535,7 @@
     private void ApplyPixAndShippingFields(AdminStoreSettingsDto s)
     {
         _pixEnabled = s.DirectPixSalesEnabled;
+        _manualSalesEnabled = s.ManualSalesEnabled;
         _storePixKey = s.StorePixKey ?? string.Empty;
         _storePixReceiverName = s.StorePixReceiverName ?? string.Empty;
         _originCep = s.OriginCep ?? string.Empty;
@@ -1565,6 +1587,7 @@
         _savingPixShipping = true;
         try
         {
+            _form.ManualSalesEnabled = _manualSalesEnabled;
             _form.DirectPixSalesEnabled = _pixEnabled;
             _form.StorePixKey = _storePixKey;
             _form.StorePixReceiverName = _storePixReceiverName;
@@ -1580,8 +1603,10 @@
             BrandState.ApplyFromAdminSettings(updated);
 
             _success = updated.DirectPixSalesReady
-                ? "✅ Vendas por Pix no app, limite de distância e cálculo dos Correios salvos e ATIVADOS!"
-                : "✅ Preferências de envio e distância salvas (vendas diretas por Pix estão desativadas).";
+                ? "✅ Formas de venda (sem Pix + Pix no catálogo) e entrega salvas!"
+                : updated.ManualSalesEnabled
+                    ? "✅ Vendas sem Pix ATIVADAS e preferências de entrega salvas (Pix direto opcional está desligado)."
+                    : "✅ Vendas diretas sem Pix pausadas e preferências salvas! Você continua movimentando o estoque normalmente em Estoque.";
         }
         catch (Exception ex)
         {

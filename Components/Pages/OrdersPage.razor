@@ -54,22 +54,25 @@ else
         <div class="adm-card" style="border-left: 4px solid #F59E0B; margin-bottom: 1rem;">
             <div style="font-weight: 800; margin-bottom: 0.25rem;">
                 @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan
-                    ? "🔒 Vendas diretas por Pix disponíveis a partir da Meia Versão"
-                    : "⚙️ Vendas diretas por Pix ainda não estão ativas nas configurações")
+                    ? "ℹ️ Pedidos diretos pelo catálogo via Pix estão disponíveis a partir da Meia Versão"
+                    : "ℹ️ Pagamento direto pelo catálogo via Pix está desativado (opcional)")
             </div>
             <div style="font-size: 0.85rem; color: var(--adm-muted); line-height: 1.45; margin-bottom: 0.75rem;">
                 @if (!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan)
                 {
-                    <span>Atualmente sua loja está no Plano Básico. Faça upgrade para a <strong>Meia Versão (Intermediário)</strong> ou <strong>Premium</strong> e ative o recebimento direto pelo app via Pix.</span>
+                    <span>Você pode continuar movimentando seu estoque normalmente em <strong>Estoque</strong> e atendendo no WhatsApp. Na <strong>Meia Versão</strong> e <strong>Premium</strong>, além de registrar vendas em Dinheiro/Cartão/WhatsApp, você também pode ativar vendas diretas por Pix se desejar.</span>
                 }
                 else
                 {
-                    <span>Para os clientes fecharem compra pelo app, vá em <strong>Loja &amp; Visual</strong>, marque a opção para ativar vendas por Pix e preencha sua Chave Pix + CEP de origem.</span>
+                    <span>Você não é obrigado a vender por Pix — pode continuar movimentando seu <strong>Estoque</strong> normalmente e registrando vendas em Dinheiro, Cartão ou WhatsApp em <strong>Vendas</strong>. Caso queira aceitar Pix automático no catálogo, ative quando desejar em <strong>Loja &amp; Visual</strong>.</span>
                 }
             </div>
-            <a href="@(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "/planos" : "/configuracoes-loja")" class="adm-btn adm-btn-accent">
-                @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "Ver Planos" : "Ativar Pix e Raio de Entrega")
-            </a>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <a href="/estoque" class="adm-btn adm-btn-outline">📦 Movimentar Estoque Normal</a>
+                <a href="@(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "/planos" : "/configuracoes-loja")" class="adm-btn adm-btn-accent">
+                    @(!BrandState.IsIntermediatePlan && !BrandState.IsPremiumPlan ? "Ver Planos" : "Configurar Vendas & Pix (Opcional)")
+                </a>
+            </div>
         </div>
     }
 

@@ -114,6 +114,7 @@ builder.Services.AddScoped<StockManagementService>();
 builder.Services.AddScoped<EmployeeAndSettingsService>();
 builder.Services.AddScoped<CloudSyncStateService>();
 builder.Services.AddScoped<OrderAndShippingService>();
+builder.Services.AddScoped<PlatformSubscriptionService>();
 
 // Autenticação JWT + Policies de Autorização verificadas no Backend
 builder.Services.AddAuthentication(JwtBearerAuthenticationHandler.SchemeName)
@@ -997,6 +998,83 @@ app.MapPost("/api/cloud/sync-state", async (
         storeSlug = result.StoreSlug,
         catalogUrl = result.EffectiveCatalogUrl
     });
+}).AllowAnonymous();
+
+// =============================================================================
+// 10. ENDPOINTS DE CONTRATAÇÃO AUTOMÁTICA DE PLANOS & SINCRONIZAÇÃO DE PREÇOS/PIX
+// =============================================================================
+app.MapPost("/api/platform-sync/plan-orders", async (
+    CreatePlatformPlanOrderRequest request,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    var created = await subscriptionService.CreatePlanOrderAsync(request, ct);
+    return Results.Created($"/api/platform-sync/plan-orders/{created.Id}", created);
+}).AllowAnonymous().RequireRateLimiting("public-orders");
+
+app.MapGet("/api/platform-sync/plan-orders/status", async (
+    string orderNumber,
+    string claimToken,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+    Results.Ok(await subscriptionService.GetPlanOrderStatusAsync(orderNumber, claimToken, ct)))
+    .AllowAnonymous()
+    .RequireRateLimiting("auth-strict");
+
+app.MapGet("/api/platform-sync/plan-orders", async (
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    return Results.Ok(await subscriptionService.GetAllOrdersAsync(ct));
+}).AllowAnonymous();
+
+app.MapPost("/api/platform-sync/plan-orders/{id:guid}/approve", async (
+    Guid id,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    var adminName = httpContext.User.FindFirstValue(ClaimTypes.Name) ?? "Administrador";
+    return Results.Ok(await subscriptionService.ApprovePlanOrderAsync(id, adminName, null, ct));
+}).AllowAnonymous();
+
+app.MapPost("/api/platform-sync/plan-orders/{id:guid}/cancel", async (
+    Guid id,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    return Results.Ok(await subscriptionService.CancelPlanOrderAsync(id, ct));
+}).AllowAnonymous();
+
+app.MapPost("/api/platform-sync/owner-pricing", async (
+    UpdateOwnerPricingSyncRequest request,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    EmployeeAndSettingsService settingsService,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    if (!IsAuthorizedPlatformSyncRequest(httpContext, settings))
+        return Results.Unauthorized();
+
+    return Results.Ok(await settingsService.SyncOwnerPricingAsync(request, ct));
 }).AllowAnonymous();
 
 app.Run();

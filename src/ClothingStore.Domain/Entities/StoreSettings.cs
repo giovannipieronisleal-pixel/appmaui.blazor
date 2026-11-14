@@ -47,7 +47,9 @@ public sealed class StoreSettings
     public StoreDesignConfig DesignConfig { get; set; } = StoreDesignConfig.CreateMinimalistaLuxo();
 
     // Vendas diretas no app apenas por Pix (exclusivo Meia Versão / Intermediário até Premium), distância e Correios
+    // ManualSalesEnabled permite ativar/desativar movimentação e registro de vendas sem Pix (Dinheiro, Cartão, WhatsApp / Balcão).
     public bool DirectPixSalesEnabled { get; set; } = false;
+    public bool ManualSalesEnabled { get; set; } = true;
     public string? StorePixKey { get; set; }
     public string? StorePixReceiverName { get; set; }
     public string? OriginCep { get; set; }
@@ -495,6 +497,16 @@ public sealed class StoreSettings
 
     public bool CanViewSalesAnalytics(DateTimeOffset? now = null) =>
         IsEffectiveIntermediatePlan(now) || IsEffectivePremiumPlan(now);
+
+    public bool CanRecordNonPixSales(DateTimeOffset? now = null) =>
+        CanViewSalesAnalytics(now) && ManualSalesEnabled;
+
+    public void SetManualSalesEnabled(bool enabled, Guid? employeeId = null)
+    {
+        ManualSalesEnabled = enabled;
+        UpdatedByEmployeeId = employeeId;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 
     public bool IsDirectPixCheckoutReady(DateTimeOffset? now = null) =>
         CanUseDirectPixSales(now) &&

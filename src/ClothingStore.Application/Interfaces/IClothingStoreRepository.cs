@@ -57,5 +57,11 @@ public interface IClothingStoreRepository
     Task<IReadOnlyList<StoreOrder>> GetOrdersAsync(CancellationToken ct = default);
     Task<StoreOrder?> GetOrderByIdAsync(Guid id, CancellationToken ct = default);
     Task SaveOrderAsync(StoreOrder order, CancellationToken ct = default);
+
+    // Pedidos de compra automática de planos pagos (YouLink <-> YouLink Admin)
+    Task<IReadOnlyList<PlatformSubscriptionOrder>> GetPlatformSubscriptionOrdersAsync(CancellationToken ct = default);
+    Task<PlatformSubscriptionOrder?> GetPlatformSubscriptionOrderByIdAsync(Guid id, CancellationToken ct = default);
+    Task<PlatformSubscriptionOrder?> GetPlatformSubscriptionOrderByNumberAsync(string orderNumber, CancellationToken ct = default);
+    Task SavePlatformSubscriptionOrderAsync(PlatformSubscriptionOrder order, CancellationToken ct = default);
 }
 

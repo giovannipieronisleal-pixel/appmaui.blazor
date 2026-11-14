@@ -84,6 +84,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<EmployeeAndSettingsService>();
         builder.Services.AddSingleton<CloudSyncStateService>();
         builder.Services.AddSingleton<OrderAndShippingService>();
+        builder.Services.AddSingleton<PlatformSubscriptionService>();
         builder.Services.AddSingleton<ThemeService>();
         builder.Services.AddSingleton<StoreBrandStateService>();
         builder.Services.AddSingleton<GoogleCloudSyncService>();

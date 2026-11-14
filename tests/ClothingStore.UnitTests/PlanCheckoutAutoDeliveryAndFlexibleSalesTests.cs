@@ -1,0 +1,372 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using ClothingStore.Application.Services;
+using ClothingStore.Domain.Entities;
+using ClothingStore.Domain.Exceptions;
+using ClothingStore.Infrastructure.Persistence;
+using ClothingStore.Infrastructure.Security;
+using ClothingStore.Infrastructure.Storage;
+using ClothingStore.Shared.Clients;
+using ClothingStore.Shared.DTOs;
+using ClothingStore.Shared.Helpers;
+using Microsoft.Extensions.Configuration;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace ClothingStore.UnitTests;
+
+[TestClass]
+public class PlanCheckoutAutoDeliveryAndFlexibleSalesTests
+{
+    private sealed class CapturingHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        public string? LastMethod { get; private set; }
+        public Uri? LastRequestUri { get; private set; }
+        public Dictionary<string, string> LastHeaders { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastMethod = request.Method.Method;
+            LastRequestUri = request.RequestUri;
+            LastHeaders.Clear();
+            foreach (var h in request.Headers)
+                LastHeaders[h.Key] = string.Join(",", h.Value);
+            return Task.FromResult(responder(request));
+        }
+    }
+
+    private static (ClothingStoreRepository Repo, string TempDir, Pbkdf2PasswordHasher Hasher, SupabaseImageStorageService Storage) CreateEnv()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"youlink_plan_flex_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var dbPath = Path.Combine(tempDir, "db.json");
+        var hasher = new Pbkdf2PasswordHasher();
+        var repo = new ClothingStoreRepository(hasher, dbPath);
+        var config = new ConfigurationBuilder().Build();
+        var storage = new SupabaseImageStorageService(new HttpClient(), config, Path.Combine(tempDir, "wwwroot"));
+        return (repo, tempDir, hasher, storage);
+    }
+
+    private static void CleanupDir(string dir)
+    {
+        try
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "appmaui.blazor.csproj")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        throw new DirectoryNotFoundException("Não foi possível localizar a raiz do repositório YouLink.");
+    }
+
+    [TestMethod]
+    public async Task PremiumAndIntermediate_NonPixManualSalesEnabled_CanBeToggledOnAndOff_WithoutBlockingStockControl()
+    {
+        var (repo, tempDir, hasher, storage) = CreateEnv();
+        try
+        {
+            var settingsService = new EmployeeAndSettingsService(repo, hasher, storage);
+            var productService = new ProductManagementService(repo, storage);
+            var stockService = new StockManagementService(repo);
+            var orderService = new OrderAndShippingService(repo);
+
+            var jwtConfig = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:SecretKey"] = "TestSecretKeyForUnitTesting_1234567890_ABCDEF!" })
+                .Build();
+            var authService = new AuthService(repo, hasher, new JwtTokenService(jwtConfig));
+            var registered = await authService.RegisterUserAccountAsync(new RegisterUserAccountRequest(
+                "Loja Flex Admin",
+                "admin.flex@youlink.app",
+                "Flex@2026!",
+                Username: "admin.flex"));
+            var adminEmpId = registered.Employee.EmployeeId;
+
+            // Ativa plano Premium via código pago (DirectPixSalesEnabled continua false = não obriga Pix!)
+            var promoCode = PlanActivationCode.Create(StoreSettings.PlanTierPremium, 30);
+            await repo.SavePlanActivationCodeAsync(promoCode);
+            var redeemed = await settingsService.RedeemActivationCodeAsync(new RedeemActivationCodeRequest { Code = promoCode.Code }, adminEmpId);
+            Assert.AreEqual(StoreSettings.PlanTierPremium, redeemed.ActivatedPlanTier);
+
+            var currentSettings = await settingsService.GetAdminStoreSettingsAsync();
+            Assert.IsFalse(currentSettings.DirectPixSalesEnabled);
+            Assert.IsTrue(currentSettings.ManualSalesEnabled);
+
+            var createdProduct = await productService.CreateProductAsync(new SaveProductRequest
+            {
+                CategoryName = "Conjuntos",
+                Name = "Conjunto Linho",
+                BasePrice = 180m,
+                InitialColor = "Bege",
+                InitialSize = "M",
+                InitialStockQuantity = 10
+            });
+            var variantId = createdProduct.Variants.First().Id;
+
+            // 1) Sem Pix ativado, loja Premium pode registrar vendas normais (Dinheiro)
+            var cashSale = await orderService.RegisterManualSaleAsync(
+                adminEmpId,
+                new RegisterManualSaleRequest(
+                    createdProduct.Id,
+                    variantId,
+                    2,
+                    "Carla Mendes",
+                    null,
+                    "Dinheiro",
+                    null,
+                    "Venda presencial sem Pix"));
+            Assert.AreEqual("Dinheiro", cashSale.PaymentMethod);
+            Assert.AreEqual(360m, cashSale.TotalPixAmount);
+
+            var afterCash = await productService.GetProductByIdAsync(createdProduct.Id);
+            Assert.AreEqual(8, afterCash!.Variants.First().StockQuantity);
+
+            // 2) Desativando movimentação de vendas sem Pix: bloqueia venda manual não-Pix,
+            //    MAS NÃO bloqueia movimentação normal de estoque!
+            var disabled = await settingsService.UpdateStoreSettingsAsync(adminEmpId, new UpdateStoreSettingsRequest
+            {
+                StoreName = currentSettings.StoreName,
+                StoreSlug = currentSettings.StoreSlug,
+                WhatsappNumber = currentSettings.WhatsappNumber,
+                StoreDescription = currentSettings.StoreDescription,
+                ManualSalesEnabled = false
+            });
+            Assert.IsFalse(disabled.ManualSalesEnabled);
+
+            await Assert.ThrowsExceptionAsync<DomainException>(async () =>
+                await orderService.RegisterManualSaleAsync(
+                    adminEmpId,
+                    new RegisterManualSaleRequest(
+                        createdProduct.Id,
+                        variantId,
+                        1,
+                        "Cliente Teste",
+                        null,
+                        "Dinheiro",
+                        null,
+                        null)));
+
+            var stockAdj = await stockService.RegisterMovementAsync(adminEmpId, new CreateStockMovementRequest
+            {
+                ProductVariantId = variantId,
+                MovementType = "OUT",
+                Quantity = 2,
+                Reason = "Ajuste de balcão / vitrine sem venda"
+            });
+            Assert.AreEqual(6, stockAdj.NewQuantity);
+
+            // 3) Reativando movimentação de vendas sem Pix: volta a registrar normalmente (Transferência)
+            var reenabled = await settingsService.UpdateStoreSettingsAsync(adminEmpId, new UpdateStoreSettingsRequest
+            {
+                StoreName = currentSettings.StoreName,
+                StoreSlug = currentSettings.StoreSlug,
+                WhatsappNumber = currentSettings.WhatsappNumber,
+                StoreDescription = currentSettings.StoreDescription,
+                ManualSalesEnabled = true
+            });
+            Assert.IsTrue(reenabled.ManualSalesEnabled);
+
+            var transferSale = await orderService.RegisterManualSaleAsync(
+                adminEmpId,
+                new RegisterManualSaleRequest(
+                    createdProduct.Id,
+                    variantId,
+                    1,
+                    "Bruna Lima",
+                    null,
+                    "Transferência",
+                    null,
+                    "Pago via TED"));
+            Assert.AreEqual("Transferência", transferSale.PaymentMethod);
+
+            var afterTransfer = await productService.GetProductByIdAsync(createdProduct.Id);
+            Assert.AreEqual(5, afterTransfer!.Variants.First().StockQuantity);
+        }
+        finally
+        {
+            CleanupDir(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task PlatformSubscriptionOrder_FullAutoDeliveryFlow_Create_RejectWrongClaimToken_Approve_AndActivateBuyerStore()
+    {
+        var (ownerRepo, ownerDir, ownerHasher, ownerStorage) = CreateEnv();
+        var (buyerRepo, buyerDir, buyerHasher, buyerStorage) = CreateEnv();
+        try
+        {
+            var ownerSettingsService = new EmployeeAndSettingsService(ownerRepo, ownerHasher, ownerStorage);
+            var ownerSubService = new PlatformSubscriptionService(ownerRepo);
+            var buyerSettingsService = new EmployeeAndSettingsService(buyerRepo, buyerHasher, buyerStorage);
+
+            // Dono configura chave Pix oficial e preços da plataforma
+            var ownerSynced = await ownerSettingsService.SyncOwnerPricingAsync(new UpdateOwnerPricingSyncRequest(
+                "dono@youlink.com.br",
+                49.90m,
+                89.90m,
+                139.90m));
+            Assert.AreEqual("dono@youlink.com.br", ownerSynced.PicpayPixKey);
+            Assert.AreEqual(139.90m, ownerSynced.PremiumPlanMonthlyPrice);
+
+            // Loja compradora começa no Plano Básico sem nada ativo
+            var initialBuyer = await buyerSettingsService.GetAdminStoreSettingsAsync();
+            Assert.AreEqual(StoreSettings.PlanTierBasic, initialBuyer.PlanTier);
+
+            // Ao clicar para comprar no checkout, cria pedido e só então recebe chave Pix e EMV
+            var order = await ownerSubService.CreatePlanOrderAsync(new CreatePlatformPlanOrderRequest(
+                PlanTier: StoreSettings.PlanTierPremium,
+                DurationMonths: 3,
+                Amount: 419.70m,
+                StoreName: "Boutique Primavera",
+                StoreSlug: "boutique-primavera",
+                DesiredDomain: "https://lojas.boutiqueprimavera.com",
+                UseOwnDedicatedServer: false,
+                BuyerUserId: Guid.NewGuid(),
+                BuyerUsername: "joana.primavera",
+                BuyerEmail: "joana@gmail.com",
+                BuyerFullName: "Joana Silva"));
+
+            Assert.AreEqual("Pendente", order.Status);
+            Assert.AreEqual("dono@youlink.com.br", order.PixKeyUsed);
+            Assert.IsTrue(!string.IsNullOrWhiteSpace(order.PixBrCode) && PixPayloadBuilder.VerifyCrc16Ccitt(order.PixBrCode));
+            Assert.IsTrue(!string.IsNullOrWhiteSpace(order.ClaimToken));
+
+            // Token errado nunca pode consultar o pedido
+            await Assert.ThrowsExceptionAsync<DomainException>(async () =>
+                await ownerSubService.GetPlanOrderStatusAsync(order.OrderNumber, "token-falso"));
+
+            var pendingStatus = await ownerSubService.GetPlanOrderStatusAsync(order.OrderNumber, order.ClaimToken);
+            Assert.IsFalse(pendingStatus.IsApproved);
+
+            // Dono aprova no YouLink Admin
+            var approvedOrder = await ownerSubService.ApprovePlanOrderAsync(order.Id, "Admin Teste");
+            Assert.AreEqual("Pago", approvedOrder.Status);
+            Assert.IsNotNull(approvedOrder.IssuedGiftCardCode);
+            Assert.IsNotNull(approvedOrder.AppliedPlanExpiresAt);
+
+            // Polling no app do comprador detecta aprovação e aplica versão paga automaticamente
+            var approvedStatus = await ownerSubService.GetPlanOrderStatusAsync(order.OrderNumber, order.ClaimToken);
+            Assert.IsTrue(approvedStatus.IsApproved);
+            Assert.AreEqual(StoreSettings.PlanTierPremium, approvedStatus.PlanTier);
+
+            var buyerActivated = await buyerSettingsService.ApplyApprovedRemotePlanAsync(approvedStatus);
+            Assert.AreEqual(StoreSettings.PlanTierPremium, buyerActivated.PlanTier);
+            Assert.AreEqual(approvedStatus.IssuedGiftCardCode, buyerActivated.ActiveGiftCardCode);
+            Assert.IsTrue(buyerActivated.IsSiteActive);
+            Assert.IsTrue(buyerActivated.PlanExpiresAt.HasValue && buyerActivated.PlanExpiresAt.Value > DateTimeOffset.UtcNow.AddDays(80));
+
+            // Idempotência: chamar ApplyApprovedRemotePlanAsync novamente mantém mesmo estado sem erro
+            var secondPass = await buyerSettingsService.ApplyApprovedRemotePlanAsync(approvedStatus);
+            Assert.AreEqual(StoreSettings.PlanTierPremium, secondPass.PlanTier);
+            Assert.AreEqual(approvedStatus.IssuedGiftCardCode, secondPass.ActiveGiftCardCode);
+        }
+        finally
+        {
+            CleanupDir(ownerDir);
+            CleanupDir(buyerDir);
+        }
+    }
+
+    [TestMethod]
+    public void PlanCheckoutAndPlansPages_MustHideOwnerPixKey_UntilUserClicksBuyButton()
+    {
+        var root = FindRepoRoot();
+
+        var plansPage = File.ReadAllText(Path.Combine(root, "Components", "Pages", "PlansPage.razor"), Encoding.UTF8);
+        Assert.IsFalse(plansPage.Contains("@_settings.PicpayPixKey", StringComparison.Ordinal),
+            "PlansPage não deve exibir a chave Pix do dono antes do clique de compra.");
+
+        var checkoutPage = File.ReadAllText(Path.Combine(root, "Components", "Pages", "PlanCheckoutPage.razor"), Encoding.UTF8);
+        Assert.IsFalse(checkoutPage.Contains("@_settings.PicpayPixKey", StringComparison.Ordinal),
+            "PlanCheckoutPage não pode exibir @_settings.PicpayPixKey antes do clique de compra.");
+        Assert.IsFalse(checkoutPage.Contains("_settings.PicpayPixKey", StringComparison.Ordinal),
+            "PlanCheckoutPage deve usar somente @_activePlanOrder.PixKeyUsed após o clique de compra.");
+        Assert.IsTrue(checkoutPage.Contains("_activePlanOrder is null", StringComparison.Ordinal),
+            "PlanCheckoutPage deve manter a chave Pix oculta enquanto _activePlanOrder for nulo.");
+        Assert.IsTrue(checkoutPage.Contains("@_activePlanOrder.PixKeyUsed", StringComparison.Ordinal),
+            "PlanCheckoutPage deve exibir a chave Pix somente após criar _activePlanOrder.");
+        Assert.IsTrue(checkoutPage.Contains("ConfirmDirectMobilePlanOrderAsync", StringComparison.Ordinal));
+
+        var dashboardPath = Path.Combine(root, "src", "ClothingStore.AdminApp", "Components", "Pages", "Dashboard.razor");
+        if (File.Exists(dashboardPath))
+        {
+            var dashboard = File.ReadAllText(dashboardPath, Encoding.UTF8);
+            Assert.IsTrue(dashboard.Contains("ApprovePlanOrderAsync", StringComparison.Ordinal),
+                "YouLink Admin Dashboard deve permitir confirmar Pix e liberar plano automático em 1 clique.");
+        }
+
+        var salesRegistryPath = Path.Combine(root, "src", "ClothingStore.AdminApp", "Components", "Pages", "SalesRegistryPage.razor");
+        if (File.Exists(salesRegistryPath))
+        {
+            var salesRegistry = File.ReadAllText(salesRegistryPath, Encoding.UTF8);
+            Assert.IsTrue(salesRegistry.Contains("Gateway.DataUpdated", StringComparison.Ordinal),
+                "SalesRegistryPage precisa atualizar ao vivo quando pedidos de planos chegarem.");
+        }
+    }
+
+    [TestMethod]
+    public async Task AdminApiClient_ShouldSendSyncKey_ForPlanOrderApproval_AndOwnerPricingSync()
+    {
+        var handler = new CapturingHttpHandler(req =>
+        {
+            var path = req.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.EndsWith("/owner-pricing", StringComparison.OrdinalIgnoreCase))
+            {
+                var dto = new AdminStoreSettingsDto(
+                    Guid.NewGuid(),
+                    "Loja Owner",
+                    "loja-owner",
+                    "5511999999999",
+                    "Desc",
+                    null,
+                    null,
+                    3,
+                    DateTimeOffset.UtcNow,
+                    PlanTier: StoreSettings.PlanTierPremium,
+                    PicpayPixKey: "pix@dono.com");
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(dto)
+                };
+            }
+
+            var orderDto = new PlatformSubscriptionOrderDto(
+                Guid.NewGuid(), "YLK-20261114-1234", "tok", StoreSettings.PlanTierPremium,
+                1, 30, 129.90m, "Loja X", "loja-x", "https://lojas.lojax.com", false,
+                null, "u", "u@gmail.com", "U", "pix@dono.com", "", "Pago",
+                "LUXO-PREM-30D-AAAABBBB", DateTimeOffset.UtcNow.AddDays(30), DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow, "Admin", "OK");
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(orderDto)
+            };
+        });
+
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.invalid") };
+        var client = new AdminApiClient(http);
+
+        await client.PushOwnerPricingSyncAsync(
+            new UpdateOwnerPricingSyncRequest("pix@dono.com", 49.90m, 89.90m, 129.90m),
+            syncSecret: "chave-secreta-sync");
+        Assert.AreEqual("POST", handler.LastMethod);
+        Assert.AreEqual("/api/platform-sync/owner-pricing", handler.LastRequestUri?.AbsolutePath);
+        Assert.AreEqual("chave-secreta-sync", handler.LastHeaders["X-YouLink-Sync-Key"]);
+
+        var orderId = Guid.NewGuid();
+        await client.ApprovePlatformPlanOrderRemoteAsync(orderId, syncSecret: "chave-secreta-sync");
+        Assert.AreEqual("POST", handler.LastMethod);
+        Assert.AreEqual($"/api/platform-sync/plan-orders/{orderId}/approve", handler.LastRequestUri?.AbsolutePath);
+        Assert.AreEqual("chave-secreta-sync", handler.LastHeaders["X-YouLink-Sync-Key"]);
+    }
+}

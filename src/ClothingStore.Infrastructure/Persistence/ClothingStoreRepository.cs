@@ -155,6 +155,7 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
         }
 
         state.Orders ??= [];
+        state.PlatformSubscriptionOrders ??= [];
     }
 
     private static readonly Guid LegacyDefaultAdminUserId = Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111");
@@ -1004,6 +1005,81 @@ public sealed class ClothingStoreRepository : IClothingStoreRepository
             {
                 _state.Orders.Add(order);
             }
+
+            PersistToDisk(_state);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<PlatformSubscriptionOrder>> GetPlatformSubscriptionOrdersAsync(CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            _state.PlatformSubscriptionOrders ??= [];
+            return _state.PlatformSubscriptionOrders
+                .OrderByDescending(o => o.CreatedAt)
+                .ToList();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<PlatformSubscriptionOrder?> GetPlatformSubscriptionOrderByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            _state.PlatformSubscriptionOrders ??= [];
+            return _state.PlatformSubscriptionOrders.FirstOrDefault(o => o.Id == id);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<PlatformSubscriptionOrder?> GetPlatformSubscriptionOrderByNumberAsync(string orderNumber, CancellationToken ct = default)
+    {
+        var normalized = (orderNumber ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            _state.PlatformSubscriptionOrders ??= [];
+            return _state.PlatformSubscriptionOrders.FirstOrDefault(o =>
+                string.Equals(o.OrderNumber, normalized, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task SavePlatformSubscriptionOrderAsync(PlatformSubscriptionOrder order, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        await _lock.WaitAsync(ct);
+        try
+        {
+            RefreshFromDiskIfModified();
+            _state.PlatformSubscriptionOrders ??= [];
+            var idx = _state.PlatformSubscriptionOrders.FindIndex(o => o.Id == order.Id);
+            if (idx >= 0)
+                _state.PlatformSubscriptionOrders[idx] = order;
+            else
+                _state.PlatformSubscriptionOrders.Add(order);
 
             PersistToDisk(_state);
         }

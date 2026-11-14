@@ -317,70 +317,112 @@ else
                 </div>
             </div>
 
-            <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-accent); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.65rem;">
-                <div style="font-size: 0.85rem; font-weight: 800;">💸 Pagamento Direto no Celular (Pix)</div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                    <code style="flex: 1; font-size: 0.92rem; padding: 0.45rem 0.6rem; border-radius: 6px; background: var(--adm-card); border: 1px solid var(--adm-border); overflow-wrap: anywhere;">
-                        @_settings.PicpayPixKey
-                    </code>
-                    <button type="button"
-                            class="adm-btn adm-btn-outline"
-                            style="white-space: nowrap;"
-                            @onclick="CopyPixKeyAsync">
-                        @(_copiedPix ? "✓ Chave Copiada!" : "📋 Copiar Chave")
-                    </button>
+            @if (_planAutoActivatedResult is not null)
+            {
+                <div style="padding: 1rem; border-radius: 10px; background: rgba(22, 163, 74, 0.14); border: 1.5px solid var(--adm-success); display: flex; flex-direction: column; gap: 0.55rem;">
+                    <div style="font-weight: 800; color: var(--adm-success); font-size: 1.02rem;">
+                        🎉 Pagamento Confirmado! Sua Versão Paga Chegou Automaticamente!
+                    </div>
+                    <div style="font-size: 0.86rem; color: var(--adm-text); line-height: 1.5;">
+                        O pedido <strong>@_planAutoActivatedResult.OrderNumber</strong> foi aprovado e o plano
+                        <strong>@GetPlanTitle(_planAutoActivatedResult.PlanTier)</strong> já está ativo nesta loja
+                        @if (_planAutoActivatedResult.AppliedPlanExpiresAt.HasValue)
+                        {
+                            <span> até <strong>@_planAutoActivatedResult.AppliedPlanExpiresAt.Value.ToLocalTime().ToString("dd/MM/yyyy")</strong></span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_planAutoActivatedResult.IssuedGiftCardCode))
+                        {
+                            <span> (Comprovante: <code>@_planAutoActivatedResult.IssuedGiftCardCode</code>)</span>
+                        }.
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="/configuracoes-loja" class="adm-btn adm-btn-success">✨ Abrir Loja &amp; Visual Liberado</a>
+                        <a href="/" class="adm-btn adm-btn-outline">Ir para o Painel</a>
+                    </div>
+                </div>
+            }
+            else if (_activePlanOrder is null)
+            {
+                <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-border); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.45rem;">
+                    <div style="font-size: 0.85rem; font-weight: 800; color: var(--adm-text);">
+                        🔒 A chave Pix aparece somente após você confirmar a compra abaixo
+                    </div>
+                    <div style="font-size: 0.79rem; color: var(--adm-muted); line-height: 1.45;">
+                        Quando você clicar no botão abaixo, geraremos o pedido e mostraremos a chave Pix oficial + QR Code exato (@TotalOrderAmount.ToString("C")).
+                        Assim que o pagamento for confirmado, a sua versão paga chega automaticamente no aplicativo — sem precisar digitar código!
+                    </div>
                 </div>
 
-                @if (!string.IsNullOrWhiteSpace(PlanPixBrCode))
-                {
-                    var planPixQrUri = ClothingStore.Shared.Helpers.WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(PlanPixBrCode);
-                    <div style="border-top: 1px solid var(--adm-border); padding-top: 0.65rem; display: flex; flex-direction: column; gap: 0.55rem;">
-                        <div style="font-size: 0.78rem; font-weight: 700; color: var(--adm-success);">
-                            ✅ Pix EMV gerado com valor EXATO para esta venda (@TotalOrderAmount.ToString("C")):
+                <button type="button"
+                        class="adm-btn adm-btn-success"
+                        style="text-align: center; padding: 0.95rem; font-size: 0.96rem; font-weight: 800;"
+                        disabled="@_creatingPlanOrder"
+                        @onclick="ConfirmDirectMobilePlanOrderAsync">
+                    @(_creatingPlanOrder ? "Gerando pedido e liberando chave Pix..." : $"💳 Confirmar Compra e Liberar Chave Pix ({TotalOrderAmount.ToString("C")})")
+                </button>
+            }
+            else
+            {
+                <div style="background: var(--adm-surface-subtle); border: 1.5px solid var(--adm-accent); border-radius: 10px; padding: 0.95rem; display: flex; flex-direction: column; gap: 0.7rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                        <div style="font-size: 0.88rem; font-weight: 800;">
+                            💸 Chave Pix Liberada — Pedido @_activePlanOrder.OrderNumber
                         </div>
-                        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-                            <img src="@planPixQrUri"
-                                 alt="QR Code Pix no valor exato"
-                                 style="width: 112px; height: 112px; border-radius: 8px; background: #FFFFFF; padding: 5px; border: 1px solid var(--adm-border);" />
-                            <div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 0.45rem;">
-                                <input type="text" readonly class="adm-input" value="@PlanPixBrCode" style="width: 100%; font-family: monospace; font-size: 0.74rem;" />
-                                <button type="button"
-                                        class="adm-btn adm-btn-primary"
-                                        style="white-space: nowrap; align-self: flex-start;"
-                                        @onclick="CopyPlanPixBrCodeAsync">
-                                    @(_copiedPlanBrCode ? "✓ Pix EMV Copiado!" : "📋 Copiar Pix Copia e Cola Exato")
-                                </button>
+                        <span class="pill-badge pill-gold">Aguardando Pix</span>
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <code style="flex: 1; font-size: 0.94rem; padding: 0.5rem 0.65rem; border-radius: 6px; background: var(--adm-card); border: 1px solid var(--adm-border); overflow-wrap: anywhere;">
+                            @_activePlanOrder.PixKeyUsed
+                        </code>
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                style="white-space: nowrap;"
+                                @onclick="CopyPixKeyAsync">
+                            @(_copiedPix ? "✓ Chave Copiada!" : "📋 Copiar Chave Pix")
+                        </button>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_activePlanOrder.PixBrCode))
+                    {
+                        var planPixQrUri = ClothingStore.Shared.Helpers.WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(_activePlanOrder.PixBrCode);
+                        <div style="border-top: 1px solid var(--adm-border); padding-top: 0.65rem; display: flex; flex-direction: column; gap: 0.55rem;">
+                            <div style="font-size: 0.79rem; font-weight: 700; color: var(--adm-success);">
+                                ✅ Pix Copia e Cola no valor exato (@_activePlanOrder.Amount.ToString("C")):
+                            </div>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                                <img src="@planPixQrUri"
+                                     alt="QR Code Pix no valor exato"
+                                     style="width: 112px; height: 112px; border-radius: 8px; background: #FFFFFF; padding: 5px; border: 1px solid var(--adm-border);" />
+                                <div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 0.45rem;">
+                                    <input type="text" readonly class="adm-input" value="@_activePlanOrder.PixBrCode" style="width: 100%; font-family: monospace; font-size: 0.74rem;" />
+                                    <button type="button"
+                                            class="adm-btn adm-btn-primary"
+                                            style="white-space: nowrap; align-self: flex-start;"
+                                            @onclick="CopyPlanPixBrCodeAsync">
+                                        @(_copiedPlanBrCode ? "✓ Pix EMV Copiado!" : "📋 Copiar Pix Copia e Cola")
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                }
-                else
-                {
-                    <div style="border-top: 1px solid var(--adm-border); padding-top: 0.55rem; font-size: 0.76rem; color: var(--adm-muted); line-height: 1.45;">
-                        ⚠️ Para gerar automaticamente o <strong>QR Code e Pix Copia e Cola com valor exato (@TotalOrderAmount.ToString("C"))</strong>, a chave recebedora precisa ser uma chave Pix válida (CPF, CNPJ, E-mail, Celular ou Chave Aleatória) — não um link placeholder como <code>picpay.me/sua-conta</code>.
-                    </div>
-                }
-            </div>
+                    }
 
-            <button type="button"
-                    class="adm-btn adm-btn-success"
-                    style="text-align: center; padding: 0.95rem; font-size: 0.96rem; font-weight: 800;"
-                    @onclick="ConfirmDirectMobilePlanOrderAsync">
-                📱 Confirmar Compra Direto no Celular
-            </button>
+                    <div style="border-top: 1px solid var(--adm-border); padding-top: 0.6rem; font-size: 0.79rem; color: var(--adm-muted); line-height: 1.45;">
+                        ⏳ <strong>Verificação automática ativa:</strong> assim que você transferir e o administrador confirmar no painel, a sua versão paga será entregue automaticamente aqui neste aparelho.
+                    </div>
 
-            @if (_confirmedMobilePlanReceipt is not null)
-            {
-                <div style="padding: 0.9rem; border-radius: 10px; background: rgba(22, 163, 74, 0.12); border: 1px solid var(--adm-success); display: flex; flex-direction: column; gap: 0.45rem;">
-                    <div style="font-weight: 800; color: var(--adm-success); font-size: 0.96rem;">
-                        ✅ Pedido @_confirmedMobilePlanReceipt.Protocolo registrado direto no app!
-                    </div>
-                    <div style="font-size: 0.82rem; color: var(--adm-text); line-height: 1.45;">
-                        <strong>@_confirmedMobilePlanReceipt.PlanTitle</strong> (@_confirmedMobilePlanReceipt.DurationLabel) — <strong>@_confirmedMobilePlanReceipt.AmountText</strong><br />
-                        Loja: <strong>@_confirmedMobilePlanReceipt.StoreName</strong> | Domínio: <strong>@_confirmedMobilePlanReceipt.Domain</strong>
-                    </div>
-                    <div style="font-size: 0.78rem; color: var(--adm-muted); line-height: 1.45;">
-                        Conclua o Pix pelo aplicativo do seu banco usando a chave ou Copia e Cola acima. Assim que receber seu código de ativação, resgate-o logo abaixo na hora — sem precisar usar WhatsApp!
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button type="button"
+                                class="adm-btn adm-btn-success"
+                                disabled="@_checkingOrderStatus"
+                                @onclick="CheckOrderStatusNowAsync">
+                            @(_checkingOrderStatus ? "Verificando..." : "🔄 Já paguei — Verificar Agora")
+                        </button>
+                        <button type="button"
+                                class="adm-btn adm-btn-outline"
+                                @onclick="CancelActivePendingOrder">
+                            ✕ Alterar Plano / Cancelar
+                        </button>
                     </div>
                 </div>
             }
@@ -465,31 +507,13 @@ else
     private string? _error;
     private string? _successMessage;
     private bool _copiedPlanBrCode;
-    private MobilePlanReceipt? _confirmedMobilePlanReceipt;
+    private bool _creatingPlanOrder;
+    private bool _checkingOrderStatus;
+    private PlatformSubscriptionOrderDto? _activePlanOrder;
+    private PlatformPlanOrderStatusDto? _planAutoActivatedResult;
+    private CancellationTokenSource? _pollingCts;
 
-    private sealed record MobilePlanReceipt(
-        string Protocolo,
-        string PlanTitle,
-        string DurationLabel,
-        string AmountText,
-        string StoreName,
-        string Domain);
-
-    private string? PlanPixBrCode
-    {
-        get
-        {
-            if (_settings is null || !ClothingStore.Shared.Helpers.PixPayloadBuilder.IsValidPixKey(_settings.PicpayPixKey))
-                return null;
-
-            return ClothingStore.Shared.Helpers.PixPayloadBuilder.BuildBrCode(
-                _settings.PicpayPixKey,
-                string.IsNullOrWhiteSpace(_settings.StorePixReceiverName) ? _settings.StoreName : _settings.StorePixReceiverName,
-                _settings.OriginCity,
-                TotalOrderAmount,
-                _confirmedMobilePlanReceipt?.Protocolo ?? $"YLK{_durationMonths}M");
-        }
-    }
+    private string? PlanPixBrCode => _activePlanOrder?.PixBrCode;
 
     private decimal RegularMonthlyPrice => _settings is null ? 0m : _selectedTier switch
     {
@@ -539,14 +563,17 @@ else
                 ? $"Conta Google Pro verificada ({_settings.GoogleAccountEmail})"
                 : "Padrão";
 
+            var pixLine = _activePlanOrder is not null
+                ? $"\nPedido: {_activePlanOrder.OrderNumber} (Pix: {_activePlanOrder.PixKeyUsed})"
+                : string.Empty;
+
             var msg =
                 $"Olá! Quero contratar o {GetPlanTitle(_selectedTier)} ({DurationLabel}) — Total: {TotalOrderAmount:C}.\n" +
                 $"Loja: {store}\n" +
                 $"Endereço/Domínio (incluso no plano): {domainText}\n" +
                 $"Infraestrutura: {hostingText}\n" +
                 $"Conta Google: {googleText}\n" +
-                $"Usuário/Gmail: {contactText}\n" +
-                $"Chave Pix informada: {_settings.PicpayPixKey}";
+                $"Usuário/Gmail: {contactText}{pixLine}";
 
             return $"https://wa.me/{digits}?text={Uri.EscapeDataString(msg)}";
         }
@@ -616,6 +643,26 @@ else
 
             if (string.Equals(_settings.ServerHostingMode, GoogleAccountTierVerifier.HostingModeDedicatedOwnServer, StringComparison.OrdinalIgnoreCase))
                 _useOwnDedicatedServer = true;
+
+            var pending = Gateway.GetPendingPlanOrder();
+            if (pending is not null)
+            {
+                var status = await Gateway.CheckAndApplyPendingPlanOrderAsync(pending.OrderNumber, pending.ClaimToken);
+                if (status?.IsApproved == true)
+                {
+                    _planAutoActivatedResult = status;
+                    _activePlanOrder = null;
+                    _settings = await Gateway.GetPlanCatalogSettingsAsync();
+                    BrandState.ApplyFromAdminSettings(_settings);
+                }
+                else if (status is null || !string.Equals(status.Status, "Cancelado", StringComparison.OrdinalIgnoreCase))
+                {
+                    _activePlanOrder = pending;
+                    _selectedTier = NormalizeTier(pending.PlanTier);
+                    _durationMonths = pending.DurationMonths;
+                    StartPlanPollingLoop();
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -629,6 +676,9 @@ else
 
     private void SelectTier(string tier)
     {
+        StopPlanPollingLoop();
+        _activePlanOrder = null;
+        Gateway.ClearPendingPlanOrder();
         _selectedTier = tier;
         _error = null;
         Navigation.NavigateTo($"/contratar-plano/{tier}", replace: true);
@@ -636,18 +686,19 @@ else
 
     private async Task CopyPixKeyAsync()
     {
-        if (_settings is null)
+        var key = _activePlanOrder?.PixKeyUsed;
+        if (string.IsNullOrWhiteSpace(key))
             return;
 
         try
         {
-            await Clipboard.Default.SetTextAsync(_settings.PicpayPixKey);
+            await Clipboard.Default.SetTextAsync(key);
             _copiedPix = true;
-            _successMessage = $"Chave Pix '{_settings.PicpayPixKey}' copiada para a área de transferência.";
+            _successMessage = $"Chave Pix '{key}' copiada para a área de transferência.";
         }
         catch
         {
-            _successMessage = $"Copie manualmente a chave Pix: {_settings.PicpayPixKey}";
+            _successMessage = $"Copie manualmente a chave Pix: {key}";
         }
     }
 
@@ -668,23 +719,175 @@ else
         }
     }
 
-    private void ConfirmDirectMobilePlanOrderAsync()
+    private async Task ConfirmDirectMobilePlanOrderAsync()
     {
         if (_settings is null)
             return;
 
         _error = null;
-        var store = string.IsNullOrWhiteSpace(_customerStoreName) ? _settings.StoreName : _customerStoreName.Trim();
-        var domainText = string.IsNullOrWhiteSpace(_desiredDomain) ? "incluso no plano" : _desiredDomain.Trim();
-        var protocol = $"YLK-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
-        _confirmedMobilePlanReceipt = new MobilePlanReceipt(
-            protocol,
-            GetPlanTitle(_selectedTier),
-            DurationLabel,
-            TotalOrderAmount.ToString("C"),
-            store,
-            domainText);
-        _successMessage = $"Pedido {protocol} registrado direto pelo celular! Faça o Pix usando o Copia e Cola acima.";
+        _successMessage = null;
+        _planAutoActivatedResult = null;
+        _creatingPlanOrder = true;
+
+        try
+        {
+            var store = string.IsNullOrWhiteSpace(_customerStoreName) ? _settings.StoreName : _customerStoreName.Trim();
+            var slug = ClothingStore.Domain.Entities.Category.GenerateSlug(store);
+            var domainText = string.IsNullOrWhiteSpace(_desiredDomain) ? $"https://lojas.{slug}.com" : _desiredDomain.Trim();
+            var created = await Gateway.CreatePlatformPlanPurchaseOrderAsync(new CreatePlatformPlanOrderRequest(
+                PlanTier: _selectedTier,
+                DurationMonths: _durationMonths,
+                Amount: TotalOrderAmount,
+                StoreName: store,
+                StoreSlug: slug,
+                DesiredDomain: domainText,
+                UseOwnDedicatedServer: _useOwnDedicatedServer,
+                BuyerUserId: Gateway.CurrentEmployee?.UserId,
+                BuyerUsername: Gateway.CurrentEmployee?.Username,
+                BuyerEmail: string.IsNullOrWhiteSpace(_customerContact) ? Gateway.CurrentEmployee?.Email : _customerContact.Trim(),
+                BuyerFullName: Gateway.CurrentEmployee?.FullName));
+
+            _activePlanOrder = created;
+            _copiedPix = false;
+            _copiedPlanBrCode = false;
+            _successMessage = created.Message;
+            StartPlanPollingLoop();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _creatingPlanOrder = false;
+        }
+    }
+
+    private async Task CheckOrderStatusNowAsync()
+    {
+        if (_activePlanOrder is null)
+            return;
+
+        _checkingOrderStatus = true;
+        _error = null;
+        try
+        {
+            var status = await Gateway.CheckAndApplyPendingPlanOrderAsync(
+                _activePlanOrder.OrderNumber,
+                _activePlanOrder.ClaimToken);
+
+            if (status is null)
+                return;
+
+            if (status.IsApproved)
+            {
+                StopPlanPollingLoop();
+                _planAutoActivatedResult = status;
+                _activePlanOrder = null;
+                _settings = await Gateway.GetPlanCatalogSettingsAsync();
+                BrandState.ApplyFromAdminSettings(_settings);
+                _successMessage = $"🎉 Pagamento Pix do pedido {status.OrderNumber} confirmado! Plano {GetPlanTitle(status.PlanTier)} liberado automaticamente.";
+            }
+            else if (string.Equals(status.Status, "Cancelado", StringComparison.OrdinalIgnoreCase))
+            {
+                StopPlanPollingLoop();
+                _activePlanOrder = null;
+                _error = status.Message;
+            }
+            else
+            {
+                _successMessage = status.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _checkingOrderStatus = false;
+        }
+    }
+
+    private void CancelActivePendingOrder()
+    {
+        StopPlanPollingLoop();
+        _activePlanOrder = null;
+        _planAutoActivatedResult = null;
+        Gateway.ClearPendingPlanOrder();
+        _successMessage = null;
+    }
+
+    private void StartPlanPollingLoop()
+    {
+        StopPlanPollingLoop();
+        if (_activePlanOrder is null)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _pollingCts = cts;
+        var orderNumber = _activePlanOrder.OrderNumber;
+        var claimToken = _activePlanOrder.ClaimToken;
+
+        _ = Task.Run(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(cts.Token))
+                {
+                    var status = await Gateway.CheckAndApplyPendingPlanOrderAsync(orderNumber, claimToken, cts.Token);
+                    if (status is null)
+                        continue;
+
+                    if (status.IsApproved)
+                    {
+                        await InvokeAsync(async () =>
+                        {
+                            StopPlanPollingLoop();
+                            _planAutoActivatedResult = status;
+                            _activePlanOrder = null;
+                            _settings = await Gateway.GetPlanCatalogSettingsAsync();
+                            BrandState.ApplyFromAdminSettings(_settings);
+                            _successMessage = $"🎉 Pagamento Pix confirmado! Seu plano {GetPlanTitle(status.PlanTier)} foi liberado automaticamente!";
+                            StateHasChanged();
+                        });
+                        break;
+                    }
+
+                    if (string.Equals(status.Status, "Cancelado", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await InvokeAsync(() =>
+                        {
+                            StopPlanPollingLoop();
+                            _activePlanOrder = null;
+                            _error = status.Message;
+                            StateHasChanged();
+                        });
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }, cts.Token);
+    }
+
+    private void StopPlanPollingLoop()
+    {
+        try
+        {
+            _pollingCts?.Cancel();
+            _pollingCts?.Dispose();
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _pollingCts = null;
+        }
     }
 
     private async Task OpenWhatsAppOrderAsync()
@@ -814,9 +1017,9 @@ else
             "Servidor em nuvem 24h + Certificado HTTPS já inclusos (R$ 0,00 extra)",
             "Domínio / Endereço da loja incluso + opção de domínio próprio sem taxa adicional",
             "Todas as 5 versões pré-prontas incluídas",
-            "Vendas diretas no app apenas por Pix (ativável), limite de distância e cálculo dos Correios",
-            "Estúdio Visual completo: paleta, tipografia, bordas e espaçamento livres",
-            "Textos editoriais e grade configuráveis em tempo real"
+            "Vendas normais (Dinheiro, Cartão, WhatsApp) + Pix direto no app (opcional e ativável)",
+            "Controle normal de estoque liberado sempre, limite de distância e frete dos Correios",
+            "Estúdio Visual completo: paleta, tipografia, bordas e espaçamento livres"
         ],
         StoreDesignPresets.PlanBasic =>
         [
@@ -830,13 +1033,14 @@ else
             "Servidor em nuvem 24h + Certificado HTTPS já inclusos (R$ 0,00 extra)",
             "Domínio / Endereço da loja já incluído no valor mensal",
             "Escolha livre entre 5 versões pré-prontas de vitrine",
-            "Vendas diretas no app apenas por Pix (ativável), limite de distância e cálculo dos Correios",
+            "Vendas normais (Dinheiro, Cartão, WhatsApp) + Pix direto no app (opcional e ativável)",
             "Visual calibrado e não configurável (troca instantânea com 1 clique)"
         ]
     };
 
     public void Dispose()
     {
+        StopPlanPollingLoop();
         Gateway.AuthStateChanged -= OnAuthStateChanged;
     }
 }

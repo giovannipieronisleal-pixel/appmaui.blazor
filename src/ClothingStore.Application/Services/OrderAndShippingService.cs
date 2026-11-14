@@ -448,6 +448,14 @@ public sealed class OrderAndShippingService
                 "O registro de vendas diretas e o painel de quanto vendeu exigem o plano Meia Versão (Intermediário) ou Premium.");
         }
 
+        var normalizedPaymentMethod = StoreOrder.NormalizeManualPaymentMethod(request.PaymentMethod);
+        if (!string.Equals(normalizedPaymentMethod, StoreOrder.PaymentMethodPixOnly, StringComparison.OrdinalIgnoreCase) &&
+            !settings.ManualSalesEnabled)
+        {
+            throw new DomainException(
+                "A movimentação e registro de vendas sem Pix está desativada nas Configurações da Loja. Ative-a em 'Loja & Visual' ou use a aba 'Estoque' para entradas e saídas normais.");
+        }
+
         if (employeeId == Guid.Empty)
             throw new DomainException("Usuário inválido para registrar a venda.");
 

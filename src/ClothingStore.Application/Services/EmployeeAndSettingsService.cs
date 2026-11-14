@@ -329,6 +329,11 @@ public sealed class EmployeeAndSettingsService
                 employeeId);
         }
 
+        if (request.ManualSalesEnabled.HasValue)
+        {
+            settings.SetManualSalesEnabled(request.ManualSalesEnabled.Value, employeeId);
+        }
+
         await _repository.UpdateStoreSettingsAsync(settings, ct);
         return MapToAdminSettingsDto(settings);
     }
@@ -553,6 +558,84 @@ public sealed class EmployeeAndSettingsService
             s.GoogleAccountVerifiedAt,
             s.QualifiesForDedicatedServerBenefit(),
             s.ActivePlanBillingKind,
-            s.DomainAcquisitionMode);
+            s.DomainAcquisitionMode,
+            s.ManualSalesEnabled);
+
+    public async Task<AdminStoreSettingsDto> SyncOwnerPricingAsync(
+        UpdateOwnerPricingSyncRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var pixKey = (request.PicpayPixKey ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(pixKey))
+            throw new DomainException("Informe a Chave Pix oficial para sincronizar os preços da plataforma.");
+
+        if (request.BasicPlanMonthlyPrice <= 0m ||
+            request.IntermediaryPlanMonthlyPrice <= 0m ||
+            request.PremiumPlanMonthlyPrice <= 0m)
+        {
+            throw new DomainException("Todos os valores mensais dos planos devem ser maiores que zero.");
+        }
+
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        settings.PicpayPixKey = pixKey;
+        settings.BasicPlanMonthlyPrice = Math.Round(request.BasicPlanMonthlyPrice, 2, MidpointRounding.AwayFromZero);
+        settings.IntermediaryPlanMonthlyPrice = Math.Round(request.IntermediaryPlanMonthlyPrice, 2, MidpointRounding.AwayFromZero);
+        settings.PremiumPlanMonthlyPrice = Math.Round(request.PremiumPlanMonthlyPrice, 2, MidpointRounding.AwayFromZero);
+        settings.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        return MapToAdminSettingsDto(settings);
+    }
+
+    public async Task<AdminStoreSettingsDto> ApplyApprovedRemotePlanAsync(
+        PlatformPlanOrderStatusDto status,
+        Guid? employeeId = null,
+        CancellationToken ct = default)
+    {
+        if (status is null || !status.IsApproved)
+            throw new DomainException("Este pedido ainda não foi confirmado pelo administrador.");
+
+        var settings = await _repository.GetStoreSettingsAsync(ct);
+        var targetTier = StoreSettings.NormalizePlanTier(status.PlanTier);
+        var normalizedGiftCode = string.IsNullOrWhiteSpace(status.IssuedGiftCardCode)
+            ? settings.ActiveGiftCardCode
+            : status.IssuedGiftCardCode.Trim().ToUpperInvariant();
+
+        if (!string.IsNullOrWhiteSpace(normalizedGiftCode) &&
+            string.Equals(settings.ActiveGiftCardCode, normalizedGiftCode, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(settings.PlanTier, targetTier, StringComparison.OrdinalIgnoreCase) &&
+            settings.IsLicenseActive())
+        {
+            return MapToAdminSettingsDto(settings);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var nextExpiry = status.AppliedPlanExpiresAt ?? now.AddDays(Math.Max(1, status.DurationDays));
+
+        settings.UpdatePlanAndDesign(targetTier);
+        settings.PlanActivatedAt = status.ApprovedAt ?? now;
+        settings.PlanExpiresAt = nextExpiry;
+        settings.ActivePlanBillingKind = PlanActivationCode.BillingKindPaid;
+        settings.ActiveGiftCardCode = normalizedGiftCode;
+
+        if (!string.IsNullOrWhiteSpace(status.DesiredDomain) &&
+            (status.DesiredDomain.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             status.DesiredDomain.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                settings.ConfigureDomainChoice(null, status.DesiredDomain, employeeId);
+            }
+            catch
+            {
+            }
+        }
+
+        settings.ActivateSite(employeeId);
+        await _repository.UpdateStoreSettingsAsync(settings, ct);
+        return MapToAdminSettingsDto(settings);
+    }
 }
 
