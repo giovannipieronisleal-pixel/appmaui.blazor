@@ -355,6 +355,8 @@ html, body {
     padding: var(--brand-pad);
     box-shadow: var(--adm-shadow);
     color: var(--adm-text);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .adm-section-title {

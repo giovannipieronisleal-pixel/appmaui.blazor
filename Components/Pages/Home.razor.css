@@ -1,0 +1,107 @@
+.adm-dash-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.adm-dash-ops-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(min(100%, 280px), 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.adm-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.adm-sales-mini-card {
+    min-width: 0;
+    padding: 0.95rem 1.05rem;
+}
+
+.adm-sales-mini-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+}
+
+.adm-sales-mini-title {
+    margin: 0;
+    font-size: 0.96rem;
+    font-weight: 700;
+}
+
+.adm-sales-mini-link {
+    font-size: 0.8rem;
+    color: var(--adm-accent);
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.adm-sales-mini-empty {
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--adm-muted);
+}
+
+.adm-sales-mini-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.adm-sales-mini-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.45rem 0;
+    border-top: 1px dashed color-mix(in srgb, var(--adm-border) 70%, transparent);
+    font-size: 0.84rem;
+    min-width: 0;
+}
+
+.adm-sales-mini-item:first-child {
+    border-top: none;
+    padding-top: 0.15rem;
+}
+
+.adm-sales-mini-item:last-child {
+    padding-bottom: 0.1rem;
+}
+
+.adm-sales-mini-what {
+    font-weight: 600;
+    color: var(--adm-text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.adm-sales-mini-who {
+    flex-shrink: 0;
+    max-width: 44%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--adm-muted);
+    font-size: 0.79rem;
+    font-weight: 500;
+    text-align: right;
+}
+
+@media (max-width: 980px) {
+    .adm-dash-ops-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

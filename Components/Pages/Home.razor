@@ -10,7 +10,7 @@
     <div>
         <h1 style="font-size: 1.65rem; font-weight: 700; margin: 0;">Dashboard Operacional</h1>
         <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0.25rem 0 0;">
-            Visão geral em tempo real dos produtos, unidades em estoque e últimas movimentações.
+            Visão geral em tempo real dos produtos, estoque e últimas vendas.
         </p>
     </div>
 
@@ -75,7 +75,7 @@
         </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem;">
+    <div class="adm-dash-status-grid">
         <!-- Visibilidade do Site Público & Plano -->
         @if (_publicStore is not null)
         {
@@ -161,6 +161,9 @@
             </section>
         }
 
+    </div>
+
+    <div class="adm-dash-ops-grid">
         <!-- Alertas de Estoque Baixo e Sem Estoque -->
         <section class="adm-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
@@ -176,112 +179,78 @@
             }
             else
             {
-                <table class="adm-table">
-                    <thead>
-                        <tr>
-                            <th>Produto / Variante</th>
-                            <th>SKU</th>
-                            <th>Saldo</th>
-                            <th>Status</th>
-                            <th>Ação</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var alert in _summary.StockAlerts)
-                        {
+                <div class="adm-table-wrap">
+                    <table class="adm-table">
+                        <thead>
                             <tr>
-                                <td data-label="Peça">
-                                    <div>
-                                        <div style="font-weight: 700;">@alert.ProductName</div>
-                                        <div style="font-size: 0.82rem; color: var(--adm-muted);">
-                                            Cor: @alert.Color &bull; Tam: <strong>@alert.Size</strong>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td data-label="SKU" style="font-size: 0.82rem; color: var(--adm-muted);">@alert.Sku</td>
-                                <td data-label="Saldo" style="font-weight: 800;">@alert.StockQuantity un.</td>
-                                <td data-label="Status">
-                                    @if (alert.IsOutOfStock)
-                                    {
-                                        <span class="pill-badge pill-red">Sem estoque</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="pill-badge pill-amber">Estoque baixo (&le; @alert.LowStockThreshold)</span>
-                                    }
-                                </td>
-                                <td data-label="Ação">
-                                    <a href="/produtos/@alert.ProductId" class="adm-btn adm-btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;">
-                                        Editar / Repor
-                                    </a>
-                                </td>
+                                <th>Produto / Variante</th>
+                                <th>SKU</th>
+                                <th>Saldo</th>
+                                <th>Status</th>
+                                <th>Ação</th>
                             </tr>
-                        }
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            @foreach (var alert in _summary.StockAlerts)
+                            {
+                                <tr>
+                                    <td data-label="Peça">
+                                        <div>
+                                            <div style="font-weight: 700;">@alert.ProductName</div>
+                                            <div style="font-size: 0.82rem; color: var(--adm-muted);">
+                                                Cor: @alert.Color &bull; Tam: <strong>@alert.Size</strong>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td data-label="SKU" style="font-size: 0.82rem; color: var(--adm-muted);">@alert.Sku</td>
+                                    <td data-label="Saldo" style="font-weight: 800;">@alert.StockQuantity un.</td>
+                                    <td data-label="Status">
+                                        @if (alert.IsOutOfStock)
+                                        {
+                                            <span class="pill-badge pill-red">Sem estoque</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="pill-badge pill-amber">Estoque baixo (&le; @alert.LowStockThreshold)</span>
+                                        }
+                                    </td>
+                                    <td data-label="Ação">
+                                        <a href="/produtos/@alert.ProductId" class="adm-btn adm-btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;">
+                                            Editar / Repor
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             }
         </section>
 
-        <!-- Últimas Movimentações -->
-        <section class="adm-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
-                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Últimas Movimentações</h2>
-                <a href="/estoque" style="font-size: 0.85rem; color: var(--adm-accent); font-weight: 600; text-decoration: none;">Histórico completo &rarr;</a>
+        <!-- Últimas Vendas (compacto: o que vendeu e quem foi) -->
+        <section class="adm-card adm-sales-mini-card">
+            <div class="adm-sales-mini-header">
+                <h2 class="adm-sales-mini-title">Últimas Vendas</h2>
+                <a href="@(_salesReport?.IsUnlocked == true ? "/vendas" : "/estoque")" class="adm-sales-mini-link">
+                    Ver mais &rarr;
+                </a>
             </div>
 
-            @if (_summary.RecentMovements.Count == 0)
+            @if (_recentSalesFeed.Count == 0)
             {
-                <p style="color: var(--adm-muted); font-size: 0.92rem; margin: 0;">Nenhuma movimentação registrada.</p>
+                <p class="adm-sales-mini-empty">Nenhuma venda registrada ainda.</p>
             }
             else
             {
-                <table class="adm-table">
-                    <thead>
-                        <tr>
-                            <th>Data/Hora</th>
-                            <th>Peça (Cor/Tam)</th>
-                            <th>Tipo</th>
-                            <th>Saldo</th>
-                            <th>Responsável</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var mov in _summary.RecentMovements)
-                        {
-                            <tr>
-                                <td data-label="Data/Hora" style="font-size: 0.82rem; color: var(--adm-muted);">
-                                    @mov.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")
-                                </td>
-                                <td data-label="Peça">
-                                    <div>
-                                        <div style="font-weight: 700;">@mov.ProductName</div>
-                                        <div style="font-size: 0.8rem; color: var(--adm-muted);">@mov.Color / @mov.Size</div>
-                                    </div>
-                                </td>
-                                <td data-label="Tipo">
-                                    @if (mov.MovementType == "IN")
-                                    {
-                                        <span class="pill-badge pill-green">+@mov.QuantityChanged Entrada</span>
-                                    }
-                                    else if (mov.MovementType == "OUT")
-                                    {
-                                        <span class="pill-badge pill-red">-@mov.QuantityChanged Saída</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="pill-badge pill-amber">Ajuste (@mov.QuantityChanged)</span>
-                                    }
-                                </td>
-                                <td data-label="Saldo" style="font-size: 0.85rem;">
-                                    <span>@mov.PreviousQuantity &rarr; <strong>@mov.NewQuantity un.</strong></span>
-                                </td>
-                                <td data-label="Responsável" style="font-size: 0.82rem; color: var(--adm-muted);">
-                                    @mov.EmployeeName
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <ul class="adm-sales-mini-list">
+                    @foreach (var sale in _recentSalesFeed)
+                    {
+                        <li class="adm-sales-mini-item">
+                            <span class="adm-sales-mini-what" title="@sale.WhatSold">@sale.WhatSold</span>
+                            <span class="adm-sales-mini-who" title="@sale.Who">@sale.Who</span>
+                        </li>
+                    }
+                </ul>
             }
         </section>
     </div>
@@ -292,6 +261,7 @@
     private DashboardSummaryDto? _summary;
     private PublicStoreSettingsDto? _publicStore;
     private SalesReportDto? _salesReport;
+    private IReadOnlyList<ClothingStore.Shared.Helpers.DashboardCompactSaleItem> _recentSalesFeed = [];
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -314,6 +284,7 @@
             _summary = null;
             _publicStore = null;
             _salesReport = null;
+            _recentSalesFeed = [];
             _error = null;
         }
         await InvokeAsync(StateHasChanged);
@@ -331,6 +302,7 @@
                 BrandState.ApplyFromPublicSettings(_publicStore);
             }
             _salesReport = await Gateway.GetSalesReportAsync("30d");
+            _recentSalesFeed = ClothingStore.Shared.Helpers.DashboardRecentSalesHelper.BuildCompactSalesFeed(_summary, _salesReport);
         }
         catch (Exception ex)
         {
