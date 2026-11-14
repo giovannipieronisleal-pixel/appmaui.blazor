@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.RateLimiting;
 using ClothingStore.Api.Security;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Application.Services;
@@ -14,6 +15,7 @@ using ClothingStore.Shared.DTOs;
 using ClothingStore.Shared.Helpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,15 +26,62 @@ if (!string.IsNullOrWhiteSpace(cloudRunPort) && int.TryParse(cloudRunPort, out v
     builder.WebHost.UseUrls($"http://0.0.0.0:{parsedPort}");
 }
 
-// Configuração de CORS para permitir chamadas do Blazor Web App e App Mobile
+// Configuração de CORS para permitir chamadas do App Mobile / Clientes web sem credenciais de navegador
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        var configuredOrigins = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
+        if (!string.IsNullOrWhiteSpace(configuredOrigins))
+        {
+            var origins = configuredOrigins
+                .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            policy.WithOrigins(origins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        }
+        else
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        }
     });
+});
+
+// Proteção contra força bruta e spam automatizado em autenticação e pedidos públicos
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { error = "Muitas tentativas em sequência. Aguarde um minuto e tente novamente." },
+            token);
+    };
+
+    options.AddPolicy("auth-strict", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 25,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+
+    options.AddPolicy("public-orders", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 15,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
 });
 
 // Registro de Infraestrutura e Persistência
@@ -136,6 +185,7 @@ if (!Directory.Exists(webRootPath))
 }
 app.UseStaticFiles();
 app.UseCors();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -213,9 +263,11 @@ app.MapPost("/api/public/orders/pix", async (
     OrderAndShippingService orderService,
     CancellationToken ct) =>
 {
+    // Em pedidos públicos anônimos na web, exige cálculo formal de CEP/área de entrega (impede bypass do raio)
+    request.ExpressMobileMode = false;
     var created = await orderService.PlacePixOrderAsync(request, ct);
     return Results.Created($"/api/orders/{created.Id}", created);
-});
+}).RequireRateLimiting("public-orders");
 
 // =============================================================================
 // 2. ENDPOINTS DE AUTENTICAÇÃO E ENTRADA POR E-MAIL (/api/auth/...)
@@ -303,22 +355,27 @@ authGroup.MapGet("/setup-status", async (AuthService authService, CancellationTo
     Results.Ok(await authService.GetSetupStatusAsync(ct))).AllowAnonymous();
 
 authGroup.MapPost("/register-initial-admin", async (RegisterInitialAdminRequest request, AuthService authService, CancellationToken ct) =>
-    Results.Ok(await authService.RegisterInitialAdminByEmailAsync(request, ct))).AllowAnonymous();
+    Results.Ok(await authService.RegisterInitialAdminByEmailAsync(request, ct))).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/register", async (RegisterUserAccountRequest request, AuthService authService, CancellationToken ct) =>
 {
     var created = await authService.RegisterUserAccountAsync(request, ct);
     return Results.Created($"/api/employees/{created.Employee.EmployeeId}", created);
-}).AllowAnonymous();
+}).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/login", async (LoginRequest request, AuthService authService, CancellationToken ct) =>
-    Results.Ok(await authService.LoginAsync(request, ct))).AllowAnonymous();
+    Results.Ok(await authService.LoginAsync(request, ct))).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/login-challenge", async (LoginRequest request, AuthService authService, CancellationToken ct) =>
-    Results.Ok(await authService.LoginWithChallengeAsync(request, ct))).AllowAnonymous();
+    Results.Ok(await authService.LoginWithChallengeAsync(request, ct))).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/verify-2fa", async (VerifyTwoFactorLoginRequest request, AuthService authService, CancellationToken ct) =>
-    Results.Ok(await authService.VerifyTwoFactorLoginAsync(request, ct))).AllowAnonymous();
+{
+    if (string.IsNullOrWhiteSpace(request.ChallengeToken))
+        throw new DomainException("Sessão de verificação em duas etapas ausente ou expirada. Faça login com senha novamente.");
+
+    return Results.Ok(await authService.VerifyTwoFactorLoginAsync(request, ct));
+}).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 // Endpoints de sincronização de contas & VIP entre Celular <-> Servidor Central <-> YouLink Admin
 app.MapGet("/api/platform-sync/accounts", async (
@@ -441,19 +498,19 @@ app.MapPost("/api/platform-sync/toggle-user-active/{userId:guid}", async (
 }).AllowAnonymous();
 
 authGroup.MapPost("/email-code/request", async (RequestEmailLoginCodeRequest request, AuthService authService, CancellationToken ct) =>
-    Results.Ok(await authService.RequestEmailLoginCodeAsync(request, ct))).AllowAnonymous();
+    Results.Ok(await authService.RequestEmailLoginCodeAsync(request, ct))).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/email-code/verify", async (VerifyEmailLoginCodeRequest request, AuthService authService, CancellationToken ct) =>
-    Results.Ok(await authService.LoginWithEmailCodeAsync(request, ct))).AllowAnonymous();
+    Results.Ok(await authService.LoginWithEmailCodeAsync(request, ct))).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/forgot-password", async (ForgotPasswordRequest request, AuthService authService, CancellationToken ct) =>
-    Results.Ok(await authService.RequestPasswordResetAsync(request, ct))).AllowAnonymous();
+    Results.Ok(await authService.RequestPasswordResetAsync(request, ct))).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/reset-password", async (ResetPasswordRequest request, AuthService authService, CancellationToken ct) =>
 {
     await authService.ResetPasswordAsync(request, ct);
     return Results.Ok(new { message = "Senha redefinida com sucesso." });
-}).AllowAnonymous();
+}).AllowAnonymous().RequireRateLimiting("auth-strict");
 
 authGroup.MapPost("/change-password", async (
     ChangePasswordRequest request,
@@ -555,6 +612,9 @@ app.MapPost("/api/products/{productId:guid}/images/upload", async (
     var form = await httpRequest.ReadFormAsync(ct);
     var file = form.Files.FirstOrDefault()
         ?? throw new DomainException("Nenhum arquivo de imagem foi enviado.");
+
+    if (file.Length <= 0 || file.Length > SupabaseImageStorageService.MaxUploadSizeBytes)
+        throw new DomainException($"A imagem deve ter entre 1 byte e {SupabaseImageStorageService.MaxUploadSizeBytes / (1024 * 1024)} MB.");
 
     var altText = form["altText"].FirstOrDefault();
     var isPrimary = bool.TryParse(form["isPrimary"].FirstOrDefault(), out var b) && b;
@@ -714,6 +774,9 @@ app.MapPost("/api/settings/logo", async (
     var file = form.Files.FirstOrDefault()
         ?? throw new DomainException("Nenhum arquivo de logotipo foi enviado.");
 
+    if (file.Length <= 0 || file.Length > SupabaseImageStorageService.MaxUploadSizeBytes)
+        throw new DomainException($"O logotipo deve ter entre 1 byte e {SupabaseImageStorageService.MaxUploadSizeBytes / (1024 * 1024)} MB.");
+
     var employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var empId) ? empId : (Guid?)null;
     await using var stream = file.OpenReadStream();
     var updated = await service.UploadStoreLogoAsync(employeeId, file.FileName, stream, file.ContentType, ct);
@@ -770,14 +833,14 @@ app.MapDelete("/api/settings/verify-google-account", async (
 // =============================================================================
 app.MapGet("/api/orders", async (OrderAndShippingService orderService, CancellationToken ct) =>
     Results.Ok(await orderService.GetOrdersAsync(ct)))
-    .RequireAuthorization();
+    .RequireAuthorization(RoleNames.PolicyCanManageStock);
 
 app.MapGet("/api/orders/sales-report", async (
     string? period,
     OrderAndShippingService orderService,
     CancellationToken ct) =>
     Results.Ok(await orderService.GetSalesReportAsync(period, ct)))
-    .RequireAuthorization();
+    .RequireAuthorization(RoleNames.PolicyCanManageStock);
 
 app.MapPost("/api/orders/manual-sale", async (
     RegisterManualSaleRequest request,
@@ -806,7 +869,7 @@ app.MapPut("/api/orders/{id:guid}/fulfillment", async (
     CancellationToken ct) =>
 {
     return Results.Ok(await orderService.UpdateOrderFulfillmentAsync(id, request, ct));
-}).RequireAuthorization();
+}).RequireAuthorization(RoleNames.PolicyCanManageStock);
 
 app.MapPost("/api/orders/{id:guid}/cancel", async (
     Guid id,
@@ -878,7 +941,7 @@ app.MapPost("/api/cloud/check-domain", async (
         ct);
 
     return Results.Ok(result);
-}).AllowAnonymous();
+}).RequireAuthorization();
 
 app.MapPost("/api/cloud/sync-state", async (
     HttpContext httpContext,

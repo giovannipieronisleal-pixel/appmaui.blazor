@@ -2,9 +2,9 @@
 
 <article class="lux-product-card">
     <a href="@DetailHref" class="lux-product-media" aria-label="Ver detalhes de @Product.Name">
-        @if (!string.IsNullOrWhiteSpace(Product.PrimaryImageUrl))
+        @if (WhatsAppLinkBuilder.IsSafeMediaUrl(Product.PrimaryImageUrl))
         {
-            <img src="@Product.PrimaryImageUrl" alt="@Product.Name" loading="lazy" />
+            <img src="@WhatsAppLinkBuilder.SanitizeMediaUrl(Product.PrimaryImageUrl)" alt="@Product.Name" loading="lazy" />
         }
         else
         {

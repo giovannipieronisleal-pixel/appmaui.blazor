@@ -7,9 +7,9 @@
     <header class="lux-header">
         <div class="lux-container lux-header-inner">
             <a href="/" class="lux-brand-link">
-                @if (!string.IsNullOrWhiteSpace(_store?.LogoPublicUrl))
+                @if (WhatsAppLinkBuilder.IsSafeMediaUrl(_store?.LogoPublicUrl))
                 {
-                    <img src="@_store.LogoPublicUrl" alt="@_store.StoreName" class="lux-brand-logo" />
+                    <img src="@WhatsAppLinkBuilder.SanitizeMediaUrl(_store?.LogoPublicUrl)" alt="@_store?.StoreName" class="lux-brand-logo" />
                 }
                 else
                 {

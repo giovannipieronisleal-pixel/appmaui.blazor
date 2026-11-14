@@ -535,6 +535,7 @@
     private bool _is2FaStep;
     private string _twoFactorCode = string.Empty;
     private string _twoFactorEmail = string.Empty;
+    private string? _twoFactorChallengeToken;
 
     // Campos de Cadastro
     private string _regFullName = string.Empty;
@@ -641,6 +642,7 @@
             {
                 _is2FaStep = true;
                 _twoFactorEmail = challenge.TempSessionEmail ?? cleanLogin;
+                _twoFactorChallengeToken = challenge.ChallengeToken;
                 _twoFactorCode = string.Empty;
                 return;
             }
@@ -663,7 +665,9 @@
         _isBusy = true;
         try
         {
-            await Gateway.VerifyTwoFactorLoginAsync(new VerifyTwoFactorLoginRequest(_twoFactorEmail, _twoFactorCode), _rememberMe);
+            await Gateway.VerifyTwoFactorLoginAsync(
+                new VerifyTwoFactorLoginRequest(_twoFactorEmail, _twoFactorCode, _twoFactorChallengeToken),
+                _rememberMe);
             Navigation.NavigateTo("/");
         }
         catch (Exception ex)

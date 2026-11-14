@@ -41,9 +41,9 @@ else
     <div class="lux-detail-grid">
         <div>
             <div class="lux-detail-stage">
-                @if (!string.IsNullOrWhiteSpace(CurrentImageUrl))
+                @if (WhatsAppLinkBuilder.IsSafeMediaUrl(CurrentImageUrl))
                 {
-                    <img src="@CurrentImageUrl" alt="@_product.Name" />
+                    <img src="@WhatsAppLinkBuilder.SanitizeMediaUrl(CurrentImageUrl)" alt="@_product.Name" />
                 }
                 else
                 {
@@ -56,12 +56,13 @@ else
             @if (_product.Images.Count > 1)
             {
                 <div class="lux-thumb-strip">
-                    @foreach (var img in _product.Images)
+                    @foreach (var img in _product.Images.Where(i => WhatsAppLinkBuilder.IsSafeMediaUrl(i.PublicUrl)))
                     {
+                        var safeThumbUrl = WhatsAppLinkBuilder.SanitizeMediaUrl(img.PublicUrl);
                         <button type="button"
                                 class="lux-thumb-btn @(CurrentImageUrl == img.PublicUrl ? "active" : "")"
-                                @onclick="() => _selectedImageUrl = img.PublicUrl">
-                            <img src="@img.PublicUrl" alt="@(img.AltText ?? _product.Name)" />
+                                @onclick="() => _selectedImageUrl = safeThumbUrl">
+                            <img src="@safeThumbUrl" alt="@(img.AltText ?? _product.Name)" />
                         </button>
                     }
                 </div>

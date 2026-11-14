@@ -385,13 +385,17 @@ public sealed class ProductManagementService
         AddProductImageByUrlRequest request,
         CancellationToken ct = default)
     {
+        if (!ClothingStore.Shared.Helpers.WhatsAppLinkBuilder.IsSafeMediaUrl(request?.ImageUrl))
+            throw new DomainException("Informe uma URL de imagem válida (https://, http:// ou data:image segura).");
+
         var product = await _repository.GetProductByIdAsync(productId, ct)
             ?? throw new DomainException("Produto não encontrado.");
 
+        var sanitizedUrl = ClothingStore.Shared.Helpers.WhatsAppLinkBuilder.SanitizeMediaUrl(request!.ImageUrl);
         return await AttachImageToProductAsync(
             product,
-            request.ImageUrl,
-            request.ImageUrl,
+            sanitizedUrl,
+            sanitizedUrl,
             request.AltText,
             request.IsPrimary,
             ct);

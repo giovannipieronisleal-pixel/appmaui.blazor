@@ -46,14 +46,17 @@ public sealed record LoginRequest(
 public sealed record LoginChallengeResponse(
     bool RequiresTwoFactor,
     string? TempSessionEmail,
-    LoginResponse? AuthResult);
+    LoginResponse? AuthResult,
+    string? ChallengeToken = null);
 
 public sealed record VerifyTwoFactorLoginRequest(
     [Required(ErrorMessage = "O e-mail é obrigatório.")]
     string Email,
 
     [Required(ErrorMessage = "O código de 6 dígitos é obrigatório.")]
-    string Code);
+    string Code,
+
+    string? ChallengeToken = null);
 
 public sealed record RequestEmailLoginCodeRequest(
     [Required(ErrorMessage = "O login ou e-mail é obrigatório.")]

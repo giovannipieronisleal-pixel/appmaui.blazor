@@ -208,13 +208,15 @@ public sealed class AuthService
         if (!employee.IsActive)
             throw new DomainException("Credenciais inválidas ou conta desativada.");
 
-        // Se a conta possuir 2FA ativado, exige o código de segundo fator
+        // Se a conta possuir 2FA ativado, exige o código de segundo fator com token de desafio assinado
         if (user.TwoFactorEnabled)
         {
+            var challengeToken = _jwtTokenService.GenerateTwoFactorChallengeToken(user.Id, user.Email);
             return new LoginChallengeResponse(
                 RequiresTwoFactor: true,
                 TempSessionEmail: user.Email,
-                AuthResult: null);
+                AuthResult: null,
+                ChallengeToken: challengeToken);
         }
 
         user.ResetFailedAccessAttempts();
@@ -252,6 +254,15 @@ public sealed class AuthService
         if (user.IsLockedOut(nowUtc))
             throw new DomainException("Conta temporariamente bloqueada por excesso de tentativas incorretas. Aguarde 15 minutos.");
 
+        if (!user.IsActive)
+            throw new DomainException("Credenciais inválidas ou conta desativada.");
+
+        if (!string.IsNullOrWhiteSpace(request.ChallengeToken) &&
+            !_jwtTokenService.ValidateTwoFactorChallengeToken(request.ChallengeToken, user.Id))
+        {
+            throw new DomainException("Sessão de verificação em duas etapas expirada ou inválida. Entre novamente.");
+        }
+
         if (!user.VerifyTwoFactorCode(request.Code))
         {
             user.RecordFailedAccessAttempt(nowUtc);
@@ -265,6 +276,9 @@ public sealed class AuthService
 
         var employee = await _repository.GetEmployeeByUserIdAsync(user.Id, ct)
             ?? throw new DomainException("Funcionário não encontrado.");
+
+        if (!employee.IsActive)
+            throw new DomainException("Credenciais inválidas ou conta desativada.");
 
         user.ResetFailedAccessAttempts();
         user.LastLoginAt = nowUtc;
@@ -444,7 +458,7 @@ public sealed class AuthService
             return new RequestEmailLoginCodeResponse(genericMessage);
         }
 
-        var rawCode = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+        var rawCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         var codeHash = _passwordHasher.HashToken(rawCode);
         user.GenerateEmailLoginCode(codeHash, TimeSpan.FromMinutes(10));
         await _repository.UpdateEmployeeAsync(employee, user, ct);
@@ -521,7 +535,7 @@ public sealed class AuthService
             throw new DomainException("Esta conta ainda não possui um Gmail/e-mail cadastrado. Atualize seu Gmail em Meu Perfil para poder alterar sua senha por e-mail.");
         }
 
-        var rawCode = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+        var rawCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         var tokenHash = _passwordHasher.HashToken(rawCode);
         user.GeneratePasswordResetToken(tokenHash, TimeSpan.FromMinutes(30));
         await _repository.UpdateEmployeeAsync(employee, user, ct);

@@ -312,6 +312,10 @@ public static class LocalWebServerLauncher
             $"Content-Length: {bodyBytes.Length}\r\n" +
             "Cache-Control: no-store, no-cache, must-revalidate\r\n" +
             "X-Content-Type-Options: nosniff\r\n" +
+            "X-Frame-Options: DENY\r\n" +
+            "Referrer-Policy: strict-origin-when-cross-origin\r\n" +
+            "Permissions-Policy: camera=(), microphone=(), geolocation=()\r\n" +
+            "Content-Security-Policy: default-src 'self'; img-src 'self' https: http: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'\r\n" +
             "Connection: close\r\n\r\n";
 
         var headerBytes = Encoding.ASCII.GetBytes(responseHeader);
@@ -348,6 +352,7 @@ public static class LocalWebServerLauncher
             if (method == "POST" && string.Equals(path, "/api/public/orders/pix", StringComparison.OrdinalIgnoreCase))
             {
                 var req = JsonSerializer.Deserialize<CreatePixOrderRequest>(bodyBytes, WebJsonOptions) ?? new CreatePixOrderRequest();
+                req.ExpressMobileMode = false;
                 var order = await _orderService.PlacePixOrderAsync(req);
                 return ("201 Created", JsonSerializer.Serialize(order, WebJsonOptions));
             }
@@ -455,9 +460,10 @@ public static class LocalWebServerLauncher
         // Header
         sb.AppendLine("<header class=\"site-header\"><div class=\"container header-inner\">");
         sb.AppendLine($"<a href=\"{storeHomeUrl}\" class=\"brand\">");
-        if (!string.IsNullOrWhiteSpace(store.LogoPublicUrl))
+        var safeLogoUrl = WhatsAppLinkBuilder.SanitizeMediaUrl(store.LogoPublicUrl);
+        if (!string.IsNullOrWhiteSpace(safeLogoUrl))
         {
-            sb.AppendLine($"<img src=\"{H(store.LogoPublicUrl)}\" alt=\"{H(store.StoreName)}\" class=\"brand-logo\"/>");
+            sb.AppendLine($"<img src=\"{H(safeLogoUrl)}\" alt=\"{H(store.StoreName)}\" class=\"brand-logo\"/>");
         }
         sb.AppendLine($"<span>{H(store.StoreName)}</span></a>");
         sb.AppendLine($"<a href=\"{H(generalWaUrl)}\" target=\"_blank\" rel=\"noopener\" class=\"btn-wa-top\">Atendimento WhatsApp</a>");
@@ -537,11 +543,12 @@ public static class LocalWebServerLauncher
             foreach (var p in products)
             {
                 var detailUrl = $"/loja/{H(store.StoreSlug)}/produto/{H(p.Slug)}";
+                var safePrimaryImg = WhatsAppLinkBuilder.SanitizeMediaUrl(p.PrimaryImageUrl);
                 sb.AppendLine("<article class=\"card\">");
                 sb.AppendLine($"<a href=\"{detailUrl}\" class=\"card-img\">");
-                if (!string.IsNullOrWhiteSpace(p.PrimaryImageUrl))
+                if (!string.IsNullOrWhiteSpace(safePrimaryImg))
                 {
-                    sb.AppendLine($"<img src=\"{H(p.PrimaryImageUrl)}\" alt=\"{H(p.Name)}\"/>");
+                    sb.AppendLine($"<img src=\"{H(safePrimaryImg)}\" alt=\"{H(p.Name)}\"/>");
                 }
                 else
                 {
@@ -576,7 +583,11 @@ public static class LocalWebServerLauncher
         }
 
         var ptBr = new CultureInfo("pt-BR");
-        var firstImg = product.Images.FirstOrDefault()?.PublicUrl ?? "";
+        var safeGalleryImages = product.Images
+            .Select(img => WhatsAppLinkBuilder.SanitizeMediaUrl(img.PublicUrl))
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .ToList();
+        var firstImg = safeGalleryImages.FirstOrDefault() ?? "";
         var firstVariant = product.Variants.FirstOrDefault(v => v.StockQuantity > 0) ?? product.Variants.FirstOrDefault();
         var defaultColor = firstVariant?.Color ?? "";
         var defaultSize = firstVariant?.Size ?? "";
@@ -608,12 +619,12 @@ public static class LocalWebServerLauncher
             sb.AppendLine("<div class=\"no-img\">Sem foto</div>");
         }
         sb.AppendLine("</div>");
-        if (product.Images.Count > 1)
+        if (safeGalleryImages.Count > 1)
         {
             sb.AppendLine("<div class=\"thumbs\">");
-            foreach (var img in product.Images)
+            foreach (var imgUrl in safeGalleryImages)
             {
-                sb.AppendLine($"<img src=\"{H(img.PublicUrl)}\" alt=\"{H(product.Name)}\" onclick=\"document.getElementById('mainPhoto').src=this.src\"/>");
+                sb.AppendLine($"<img src=\"{H(imgUrl)}\" alt=\"{H(product.Name)}\" onclick=\"document.getElementById('mainPhoto').src=this.src\"/>");
             }
             sb.AppendLine("</div>");
         }
@@ -704,8 +715,9 @@ public static class LocalWebServerLauncher
         sb.AppendLine("}");
         sb.AppendLine("function setColor(c){ selColor=c; var el=document.getElementById('lblColor'); if(el) el.textContent=c; updateWa(); }");
         sb.AppendLine("function setSize(s){ selSize=s; var el=document.getElementById('lblSize'); if(el) el.textContent=s; updateWa(); }");
-        sb.AppendLine("async function checkShipping(){ var err=document.getElementById('pxErr'); var box=document.getElementById('pxShipInfo'); err.style.display='none'; box.style.display='none'; var cep=document.getElementById('pxCep').value; var qty=parseInt(document.getElementById('pxQty').value||'1'); try{ var r1=await fetch('/api/public/cep/'+encodeURIComponent(cep)); if(r1.ok){ var c=await r1.json(); if(c.street && !document.getElementById('pxStreet').value) document.getElementById('pxStreet').value=c.street; if(c.neighborhood && !document.getElementById('pxNeigh').value) document.getElementById('pxNeigh').value=c.neighborhood; if(c.city) document.getElementById('pxCity').value=c.city; if(c.state) document.getElementById('pxUf').value=c.state; } var r2=await fetch('/api/public/shipping-quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destinationCep:cep,destinationCity:document.getElementById('pxCity').value,destinationState:document.getElementById('pxUf').value,weightGrams:defWeightG*Math.max(1,qty)})}); var data=await r2.json(); if(!r2.ok) throw new Error(data.error||'Erro ao calcular'); box.style.display='block'; box.style.background=data.eligibility.isAllowed?'rgba(22,163,74,0.12)':'rgba(239,68,68,0.12)'; box.style.border=data.eligibility.isAllowed?'1px solid #16A34A':'1px solid #EF4444'; var h='<strong>'+(data.eligibility.isAllowed?'✓ Endereço atendido: ':'✕ Fora do limite: ')+'</strong>'+data.eligibility.reasonMessage; if(data.eligibility.isAllowed && data.correiosQuote){ h+='<br/>Correios estimado: PAC R$ '+data.correiosQuote.pacPrice.toFixed(2)+' | SEDEX R$ '+data.correiosQuote.sedexPrice.toFixed(2); } box.innerHTML=h; }catch(e){ err.style.display='block'; err.textContent=e.message; } }");
-        sb.AppendLine("async function submitPixOrder(){ var err=document.getElementById('pxErr'); var rec=document.getElementById('pxReceipt'); err.style.display='none'; var v=getSelectedVariant(); if(!v){ err.style.display='block'; err.textContent='Selecione uma variante com estoque.'; return; } try{ var payload={productId:prodId,productVariantId:v.id,quantity:parseInt(document.getElementById('pxQty').value||'1'),customerName:document.getElementById('pxName').value,customerWhatsapp:document.getElementById('pxWa').value,cep:document.getElementById('pxCep').value,street:document.getElementById('pxStreet').value,number:document.getElementById('pxNum').value,complement:document.getElementById('pxComp').value,neighborhood:document.getElementById('pxNeigh').value,city:document.getElementById('pxCity').value,state:document.getElementById('pxUf').value}; var r=await fetch('/api/public/orders/pix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); var o=await r.json(); if(!r.ok) throw new Error(o.error||'Falha ao gerar pedido Pix'); rec.style.display='block'; rec.innerHTML='<strong>✅ Pedido '+o.orderNumber+' gerado!</strong><br/>Total Pix: R$ '+o.totalPixAmount.toFixed(2)+'<br/>Chave Pix: <code>'+o.pixKey+'</code><br/>Código Copia e Cola:<textarea readonly rows=\"3\" style=\"width:100%;margin-top:0.35rem;font-family:monospace;font-size:0.75rem;\">'+o.pixBrCode+'</textarea>'; }catch(e){ err.style.display='block'; err.textContent=e.message; } }");
+        sb.AppendLine("function escHtml(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;'); }");
+        sb.AppendLine("async function checkShipping(){ var err=document.getElementById('pxErr'); var box=document.getElementById('pxShipInfo'); err.style.display='none'; box.style.display='none'; var cep=document.getElementById('pxCep').value; var qty=parseInt(document.getElementById('pxQty').value||'1'); try{ var r1=await fetch('/api/public/cep/'+encodeURIComponent(cep)); if(r1.ok){ var c=await r1.json(); if(c.street && !document.getElementById('pxStreet').value) document.getElementById('pxStreet').value=c.street; if(c.neighborhood && !document.getElementById('pxNeigh').value) document.getElementById('pxNeigh').value=c.neighborhood; if(c.city) document.getElementById('pxCity').value=c.city; if(c.state) document.getElementById('pxUf').value=c.state; } var r2=await fetch('/api/public/shipping-quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destinationCep:cep,destinationCity:document.getElementById('pxCity').value,destinationState:document.getElementById('pxUf').value,weightGrams:defWeightG*Math.max(1,qty)})}); var data=await r2.json(); if(!r2.ok) throw new Error(data.error||'Erro ao calcular'); box.style.display='block'; box.style.background=data.eligibility.isAllowed?'rgba(22,163,74,0.12)':'rgba(239,68,68,0.12)'; box.style.border=data.eligibility.isAllowed?'1px solid #16A34A':'1px solid #EF4444'; var h='<strong>'+(data.eligibility.isAllowed?'✓ Endereço atendido: ':'✕ Fora do limite: ')+'</strong>'+escHtml(data.eligibility.reasonMessage); if(data.eligibility.isAllowed && data.correiosQuote){ h+='<br/>Correios estimado: PAC R$ '+Number(data.correiosQuote.pacPrice||0).toFixed(2)+' | SEDEX R$ '+Number(data.correiosQuote.sedexPrice||0).toFixed(2); } box.innerHTML=h; }catch(e){ err.style.display='block'; err.textContent=e.message; } }");
+        sb.AppendLine("async function submitPixOrder(){ var err=document.getElementById('pxErr'); var rec=document.getElementById('pxReceipt'); err.style.display='none'; var v=getSelectedVariant(); if(!v){ err.style.display='block'; err.textContent='Selecione uma variante com estoque.'; return; } try{ var payload={productId:prodId,productVariantId:v.id,quantity:parseInt(document.getElementById('pxQty').value||'1'),customerName:document.getElementById('pxName').value,customerWhatsapp:document.getElementById('pxWa').value,cep:document.getElementById('pxCep').value,street:document.getElementById('pxStreet').value,number:document.getElementById('pxNum').value,complement:document.getElementById('pxComp').value,neighborhood:document.getElementById('pxNeigh').value,city:document.getElementById('pxCity').value,state:document.getElementById('pxUf').value}; var r=await fetch('/api/public/orders/pix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); var o=await r.json(); if(!r.ok) throw new Error(o.error||'Falha ao gerar pedido Pix'); rec.style.display='block'; rec.innerHTML='<strong>✅ Pedido '+escHtml(o.orderNumber)+' gerado!</strong><br/>Total Pix: R$ '+Number(o.totalPixAmount||0).toFixed(2)+'<br/>Chave Pix: <code>'+escHtml(o.pixKey)+'</code><br/>Código Copia e Cola:<textarea readonly rows=\"3\" style=\"width:100%;margin-top:0.35rem;font-family:monospace;font-size:0.75rem;\">'+escHtml(o.pixBrCode)+'</textarea>'; }catch(e){ err.style.display='block'; err.textContent=e.message; } }");
         sb.AppendLine("</script></body></html>");
         return sb.ToString();
     }
@@ -822,7 +834,16 @@ public static class LocalWebServerLauncher
     private static string H(string? text) => WebUtility.HtmlEncode(text ?? string.Empty);
 
     private static string HJs(string? text) =>
-        (text ?? string.Empty).Replace("\\", "\\\\").Replace("'", "\\'").Replace("\r", "").Replace("\n", " ");
+        (text ?? string.Empty)
+            .Replace("\\", "\\\\")
+            .Replace("'", "\\u0027")
+            .Replace("\"", "\\u0022")
+            .Replace("<", "\\u003c")
+            .Replace(">", "\\u003e")
+            .Replace("&", "\\u0026")
+            .Replace("/", "\\/")
+            .Replace("\r", "")
+            .Replace("\n", " ");
 
     private static async Task<bool> IsPortOpenAsync(string host, int port)
     {

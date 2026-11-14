@@ -57,12 +57,63 @@ public static class WhatsAppLinkBuilder
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
             (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)) ||
-            string.IsNullOrWhiteSpace(uri.Host))
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            IsCloudMetadataHost(uri.Host))
         {
             return string.Empty;
         }
 
         return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+    }
+
+    public static bool IsCloudMetadataHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+            return false;
+
+        var normalized = host.Trim().Trim('[', ']').ToLowerInvariant();
+        return normalized.StartsWith("169.254.", StringComparison.Ordinal) ||
+               normalized.StartsWith("::ffff:169.254.", StringComparison.Ordinal) ||
+               normalized == "metadata.google.internal" ||
+               normalized == "metadata.goog" ||
+               normalized == "metadata";
+    }
+
+    private static readonly Regex SafeDataImageRegex = new(
+        @"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static bool IsSafeMediaUrl(string? rawUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl))
+            return false;
+
+        var candidate = rawUrl.Trim();
+        if (candidate.Length > 8_500_000 || candidate.Any(c => char.IsControl(c)))
+            return false;
+
+        if (candidate.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+            return !candidate.Contains("..", StringComparison.Ordinal);
+
+        if (candidate.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            return SafeDataImageRegex.IsMatch(candidate);
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+            return false;
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return !string.IsNullOrWhiteSpace(uri.Host) && !IsCloudMetadataHost(uri.Host);
+    }
+
+    public static string SanitizeMediaUrl(string? rawUrl, string fallback = "")
+    {
+        if (!IsSafeMediaUrl(rawUrl))
+            return fallback;
+
+        return rawUrl!.Trim();
     }
 
     public static string NormalizeSyncSecretInput(string? rawSecret)

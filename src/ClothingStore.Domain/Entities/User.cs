@@ -101,6 +101,11 @@ public sealed class User
         if (FailedLoginAttempts >= MaxFailedAttemptsBeforeLockout)
         {
             LockoutEndAt = nowUtc.Add(DefaultLockoutDuration);
+            // Invalida códigos temporários ativos para impedir reuso pós-desbloqueio em ataques de força bruta
+            ResetTokenHash = null;
+            ResetTokenExpiresAt = null;
+            EmailLoginCodeHash = null;
+            EmailLoginCodeExpiresAt = null;
         }
     }
 

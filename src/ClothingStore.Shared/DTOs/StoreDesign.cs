@@ -226,6 +226,21 @@ public static class StoreDesignPresets
 
 public static class StoreDesignCssHelper
 {
+    private static readonly HashSet<string> AllowedFontFamilies = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Cormorant Garamond",
+        "Playfair Display",
+        "Montserrat",
+        "Space Grotesk",
+        "Plus Jakarta Sans",
+        "Inter",
+        "DM Sans",
+        "Lora",
+        "Poppins",
+        "Outfit",
+        "Manrope"
+    };
+
     public static string BuildInlineStyle(StoreDesignDto? raw)
     {
         var d = Sanitize(raw);
@@ -274,7 +289,7 @@ public static class StoreDesignCssHelper
 
         return new StoreDesignDto
         {
-            PresetKey = string.IsNullOrWhiteSpace(raw.PresetKey) ? fallback.PresetKey : raw.PresetKey.Trim(),
+            PresetKey = SafeIdentifier(raw.PresetKey, fallback.PresetKey, 48),
             BackgroundColor = SafeHex(raw.BackgroundColor, fallback.BackgroundColor),
             SurfaceColor = SafeHex(raw.SurfaceColor, fallback.SurfaceColor),
             SurfaceSubtleColor = SafeHex(raw.SurfaceSubtleColor, fallback.SurfaceSubtleColor),
@@ -285,16 +300,51 @@ public static class StoreDesignCssHelper
             MutedTextColor = SafeHex(raw.MutedTextColor, fallback.MutedTextColor),
             BorderColor = SafeHex(raw.BorderColor, fallback.BorderColor),
             SidebarColor = SafeHex(raw.SidebarColor, fallback.SidebarColor),
-            DisplayFont = string.IsNullOrWhiteSpace(raw.DisplayFont) ? fallback.DisplayFont : raw.DisplayFont.Trim(),
-            BodyFont = string.IsNullOrWhiteSpace(raw.BodyFont) ? fallback.BodyFont : raw.BodyFont.Trim(),
+            DisplayFont = SafeFontFamily(raw.DisplayFont, fallback.DisplayFont),
+            BodyFont = SafeFontFamily(raw.BodyFont, fallback.BodyFont),
             CornerRadiusMode = raw.CornerRadiusMode is "SHARP" or "ROUND_FOUR" or "ROUND_TWELVE" ? raw.CornerRadiusMode : fallback.CornerRadiusMode,
             DensityMode = raw.DensityMode is "compact" or "balanced" or "airy" ? raw.DensityMode : fallback.DensityMode,
             HeroLayout = raw.HeroLayout is "split" or "centered" or "banner" ? raw.HeroLayout : fallback.HeroLayout,
             GridColumns = Math.Clamp(raw.GridColumns, 2, 4),
             ShowLookbookBadge = raw.ShowLookbookBadge,
-            HeroEyebrow = string.IsNullOrWhiteSpace(raw.HeroEyebrow) ? null : raw.HeroEyebrow.Trim(),
-            HeroHeadline = string.IsNullOrWhiteSpace(raw.HeroHeadline) ? null : raw.HeroHeadline.Trim()
+            HeroEyebrow = SafeTextLine(raw.HeroEyebrow, 80),
+            HeroHeadline = SafeTextLine(raw.HeroHeadline, 140)
         };
+    }
+
+    private static string SafeFontFamily(string? candidate, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return fallback;
+
+        var trimmed = candidate.Trim();
+        return AllowedFontFamilies.TryGetValue(trimmed, out var canonical)
+            ? canonical
+            : fallback;
+    }
+
+    private static string SafeIdentifier(string? candidate, string fallback, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return fallback;
+
+        var filtered = new string(candidate.Trim()
+            .Where(c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c is '-' or '_')
+            .Take(maxLen)
+            .ToArray());
+        return string.IsNullOrWhiteSpace(filtered) ? fallback : filtered;
+    }
+
+    private static string? SafeTextLine(string? value, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var cleaned = new string(value.Trim()
+            .Where(c => !char.IsControl(c))
+            .Take(maxLen)
+            .ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? null : cleaned;
     }
 
     private static (string Card, string Btn, string Pill) ResolveRadii(string mode) => mode switch
