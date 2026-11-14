@@ -72,6 +72,22 @@ public class MobileMenuSecurityAndRenderTests
 
         Assert.IsTrue(navRazor.Contains("adm-mobile-sheet-item-title", StringComparison.Ordinal));
         Assert.IsTrue(navRazor.Contains("adm-mobile-sheet-item-desc", StringComparison.Ordinal));
+        Assert.IsTrue(navRazor.Contains("adm-sidebar-account-name-row", StringComparison.Ordinal));
+        Assert.IsTrue(navRazor.Contains("adm-sidebar-role-badge", StringComparison.Ordinal));
+        Assert.IsTrue(navCss.Contains(".adm-sidebar-acc-btn", StringComparison.Ordinal));
+        Assert.IsTrue(navCss.Contains("appearance: none;", StringComparison.Ordinal));
+
+        var depth = 0;
+        foreach (var rawLine in navCss.Split('\n'))
+        {
+            var trimmed = rawLine.Trim();
+            if (trimmed.StartsWith("@media", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.AreEqual(0, depth, $"@media não pode ficar aninhado dentro de outro bloco CSS: {trimmed}");
+            }
+            depth += trimmed.Count(c => c == '{') - trimmed.Count(c => c == '}');
+        }
+
         Assert.IsTrue(appCss.Contains("min-height: 54px;", StringComparison.Ordinal));
         Assert.IsTrue(appCss.Contains("font-size: 0.82rem;", StringComparison.Ordinal));
     }

@@ -43,9 +43,10 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 Name: "desktopicon"; Description: "Criar atalho na &Área de Trabalho"; GroupDescription: "Atalhos adicionais:"
 
 [Files]
-Source: "{#PackageDir}\YouLink.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PackageDir}\LEIA-ME.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\App\*"; DestDir: "{app}\App"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PackageDir}\App\wwwroot\*"; DestDir: "{app}\App\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PackageDir}\LEIA-ME.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PackageDir}\YouLink.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\YouLink"; Filename: "{app}\YouLink.exe"; WorkingDir: "{app}\App"
@@ -54,3 +55,15 @@ Name: "{autodesktop}\YouLink"; Filename: "{app}\YouLink.exe"; WorkingDir: "{app}
 
 [Run]
 Filename: "{app}\YouLink.exe"; WorkingDir: "{app}\App"; Description: "Abrir o YouLink agora"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  // Encerra qualquer instância ativa (e processos filhos WebView2 via /T) antes de copiar arquivos em atualização silenciosa.
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM appmaui.blazor.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM YouLink.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(900);
+  Result := '';
+end;

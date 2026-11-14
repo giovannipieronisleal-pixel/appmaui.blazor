@@ -29,7 +29,7 @@ public sealed record AppUpdateReleaseInfo(
 /// </summary>
 public static class AppUpdateCatalog
 {
-    public const string CurrentAppVersion = "1.0.20";
+    public const string CurrentAppVersion = "1.0.21";
     public const string GitHubOwner = "giovannipieronisleal-pixel";
     public const string GitHubRepo = "yourlink";
     public const string GitHubLatestReleaseApiUrl =
@@ -565,6 +565,19 @@ public static class AppUpdateCatalog
         sb.AppendLine("}");
         sb.AppendLine("$stillRunning = Get-Process -Id $targetPid -ErrorAction SilentlyContinue");
         sb.AppendLine("if ($null -ne $stillRunning) { try { Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue } catch {} Start-Sleep -Milliseconds 600 }");
+        sb.AppendLine("$targetInstallRoot = if ((Split-Path -Leaf $targetDir) -eq 'App') { Split-Path -Parent $targetDir } else { $targetDir }");
+        sb.AppendLine("$procNamesToStop = @([System.IO.Path]::GetFileNameWithoutExtension($exeName), [System.IO.Path]::GetFileNameWithoutExtension($launcherName)) | Where-Object { $_ } | Select-Object -Unique");
+        sb.AppendLine("foreach ($pName in $procNamesToStop) {");
+        sb.AppendLine("    Get-Process -Name $pName -ErrorAction SilentlyContinue | ForEach-Object {");
+        sb.AppendLine("        try {");
+        sb.AppendLine("            $procPath = $_.Path");
+        sb.AppendLine("            if (-not $procPath -or $procPath.StartsWith($targetInstallRoot, [System.StringComparison]::OrdinalIgnoreCase)) {");
+        sb.AppendLine("                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue");
+        sb.AppendLine("            }");
+        sb.AppendLine("        } catch {}");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+        sb.AppendLine("Start-Sleep -Milliseconds 700");
         sb.AppendLine("$robocopyArgs = @($sourceDir, $targetDir, '/E', '/IS', '/IT', '/R:6', '/W:1', '/XD', 'App_Data', 'EBWebView', '/XF', 'clothingstore_db.json', 'platform_admin_db.json', 'platform_owner_settings.json', 'email_outbox.txt', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')");
         sb.AppendLine("& robocopy @robocopyArgs | Out-Null");
         sb.AppendLine("$rc = $LASTEXITCODE");
@@ -628,9 +641,33 @@ public static class AppUpdateCatalog
         sb.AppendLine("}");
         sb.AppendLine("$stillRunning = Get-Process -Id $targetPid -ErrorAction SilentlyContinue");
         sb.AppendLine("if ($null -ne $stillRunning) { try { Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue } catch {} Start-Sleep -Milliseconds 600 }");
-        sb.AppendLine("$procSetup = Start-Process -FilePath $setupExe -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS') -Wait -PassThru");
+        sb.AppendLine("$launchDir = Split-Path -Parent $launchExe");
+        sb.AppendLine("$installRoot = if ((Split-Path -Leaf $launchDir) -eq 'App') { Split-Path -Parent $launchDir } else { $launchDir }");
+        sb.AppendLine("$procNamesToStop = @('appmaui.blazor', 'YouLink', [System.IO.Path]::GetFileNameWithoutExtension($launchExe)) | Where-Object { $_ } | Select-Object -Unique");
+        sb.AppendLine("foreach ($pName in $procNamesToStop) {");
+        sb.AppendLine("    Get-Process -Name $pName -ErrorAction SilentlyContinue | ForEach-Object {");
+        sb.AppendLine("        try {");
+        sb.AppendLine("            $procPath = $_.Path");
+        sb.AppendLine("            if (-not $procPath -or ($installRoot -and $procPath.StartsWith($installRoot, [System.StringComparison]::OrdinalIgnoreCase))) {");
+        sb.AppendLine("                & taskkill.exe /F /T /PID $($_.Id) | Out-Null");
+        sb.AppendLine("            }");
+        sb.AppendLine("        } catch {}");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+        sb.AppendLine("Start-Sleep -Milliseconds 800");
+        sb.AppendLine("$innoLogPath = Join-Path (Split-Path -Parent $logPath) 'setup-installer.log'");
+        sb.AppendLine("$procSetup = Start-Process -FilePath $setupExe -ArgumentList @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS', \"/LOG=$innoLogPath\") -Wait -PassThru");
         sb.AppendLine("Write-Log \"Instalador finalizado com código: $($procSetup.ExitCode)\"");
-        sb.AppendLine("if ($procSetup.ExitCode -ne 0) { throw \"Instalador retornou código $($procSetup.ExitCode).\" }");
+        sb.AppendLine("if ($procSetup.ExitCode -ne 0) {");
+        sb.AppendLine("    Write-Log \"Falha no instalador (ExitCode=$($procSetup.ExitCode)). Veja $innoLogPath\"");
+        sb.AppendLine("    if ([Environment]::UserInteractive) {");
+        sb.AppendLine("        try {");
+        sb.AppendLine("            Add-Type -AssemblyName System.Windows.Forms");
+        sb.AppendLine("            [void][System.Windows.Forms.MessageBox]::Show(\"A atualização automática não pôde ser concluída (código $($procSetup.ExitCode)). Feche todas as janelas do aplicativo e execute novamente o instalador em: $setupExe\", 'YouLink - Atualização', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)");
+        sb.AppendLine("        } catch {}");
+        sb.AppendLine("    }");
+        sb.AppendLine("    throw \"Instalador retornou código $($procSetup.ExitCode).\"");
+        sb.AppendLine("}");
         sb.AppendLine("if (Test-Path $launchExe) {");
         sb.AppendLine("    Start-Process -FilePath $launchExe -WorkingDirectory (Split-Path -Parent $launchExe)");
         sb.AppendLine("}");

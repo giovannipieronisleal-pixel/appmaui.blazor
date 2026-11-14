@@ -597,6 +597,12 @@ public class WindowsPlatformTests
         Assert.IsTrue(indexHtml.Contains("YouLink", StringComparison.OrdinalIgnoreCase), "index.html deve exibir título YouLink.");
         Assert.IsTrue(indexHtml.Contains("_framework/blazor.webview.js", StringComparison.Ordinal), "index.html deve carregar blazor.webview.js.");
 
+        var scopedCss = File.ReadAllText(Path.Combine(publishDir, "wwwroot", "appmaui.blazor.styles.css"));
+        Assert.IsTrue(scopedCss.Contains(".adm-sidebar-account-card", StringComparison.Ordinal),
+            "appmaui.blazor.styles.css publicado precisa conter estilos do card de conta.");
+        Assert.IsTrue(scopedCss.Contains(".adm-sidebar-acc-btn", StringComparison.Ordinal),
+            "appmaui.blazor.styles.css publicado precisa conter estilos dos botões de perfil/logout.");
+
         Assert.IsFalse(Directory.Exists(Path.Combine(publishDir, "App_Data")), "App_Data local não pode vazar no zip Windows.");
         Assert.IsFalse(File.Exists(Path.Combine(publishDir, "clothingstore_db.json")), "Banco local não pode vazar no zip Windows.");
         Assert.IsFalse(File.Exists(Path.Combine(publishDir, "email_outbox.txt")), "Outbox local não pode vazar no zip Windows.");

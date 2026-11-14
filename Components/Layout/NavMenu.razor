@@ -78,17 +78,22 @@
 
 @if (Gateway.IsAuthenticated && Gateway.CurrentEmployee is not null)
 {
+    var accountSubText = !string.IsNullOrWhiteSpace(Gateway.CurrentEmployee.Email)
+        ? Gateway.CurrentEmployee.Email
+        : Gateway.CurrentEmployee.EffectiveUsername;
     <div class="adm-sidebar-footer">
         <div class="adm-sidebar-account-card">
             <div class="adm-sidebar-account-row">
                 <span class="adm-sidebar-avatar">@GetUserInitials(Gateway.CurrentEmployee.FullName)</span>
                 <div class="adm-sidebar-account-meta">
-                    <strong class="adm-sidebar-account-name">@Gateway.CurrentEmployee.FullName</strong>
-                    <span class="adm-sidebar-account-sub">@(!string.IsNullOrWhiteSpace(Gateway.CurrentEmployee.Email) ? Gateway.CurrentEmployee.Email : Gateway.CurrentEmployee.EffectiveUsername)</span>
+                    <div class="adm-sidebar-account-name-row">
+                        <strong class="adm-sidebar-account-name">@Gateway.CurrentEmployee.FullName</strong>
+                        <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate") adm-sidebar-role-badge">
+                            @(Gateway.IsAdmin ? "Admin" : "Equipe")
+                        </span>
+                    </div>
+                    <span class="adm-sidebar-account-sub" title="@accountSubText">@accountSubText</span>
                 </div>
-                <span class="pill-badge @(Gateway.IsAdmin ? "pill-green" : "pill-slate")" style="font-size: 0.65rem; padding: 0.12rem 0.42rem;">
-                    @(Gateway.IsAdmin ? "Admin" : "Equipe")
-                </span>
             </div>
             <div class="adm-sidebar-account-actions">
                 <button type="button" class="adm-sidebar-acc-btn" @onclick="OpenProfileAsync">

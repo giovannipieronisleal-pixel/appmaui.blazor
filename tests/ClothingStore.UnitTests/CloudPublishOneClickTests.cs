@@ -533,8 +533,19 @@ public sealed class CloudPublishOneClickTests
                 @"C:\Temp\YouLink-Setup-x64.exe",
                 @"C:\Users\Cliente\AppData\Local\Programs\YouLink\YouLink.exe",
                 Path.Combine(tempDir, "setup-update.log"));
-            Assert.IsTrue(installerScript.Contains("/VERYSILENT", StringComparison.Ordinal));
+            Assert.IsTrue(installerScript.Contains("/SILENT", StringComparison.Ordinal));
+            Assert.IsFalse(installerScript.Contains("/VERYSILENT", StringComparison.Ordinal));
+            Assert.IsTrue(installerScript.Contains("/FORCECLOSEAPPLICATIONS", StringComparison.Ordinal));
+            Assert.IsTrue(installerScript.Contains("/LOG=", StringComparison.Ordinal));
+            Assert.IsTrue(installerScript.Contains("taskkill.exe", StringComparison.Ordinal));
             Assert.IsTrue(installerScript.Contains("YouLink.exe", StringComparison.Ordinal));
+
+            var root = ResolveRepoRoot();
+            var iss = File.ReadAllText(Path.Combine(root, "installer", "YouLink.iss"));
+            Assert.IsTrue(iss.Contains("PrepareToInstall", StringComparison.Ordinal));
+            Assert.IsTrue(iss.Contains("taskkill.exe", StringComparison.Ordinal));
+            Assert.IsTrue(iss.Contains(@"App\wwwroot\*", StringComparison.Ordinal));
+            Assert.IsTrue(iss.Contains("ignoreversion recursesubdirs createallsubdirs", StringComparison.Ordinal));
         }
         finally
         {

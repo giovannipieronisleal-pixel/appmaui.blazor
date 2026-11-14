@@ -218,12 +218,6 @@
         gap: 0.65rem;
     }
 
-    @media (min-width: 560px) {
-        .adm-mobile-sheet-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-    }
-
     .adm-mobile-sheet-grid ::deep a.adm-mobile-sheet-link,
     .adm-mobile-sheet-grid ::deep .adm-mobile-sheet-link {
         display: flex;
@@ -385,6 +379,12 @@
     }
 }
 
+@media (min-width: 560px) and (max-width: 820px) {
+    .adm-mobile-sheet-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 .adm-sidebar-account-card {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(182, 145, 88, 0.28);
@@ -419,8 +419,17 @@
 .adm-sidebar-account-meta {
     display: flex;
     flex-direction: column;
+    gap: 0.14rem;
     min-width: 0;
     flex: 1;
+}
+
+.adm-sidebar-account-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    min-width: 0;
 }
 
 .adm-sidebar-account-name {
@@ -432,8 +441,14 @@
     text-overflow: ellipsis;
 }
 
+.adm-sidebar-role-badge {
+    font-size: 0.65rem;
+    padding: 0.12rem 0.42rem;
+    flex-shrink: 0;
+}
+
 .adm-sidebar-account-sub {
-    font-size: 0.72rem;
+    font-size: 0.71rem;
     color: var(--adm-sidebar-muted, #B8B2A8);
     white-space: nowrap;
     overflow: hidden;
@@ -447,13 +462,19 @@
 }
 
 .adm-sidebar-acc-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
     padding: 0.42rem 0.45rem;
     min-height: 34px;
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.14);
     background: rgba(255, 255, 255, 0.06);
     color: #FAF8F5;
-    font-size: 0.74rem;
+    font-size: 0.73rem;
     font-weight: 700;
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease;
