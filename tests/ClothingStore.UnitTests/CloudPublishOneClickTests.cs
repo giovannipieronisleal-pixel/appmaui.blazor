@@ -612,4 +612,134 @@ public sealed class CloudPublishOneClickTests
             CleanupDir(tempDir);
         }
     }
+
+    [TestMethod]
+    public void AppUpdateCatalog_CustomManifest_PrivateApiAssetUrl_AndCustomLauncherScript_ShouldWorkAccurately()
+    {
+        const string manifestJson = """
+        {
+          "version": "1.0.25",
+          "title": "Admin Privado v1.0.25",
+          "notes": "Sincronizacao offline e melhorias.",
+          "windowsUrl": "AdminApp-Windows-x64-v1.0.25.zip",
+          "windowsSizeBytes": 81500000,
+          "androidUrl": "https://private.example.invalid/AdminApp-Android-v1.0.25.apk",
+          "androidSizeBytes": 35100000
+        }
+        """;
+
+        var winManifest = AppUpdateCatalog.ParseCustomUpdateManifestJson(
+            manifestJson,
+            currentVersion: "1.0.18",
+            isWindows: true,
+            isAndroid: false,
+            defaultTitlePrefix: "YouLink Admin",
+            defaultFallbackNotes: "Notas padrão");
+        Assert.IsNotNull(winManifest);
+        Assert.IsTrue(winManifest!.IsUpdateAvailable);
+        Assert.AreEqual("1.0.25", winManifest.LatestVersion);
+        Assert.AreEqual("AdminApp-Windows-x64-v1.0.25.zip", winManifest.SelectedAssetName);
+        Assert.AreEqual("AdminApp-Windows-x64-v1.0.25.zip", winManifest.SelectedDownloadUrl);
+        Assert.AreEqual(81500000L, winManifest.SelectedAssetSizeBytes);
+
+        var androidManifest = AppUpdateCatalog.ParseCustomUpdateManifestJson(
+            manifestJson,
+            currentVersion: "1.0.18",
+            isWindows: false,
+            isAndroid: true,
+            defaultTitlePrefix: "YouLink Admin",
+            defaultFallbackNotes: "Notas padrão");
+        Assert.IsNotNull(androidManifest);
+        Assert.AreEqual("AdminApp-Android-v1.0.25.apk", androidManifest!.SelectedAssetName);
+
+        const string privateGitHubJson = """
+        {
+          "tag_name": "v1.0.26",
+          "name": "Privado v1.0.26",
+          "draft": false,
+          "assets": [
+            {
+              "name": "CustomAdmin-Windows-x64.zip",
+              "size": 79000000,
+              "url": "https://api.github.com/repos/private-org/private-repo/releases/assets/998877",
+              "browser_download_url": "https://github.com/private-org/private-repo/releases/download/v1.0.26/CustomAdmin-Windows-x64.zip"
+            }
+          ]
+        }
+        """;
+
+        var privateRelease = AppUpdateCatalog.ParseGitHubReleaseJson(
+            privateGitHubJson,
+            currentVersion: "1.0.18",
+            isWindows: true,
+            isAndroid: false,
+            preferWindowsSetup: false,
+            preferApiAssetUrl: true,
+            defaultTitlePrefix: "YouLink Admin",
+            source: "GitHubPrivado");
+        Assert.IsNotNull(privateRelease);
+        Assert.AreEqual("CustomAdmin-Windows-x64.zip", privateRelease!.SelectedAssetName);
+        Assert.AreEqual(
+            "https://api.github.com/repos/private-org/private-repo/releases/assets/998877",
+            privateRelease.SelectedApiDownloadUrl);
+
+        var adminScript = AppUpdateCatalog.BuildWindowsApplyUpdateScript(
+            targetProcessId: 9876,
+            sourceAppDir: @"C:\Temp\AdminStaging",
+            targetAppDir: @"C:\Users\Dono\AppData\Local\YouLinkAdmin",
+            executableFileName: "ClothingStore.AdminApp.exe",
+            logFilePath: @"C:\Temp\admin-update.log",
+            launcherFileName: "ClothingStore.AdminApp.exe",
+            appDisplayName: "YouLink Admin");
+        Assert.IsTrue(adminScript.Contains("YouLink Admin", StringComparison.Ordinal));
+        Assert.IsTrue(adminScript.Contains("ClothingStore.AdminApp.exe", StringComparison.Ordinal));
+        Assert.IsTrue(adminScript.Contains("'App_Data'", StringComparison.Ordinal));
+        Assert.IsTrue(adminScript.Contains("platform_admin_db.json", StringComparison.Ordinal));
+        Assert.IsTrue(adminScript.Contains("platform_owner_settings.json", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void AdminApp_AutoUpdateSystem_AndPrivacyBoundary_ShouldBeConfiguredProperly()
+    {
+        var root = ResolveRepoRoot();
+        var adminRoot = Path.Combine(root, "src", "ClothingStore.AdminApp");
+        if (!Directory.Exists(adminRoot))
+            return;
+
+        var modalRazor = File.ReadAllText(Path.Combine(adminRoot, "Components", "Shared", "AdminUpdateModal.razor"));
+        var modalCss = File.ReadAllText(Path.Combine(adminRoot, "Components", "Shared", "AdminUpdateModal.razor.css"));
+        var mainLayout = File.ReadAllText(Path.Combine(adminRoot, "Components", "Layout", "MainLayout.razor"));
+        var loginRazor = File.ReadAllText(Path.Combine(adminRoot, "Components", "Pages", "AdminLogin.razor"));
+        var settingsRazor = File.ReadAllText(Path.Combine(adminRoot, "Components", "Pages", "OwnerSettingsPage.razor"));
+        var mauiProgram = File.ReadAllText(Path.Combine(adminRoot, "MauiProgram.cs"));
+        var appXamlCs = File.ReadAllText(Path.Combine(adminRoot, "App.xaml.cs"));
+        var manifestXml = File.ReadAllText(Path.Combine(adminRoot, "Platforms", "Android", "AndroidManifest.xml"));
+        var updateService = File.ReadAllText(Path.Combine(adminRoot, "Services", "AdminUpdateService.cs"));
+
+        Assert.IsFalse(modalRazor.Contains("style=\"", StringComparison.OrdinalIgnoreCase),
+            "AdminUpdateModal.razor deve usar .razor.css sem estilos inline.");
+        Assert.IsTrue(modalCss.Contains("var(--adm-", StringComparison.Ordinal));
+        Assert.IsTrue(modalRazor.Contains("Há uma nova atualização disponível", StringComparison.Ordinal));
+
+        var themeStart = mainLayout.IndexOf("<div class=\"@Theme.CurrentThemeClass\">", StringComparison.Ordinal);
+        var updateModalPos = mainLayout.IndexOf("AdminUpdateModal", StringComparison.Ordinal);
+        var codePos = mainLayout.IndexOf("@code", StringComparison.Ordinal);
+        var lastDivBeforeCode = mainLayout.LastIndexOf("</div>", codePos, StringComparison.Ordinal);
+        Assert.IsTrue(updateModalPos > themeStart && updateModalPos < lastDivBeforeCode,
+            "AdminUpdateModal precisa ficar dentro do wrapper de tema em MainLayout.razor.");
+        Assert.IsTrue(mainLayout.Contains("UpdateService.StartBackgroundMonitor()", StringComparison.Ordinal));
+        Assert.IsTrue(loginRazor.Contains("Procurar Atualização", StringComparison.Ordinal));
+        Assert.IsTrue(settingsRazor.Contains("Atualizações Automáticas do YouLink Admin", StringComparison.Ordinal));
+        Assert.IsTrue(mauiProgram.Contains("AddSingleton<AdminUpdateService>()", StringComparison.Ordinal));
+        Assert.IsTrue(appXamlCs.Contains("CheckForUpdatesOnResumeAsync", StringComparison.Ordinal));
+        Assert.IsTrue(manifestXml.Contains("android.permission.REQUEST_INSTALL_PACKAGES", StringComparison.Ordinal));
+        Assert.IsTrue(updateService.Contains("_embeddedSyncServer?.Stop()", StringComparison.Ordinal));
+        Assert.IsTrue(updateService.Contains("AppUpdateCatalog.GitHubOwner", StringComparison.Ordinal),
+            "AdminUpdateService deve bloquear o repositório público do YouLink cliente para evitar troca indevida de binários.");
+
+        // Segurança: nunca colocar detalhes privados do YouLink Admin no AppUpdateCatalog público
+        var publicCatalog = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.Shared", "Helpers", "AppUpdateCatalog.cs"));
+        Assert.IsFalse(publicCatalog.Contains("ClothingStore.AdminApp", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(publicCatalog.Contains("YouLinkAdmin", StringComparison.OrdinalIgnoreCase));
+    }
 }

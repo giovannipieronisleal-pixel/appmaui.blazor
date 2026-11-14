@@ -20,7 +20,8 @@ public sealed record AppUpdateReleaseInfo(
     string? SelectedAssetName,
     string? SelectedDownloadUrl,
     long? SelectedAssetSizeBytes,
-    string Source);
+    string Source,
+    string? SelectedApiDownloadUrl = null);
 
 /// <summary>
 /// Catálogo centralizado de versão do YouLink, parser de GitHub Releases e utilitários
@@ -28,7 +29,7 @@ public sealed record AppUpdateReleaseInfo(
 /// </summary>
 public static class AppUpdateCatalog
 {
-    public const string CurrentAppVersion = "1.0.17";
+    public const string CurrentAppVersion = "1.0.18";
     public const string GitHubOwner = "giovannipieronisleal-pixel";
     public const string GitHubRepo = "yourlink";
     public const string GitHubLatestReleaseApiUrl =
@@ -104,6 +105,17 @@ public static class AppUpdateCatalog
         bool isWindows,
         bool isAndroid,
         bool preferWindowsSetup = false)
+        => ParseGitHubReleaseJson(json, currentVersion, isWindows, isAndroid, preferWindowsSetup, preferApiAssetUrl: false);
+
+    public static AppUpdateReleaseInfo? ParseGitHubReleaseJson(
+        string json,
+        string currentVersion,
+        bool isWindows,
+        bool isAndroid,
+        bool preferWindowsSetup,
+        bool preferApiAssetUrl,
+        string defaultTitlePrefix = "YouLink",
+        string source = "GitHubReleases")
     {
         if (string.IsNullOrWhiteSpace(json))
             return null;
@@ -118,7 +130,7 @@ public static class AppUpdateCatalog
             if (root.TryGetProperty("draft", out var draftProp) && draftProp.ValueKind == JsonValueKind.True)
                 return null;
 
-            var tagName = root.TryGetProperty("tag_name", out var tagProp) ? tagProp.GetString() : null;
+            var tagName = TryGetOptionalString(root, "tag_name");
             var normalizedLatest = NormalizeVersion(tagName);
             if (string.IsNullOrWhiteSpace(normalizedLatest))
                 return null;
@@ -127,54 +139,63 @@ public static class AppUpdateCatalog
             if (string.IsNullOrWhiteSpace(normalizedCurrent))
                 normalizedCurrent = CurrentAppVersion;
 
-            var releaseName = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
-            var releaseBody = root.TryGetProperty("body", out var bodyProp) ? bodyProp.GetString() : null;
-            var htmlUrl = root.TryGetProperty("html_url", out var urlProp) ? urlProp.GetString() : null;
+            var releaseName = TryGetOptionalString(root, "name");
+            var releaseBody = TryGetOptionalString(root, "body");
+            var htmlUrl = TryGetOptionalString(root, "html_url");
 
             DateTimeOffset? publishedAt = null;
-            if (root.TryGetProperty("published_at", out var pubProp) &&
-                pubProp.ValueKind == JsonValueKind.String &&
-                DateTimeOffset.TryParse(pubProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDate))
+            var pubText = TryGetOptionalString(root, "published_at");
+            if (!string.IsNullOrWhiteSpace(pubText) &&
+                DateTimeOffset.TryParse(pubText, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDate))
             {
                 publishedAt = parsedDate;
             }
 
             string? windowsSetupUrl = null;
+            string? windowsSetupApiUrl = null;
+            string? windowsSetupName = null;
             long? windowsSetupSize = null;
             string? windowsUrl = null;
+            string? windowsApiUrl = null;
+            string? windowsName = null;
             long? windowsSize = null;
             string? androidUrl = null;
+            string? androidApiUrl = null;
+            string? androidName = null;
             long? androidSize = null;
 
             if (root.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
             {
                 foreach (var asset in assetsProp.EnumerateArray())
                 {
-                    var assetName = asset.TryGetProperty("name", out var an) ? an.GetString() : null;
-                    var downloadUrl = asset.TryGetProperty("browser_download_url", out var dl) ? dl.GetString() : null;
-                    long? size = asset.TryGetProperty("size", out var sz) && sz.TryGetInt64(out var parsedSize)
-                        ? parsedSize
-                        : null;
+                    var assetName = TryGetOptionalString(asset, "name");
+                    var downloadUrl = TryGetOptionalString(asset, "browser_download_url");
+                    var apiUrl = TryGetOptionalString(asset, "url");
+                    var effectiveUrl = !string.IsNullOrWhiteSpace(downloadUrl) ? downloadUrl : apiUrl;
+                    long? size = TryGetOptionalInt64(asset, "size");
 
-                    if (string.IsNullOrWhiteSpace(assetName) || string.IsNullOrWhiteSpace(downloadUrl))
+                    if (string.IsNullOrWhiteSpace(assetName) || string.IsNullOrWhiteSpace(effectiveUrl))
                         continue;
 
-                    if (string.Equals(assetName, WindowsSetupAssetName, StringComparison.OrdinalIgnoreCase) ||
-                        assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    if (IsWindowsSetupAssetName(assetName))
                     {
-                        windowsSetupUrl ??= downloadUrl;
+                        windowsSetupUrl ??= effectiveUrl;
+                        windowsSetupApiUrl ??= apiUrl;
+                        windowsSetupName ??= assetName;
                         windowsSetupSize ??= size;
                     }
-                    else if (string.Equals(assetName, WindowsAssetName, StringComparison.OrdinalIgnoreCase) ||
-                             assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    else if (assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                     {
-                        windowsUrl ??= downloadUrl;
+                        windowsUrl ??= effectiveUrl;
+                        windowsApiUrl ??= apiUrl;
+                        windowsName ??= assetName;
                         windowsSize ??= size;
                     }
-                    else if (string.Equals(assetName, AndroidAssetName, StringComparison.OrdinalIgnoreCase) ||
-                             assetName.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
+                    else if (assetName.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
                     {
-                        androidUrl ??= downloadUrl;
+                        androidUrl ??= effectiveUrl;
+                        androidApiUrl ??= apiUrl;
+                        androidName ??= assetName;
                         androidSize ??= size;
                     }
                 }
@@ -189,13 +210,32 @@ public static class AppUpdateCatalog
                 windowsUrl,
                 windowsSize,
                 androidUrl,
-                androidSize);
+                androidSize,
+                windowsSetupAssetName: windowsSetupName,
+                windowsAssetName: windowsName,
+                androidAssetName: androidName);
+
+            var (_, selectedApiUrl, _) = preferApiAssetUrl
+                ? SelectPlatformAsset(
+                    isWindows,
+                    isAndroid,
+                    preferWindowsSetup,
+                    windowsSetupApiUrl ?? windowsSetupUrl,
+                    windowsSetupSize,
+                    windowsApiUrl ?? windowsUrl,
+                    windowsSize,
+                    androidApiUrl ?? androidUrl,
+                    androidSize,
+                    windowsSetupAssetName: windowsSetupName,
+                    windowsAssetName: windowsName,
+                    androidAssetName: androidName)
+                : (null, null, null);
 
             return new AppUpdateReleaseInfo(
                 CurrentVersion: normalizedCurrent,
                 LatestVersion: normalizedLatest,
                 IsUpdateAvailable: IsVersionNewer(normalizedLatest, normalizedCurrent),
-                ReleaseTitle: string.IsNullOrWhiteSpace(releaseName) ? $"YouLink v{normalizedLatest}" : releaseName.Trim(),
+                ReleaseTitle: string.IsNullOrWhiteSpace(releaseName) ? $"{defaultTitlePrefix} v{normalizedLatest}" : releaseName.Trim(),
                 ReleaseNotes: string.IsNullOrWhiteSpace(releaseBody)
                     ? "Melhorias de desempenho, sincronização online 24h e correções visuais."
                     : releaseBody.Trim(),
@@ -208,7 +248,106 @@ public static class AppUpdateCatalog
                 SelectedAssetName: selectedName,
                 SelectedDownloadUrl: selectedUrl,
                 SelectedAssetSizeBytes: selectedSize,
-                Source: "GitHubReleases");
+                Source: source,
+                SelectedApiDownloadUrl: selectedApiUrl);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static AppUpdateReleaseInfo? ParseCustomUpdateManifestJson(
+        string json,
+        string currentVersion,
+        bool isWindows,
+        bool isAndroid,
+        string defaultTitlePrefix,
+        string defaultFallbackNotes,
+        bool preferWindowsSetup = false,
+        string source = "ManifestJson")
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (root.TryGetProperty("tag_name", out _))
+            {
+                return ParseGitHubReleaseJson(
+                    json,
+                    currentVersion,
+                    isWindows,
+                    isAndroid,
+                    preferWindowsSetup,
+                    preferApiAssetUrl: false,
+                    defaultTitlePrefix: defaultTitlePrefix,
+                    source: source);
+            }
+
+            var rawVersion = TryGetOptionalString(root, "version") ?? TryGetOptionalString(root, "latestVersion");
+            var normalizedLatest = NormalizeVersion(rawVersion);
+            if (string.IsNullOrWhiteSpace(normalizedLatest) || !Version.TryParse(normalizedLatest, out _))
+                return null;
+
+            var normalizedCurrent = NormalizeVersion(currentVersion);
+            if (string.IsNullOrWhiteSpace(normalizedCurrent))
+                normalizedCurrent = CurrentAppVersion;
+
+            var title = TryGetOptionalString(root, "title") ?? TryGetOptionalString(root, "name");
+            var notes = TryGetOptionalString(root, "notes") ?? TryGetOptionalString(root, "body");
+            var releasePageUrl = TryGetOptionalString(root, "releasePageUrl") ?? TryGetOptionalString(root, "html_url") ?? string.Empty;
+
+            DateTimeOffset? publishedAt = null;
+            var pubText = TryGetOptionalString(root, "publishedAt") ?? TryGetOptionalString(root, "published_at");
+            if (!string.IsNullOrWhiteSpace(pubText) &&
+                DateTimeOffset.TryParse(pubText, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDate))
+            {
+                publishedAt = parsedDate;
+            }
+
+            var windowsSetupUrl = TryGetOptionalString(root, "windowsSetupUrl");
+            var windowsSetupSize = TryGetOptionalInt64(root, "windowsSetupSizeBytes");
+            var windowsUrl = TryGetOptionalString(root, "windowsUrl");
+            var windowsSize = TryGetOptionalInt64(root, "windowsSizeBytes");
+            var androidUrl = TryGetOptionalString(root, "androidUrl");
+            var androidSize = TryGetOptionalInt64(root, "androidSizeBytes");
+
+            var (selectedName, selectedUrl, selectedSize) = SelectPlatformAsset(
+                isWindows,
+                isAndroid,
+                preferWindowsSetup,
+                windowsSetupUrl,
+                windowsSetupSize,
+                windowsUrl,
+                windowsSize,
+                androidUrl,
+                androidSize,
+                windowsSetupAssetName: ExtractAssetName(windowsSetupUrl, WindowsSetupAssetName),
+                windowsAssetName: ExtractAssetName(windowsUrl, WindowsAssetName),
+                androidAssetName: ExtractAssetName(androidUrl, AndroidAssetName));
+
+            return new AppUpdateReleaseInfo(
+                CurrentVersion: normalizedCurrent,
+                LatestVersion: normalizedLatest,
+                IsUpdateAvailable: IsVersionNewer(normalizedLatest, normalizedCurrent),
+                ReleaseTitle: string.IsNullOrWhiteSpace(title) ? $"{defaultTitlePrefix} v{normalizedLatest}" : title.Trim(),
+                ReleaseNotes: string.IsNullOrWhiteSpace(notes) ? defaultFallbackNotes : notes.Trim(),
+                ReleasePageUrl: releasePageUrl.Trim(),
+                PublishedAt: publishedAt,
+                WindowsDownloadUrl: preferWindowsSetup ? (windowsSetupUrl ?? windowsUrl) : (windowsUrl ?? windowsSetupUrl),
+                WindowsAssetSizeBytes: preferWindowsSetup ? (windowsSetupSize ?? windowsSize) : (windowsSize ?? windowsSetupSize),
+                AndroidDownloadUrl: androidUrl,
+                AndroidAssetSizeBytes: androidSize,
+                SelectedAssetName: selectedName,
+                SelectedDownloadUrl: selectedUrl,
+                SelectedAssetSizeBytes: selectedSize,
+                Source: source);
         }
         catch
         {
@@ -388,17 +527,37 @@ public static class AppUpdateCatalog
         string targetAppDir,
         string executableFileName,
         string logFilePath)
+        => BuildWindowsApplyUpdateScript(
+            targetProcessId,
+            sourceAppDir,
+            targetAppDir,
+            executableFileName,
+            logFilePath,
+            WindowsLauncherName,
+            "YouLink");
+
+    public static string BuildWindowsApplyUpdateScript(
+        int targetProcessId,
+        string sourceAppDir,
+        string targetAppDir,
+        string executableFileName,
+        string logFilePath,
+        string launcherFileName,
+        string appDisplayName)
     {
+        var effectiveDisplay = string.IsNullOrWhiteSpace(appDisplayName) ? "YouLink" : appDisplayName.Trim();
+        var effectiveLauncher = string.IsNullOrWhiteSpace(launcherFileName) ? executableFileName : launcherFileName.Trim();
+
         var sb = new StringBuilder();
         sb.AppendLine("$ErrorActionPreference = 'Stop'");
         sb.AppendLine($"$targetPid = {targetProcessId}");
         sb.AppendLine($"$sourceDir = '{EscapePowerShellSingleQuoted(sourceAppDir.TrimEnd('\\', '/'))}'");
         sb.AppendLine($"$targetDir = '{EscapePowerShellSingleQuoted(targetAppDir.TrimEnd('\\', '/'))}'");
         sb.AppendLine($"$exeName = '{EscapePowerShellSingleQuoted(executableFileName)}'");
-        sb.AppendLine($"$launcherName = '{EscapePowerShellSingleQuoted(WindowsLauncherName)}'");
+        sb.AppendLine($"$launcherName = '{EscapePowerShellSingleQuoted(effectiveLauncher)}'");
         sb.AppendLine($"$logPath = '{EscapePowerShellSingleQuoted(logFilePath)}'");
         sb.AppendLine("function Write-Log([string]$msg) { Add-Content -Path $logPath -Value \"[$(Get-Date -Format 'HH:mm:ss')] $msg\" -Encoding UTF8 }");
-        sb.AppendLine("Write-Log 'Iniciando atualização automática do YouLink Windows...'");
+        sb.AppendLine($"Write-Log 'Iniciando atualização automática do {EscapePowerShellSingleQuoted(effectiveDisplay)} Windows...'");
         sb.AppendLine("for ($i = 0; $i -lt 40; $i++) {");
         sb.AppendLine("    $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue");
         sb.AppendLine("    if ($null -eq $proc) { break }");
@@ -406,7 +565,7 @@ public static class AppUpdateCatalog
         sb.AppendLine("}");
         sb.AppendLine("$stillRunning = Get-Process -Id $targetPid -ErrorAction SilentlyContinue");
         sb.AppendLine("if ($null -ne $stillRunning) { try { Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue } catch {} Start-Sleep -Milliseconds 600 }");
-        sb.AppendLine("$robocopyArgs = @($sourceDir, $targetDir, '/E', '/IS', '/IT', '/R:6', '/W:1', '/XD', 'App_Data', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')");
+        sb.AppendLine("$robocopyArgs = @($sourceDir, $targetDir, '/E', '/IS', '/IT', '/R:6', '/W:1', '/XD', 'App_Data', 'EBWebView', '/XF', 'clothingstore_db.json', 'platform_admin_db.json', 'platform_owner_settings.json', 'email_outbox.txt', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')");
         sb.AppendLine("& robocopy @robocopyArgs | Out-Null");
         sb.AppendLine("$rc = $LASTEXITCODE");
         sb.AppendLine("Write-Log \"Robocopy exit code: $rc\"");
@@ -437,7 +596,23 @@ public static class AppUpdateCatalog
         string setupExePath,
         string targetLauncherPath,
         string logFilePath)
+        => BuildWindowsInstallerUpdateScript(
+            targetProcessId,
+            setupExePath,
+            targetLauncherPath,
+            logFilePath,
+            "YouLink");
+
+    public static string BuildWindowsInstallerUpdateScript(
+        int targetProcessId,
+        string setupExePath,
+        string targetLauncherPath,
+        string logFilePath,
+        string appDisplayName)
     {
+        var effectiveDisplay = string.IsNullOrWhiteSpace(appDisplayName) ? "YouLink" : appDisplayName.Trim();
+        var setupName = Path.GetFileName(setupExePath);
+
         var sb = new StringBuilder();
         sb.AppendLine("$ErrorActionPreference = 'Stop'");
         sb.AppendLine($"$targetPid = {targetProcessId}");
@@ -445,7 +620,7 @@ public static class AppUpdateCatalog
         sb.AppendLine($"$launchExe = '{EscapePowerShellSingleQuoted(targetLauncherPath)}'");
         sb.AppendLine($"$logPath = '{EscapePowerShellSingleQuoted(logFilePath)}'");
         sb.AppendLine("function Write-Log([string]$msg) { Add-Content -Path $logPath -Value \"[$(Get-Date -Format 'HH:mm:ss')] $msg\" -Encoding UTF8 }");
-        sb.AppendLine("Write-Log 'Iniciando atualização pelo instalador YouLink-Setup-x64.exe...'");
+        sb.AppendLine($"Write-Log 'Iniciando atualização do {EscapePowerShellSingleQuoted(effectiveDisplay)} pelo instalador {EscapePowerShellSingleQuoted(setupName)}...'");
         sb.AppendLine("for ($i = 0; $i -lt 40; $i++) {");
         sb.AppendLine("    $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue");
         sb.AppendLine("    if ($null -eq $proc) { break }");
@@ -471,24 +646,69 @@ public static class AppUpdateCatalog
         string? windowsUrl,
         long? windowsSize,
         string? androidUrl,
-        long? androidSize)
+        long? androidSize,
+        string? windowsSetupAssetName = null,
+        string? windowsAssetName = null,
+        string? androidAssetName = null)
     {
         if (isWindows)
         {
             if (preferWindowsSetup && !string.IsNullOrWhiteSpace(windowsSetupUrl))
-                return (WindowsSetupAssetName, windowsSetupUrl, windowsSetupSize);
+                return (string.IsNullOrWhiteSpace(windowsSetupAssetName) ? WindowsSetupAssetName : windowsSetupAssetName, windowsSetupUrl, windowsSetupSize);
 
             if (!string.IsNullOrWhiteSpace(windowsUrl))
-                return (WindowsAssetName, windowsUrl, windowsSize);
+                return (string.IsNullOrWhiteSpace(windowsAssetName) ? WindowsAssetName : windowsAssetName, windowsUrl, windowsSize);
 
             if (!string.IsNullOrWhiteSpace(windowsSetupUrl))
-                return (WindowsSetupAssetName, windowsSetupUrl, windowsSetupSize);
+                return (string.IsNullOrWhiteSpace(windowsSetupAssetName) ? WindowsSetupAssetName : windowsSetupAssetName, windowsSetupUrl, windowsSetupSize);
         }
 
         if (isAndroid && !string.IsNullOrWhiteSpace(androidUrl))
-            return (AndroidAssetName, androidUrl, androidSize);
+            return (string.IsNullOrWhiteSpace(androidAssetName) ? AndroidAssetName : androidAssetName, androidUrl, androidSize);
 
         return (null, null, null);
+    }
+
+    private static bool IsWindowsSetupAssetName(string assetName) =>
+        string.Equals(assetName, WindowsSetupAssetName, StringComparison.OrdinalIgnoreCase)
+        || assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+
+    private static string? TryGetOptionalString(JsonElement obj, string propertyName) =>
+        obj.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.String
+            ? prop.GetString()
+            : null;
+
+    private static long? TryGetOptionalInt64(JsonElement obj, string propertyName) =>
+        obj.TryGetProperty(propertyName, out var prop) && prop.TryGetInt64(out var val)
+            ? val
+            : null;
+
+    private static string? ExtractAssetName(string? urlOrPath, string fallbackName)
+    {
+        if (string.IsNullOrWhiteSpace(urlOrPath))
+            return null;
+
+        try
+        {
+            var trimmed = urlOrPath.Trim();
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+            {
+                var fileName = Path.GetFileName(uri.LocalPath);
+                if (!string.IsNullOrWhiteSpace(fileName))
+                    return fileName;
+            }
+            else
+            {
+                var fileName = Path.GetFileName(trimmed);
+                if (!string.IsNullOrWhiteSpace(fileName))
+                    return fileName;
+            }
+        }
+        catch
+        {
+        }
+
+        return fallbackName;
     }
 
     private static string EscapePowerShellSingleQuoted(string value) =>
