@@ -88,6 +88,20 @@ app.MapGet("/health", () => Results.Ok(new
     timestamp = DateTimeOffset.UtcNow
 }));
 
+app.MapGet("/manifest.webmanifest", async (CatalogService catalogService, CancellationToken ct) =>
+{
+    PublicStoreSettingsDto? settings = null;
+    try
+    {
+        settings = await catalogService.GetPublicStoreSettingsAsync(ct);
+    }
+    catch
+    {
+    }
+
+    return Results.Text(PwaManifestBuilder.BuildJson(settings), "application/manifest+json; charset=utf-8");
+});
+
 app.MapGet("/api/public/store-info", async (CatalogService catalogService, CancellationToken ct) =>
     Results.Ok(await catalogService.GetPublicStoreSettingsAsync(ct)));
 

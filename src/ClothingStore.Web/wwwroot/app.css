@@ -965,3 +965,11 @@ img {
     justify-content: space-between;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.1);
 }
+
+.lux-pwa-install-btn {
+    display: none;
+}
+
+html.pwa-can-install .lux-pwa-install-btn {
+    display: inline-flex;
+}

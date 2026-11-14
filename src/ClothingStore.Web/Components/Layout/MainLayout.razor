@@ -25,6 +25,9 @@
             <nav class="lux-nav" aria-label="Navegação principal">
                 <NavLink href="/" Match="NavLinkMatch.All" class="lux-nav-link">Início</NavLink>
                 <NavLink href="/catalogo" class="lux-nav-link">Ver Roupas</NavLink>
+                <button type="button" class="lux-btn lux-btn-outline lux-btn-sm lux-pwa-install-btn" data-pwa-install>
+                    📲 Instalar App
+                </button>
 
                 @if (_store is { IsSiteActive: true } && !string.IsNullOrWhiteSpace(_store.WhatsappNumber))
                 {
