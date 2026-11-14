@@ -589,20 +589,40 @@ public class SyncCompatAndMobileCheckoutTests
         var root = FindRepoRoot();
 
         var appMaui = File.ReadAllText(Path.Combine(root, "MauiProgram.cs"), Encoding.UTF8);
-        var adminMaui = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.AdminApp", "MauiProgram.cs"), Encoding.UTF8);
         Assert.IsFalse(appMaui.Contains("FromMilliseconds(900)", StringComparison.Ordinal), "ConnectTimeout de 900ms causa OperationCanceled em Wi-Fi/Render.");
-        Assert.IsFalse(adminMaui.Contains("FromMilliseconds(900)", StringComparison.Ordinal), "AdminApp também não pode usar ConnectTimeout de 900ms.");
-        Assert.IsTrue(adminMaui.Contains("EmbeddedAdminSyncServer", StringComparison.Ordinal), "YouLink Admin precisa iniciar o Receptor LAN embutido.");
 
         var gateway = File.ReadAllText(Path.Combine(root, "Services", "MauiAdminGateway.cs"), Encoding.UTF8);
         Assert.IsTrue(gateway.Contains("PushLocalAccountsToServerAsync", StringComparison.Ordinal));
         Assert.IsTrue(gateway.Contains("CreateEmployeeAsync", StringComparison.Ordinal) && gateway.Contains("TrySyncLocalAccountsQuietlyAsync", StringComparison.Ordinal));
 
-        var adminStorage = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.AdminApp", "Services", "PlatformAdminStorage.cs"), Encoding.UTF8);
-        Assert.IsTrue(adminStorage.Contains("RefreshFromDiskIfModified", StringComparison.Ordinal), "PlatformAdminStorage precisa recarregar dados gravados por outros processos.");
+        var apiProgram = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.Api", "Program.cs"), Encoding.UTF8);
+        Assert.IsTrue(apiProgram.Contains("/api/platform-sync/sync-accounts", StringComparison.Ordinal), "API deve expor endpoint de envio de contas offline.");
 
-        var usersPage = File.ReadAllText(Path.Combine(root, "src", "ClothingStore.AdminApp", "Components", "Pages", "UsersAndVipPage.razor"), Encoding.UTF8);
-        Assert.IsTrue(usersPage.Contains("Gateway.DataUpdated", StringComparison.Ordinal), "UsersAndVipPage precisa atualizar ao vivo quando novas contas chegarem.");
-        Assert.IsTrue(usersPage.Contains("CreatePlatformUserAsync", StringComparison.Ordinal), "UsersAndVipPage deve permitir criar usuários direto no Admin.");
+        var storeSettings = File.ReadAllText(Path.Combine(root, "Components", "Pages", "StoreSettingsPage.razor"), Encoding.UTF8);
+        Assert.IsTrue(storeSettings.Contains("PushLocalAccountsToServerAsync", StringComparison.Ordinal), "StoreSettingsPage precisa oferecer botão manual de envio de contas.");
+
+        // O projeto privado src/ClothingStore.AdminApp existe apenas localmente (é excluído do repositório público).
+        var adminMauiPath = Path.Combine(root, "src", "ClothingStore.AdminApp", "MauiProgram.cs");
+        if (File.Exists(adminMauiPath))
+        {
+            var adminMaui = File.ReadAllText(adminMauiPath, Encoding.UTF8);
+            Assert.IsFalse(adminMaui.Contains("FromMilliseconds(900)", StringComparison.Ordinal), "AdminApp também não pode usar ConnectTimeout de 900ms.");
+            Assert.IsTrue(adminMaui.Contains("EmbeddedAdminSyncServer", StringComparison.Ordinal), "YouLink Admin precisa iniciar o Receptor LAN embutido.");
+        }
+
+        var adminStoragePath = Path.Combine(root, "src", "ClothingStore.AdminApp", "Services", "PlatformAdminStorage.cs");
+        if (File.Exists(adminStoragePath))
+        {
+            var adminStorage = File.ReadAllText(adminStoragePath, Encoding.UTF8);
+            Assert.IsTrue(adminStorage.Contains("RefreshFromDiskIfModified", StringComparison.Ordinal), "PlatformAdminStorage precisa recarregar dados gravados por outros processos.");
+        }
+
+        var usersPagePath = Path.Combine(root, "src", "ClothingStore.AdminApp", "Components", "Pages", "UsersAndVipPage.razor");
+        if (File.Exists(usersPagePath))
+        {
+            var usersPage = File.ReadAllText(usersPagePath, Encoding.UTF8);
+            Assert.IsTrue(usersPage.Contains("Gateway.DataUpdated", StringComparison.Ordinal), "UsersAndVipPage precisa atualizar ao vivo quando novas contas chegarem.");
+            Assert.IsTrue(usersPage.Contains("CreatePlatformUserAsync", StringComparison.Ordinal), "UsersAndVipPage deve permitir criar usuários direto no Admin.");
+        }
     }
 }
