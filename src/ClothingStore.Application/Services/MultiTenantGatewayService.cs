@@ -23,6 +23,7 @@ public sealed class MultiTenantGatewayService
     private readonly IPasswordHasher _passwordHasher;
     private readonly IImageStorageService _imageStorage;
     private readonly IEmailService? _emailService;
+    private readonly IPlatformMercadoPagoTokenStore? _platformTokenStore;
     private readonly ConcurrentDictionary<string, PendingOAuthState> _pendingOAuthStates = new(StringComparer.Ordinal);
 
     public MultiTenantGatewayService(
@@ -31,7 +32,8 @@ public sealed class MultiTenantGatewayService
         HttpClient httpClient,
         IPasswordHasher passwordHasher,
         IImageStorageService imageStorage,
-        IEmailService? emailService = null)
+        IEmailService? emailService = null,
+        IPlatformMercadoPagoTokenStore? platformTokenStore = null)
     {
         _storeResolver = storeResolver;
         _mercadoPagoPixService = mercadoPagoPixService;
@@ -39,6 +41,7 @@ public sealed class MultiTenantGatewayService
         _passwordHasher = passwordHasher;
         _imageStorage = imageStorage;
         _emailService = emailService;
+        _platformTokenStore = platformTokenStore;
     }
 
     public IMultiTenantStoreResolver StoreResolver => _storeResolver;
@@ -271,7 +274,8 @@ public sealed class MultiTenantGatewayService
         _pendingOAuthStates[stateToken] = new PendingOAuthState(
             auth.NormalizedStoreSlug,
             callbackRedirectUri,
-            DateTimeOffset.UtcNow.AddMinutes(15));
+            DateTimeOffset.UtcNow.AddMinutes(15),
+            IsPlatformOwner: false);
 
         var authUrl = _mercadoPagoPixService.BuildAuthorizationUrl(callbackRedirectUri, stateToken);
         return (new MercadoPagoOAuthStartResponse(
@@ -279,6 +283,37 @@ public sealed class MultiTenantGatewayService
             AuthorizationUrl: authUrl,
             StateToken: stateToken,
             Message: "Abra o link abaixo no navegador para autorizar sua conta Mercado Pago."), auth.IssuedPublishToken);
+    }
+
+    public MercadoPagoOAuthStartResponse StartPlatformOwnerMercadoPagoOAuth(string callbackRedirectUri)
+    {
+        var appConfig = _mercadoPagoPixService.GetConfiguredApp();
+        if (!appConfig.IsOAuthConfigured)
+        {
+            return new MercadoPagoOAuthStartResponse(
+                IsConfigured: false,
+                AuthorizationUrl: null,
+                StateToken: null,
+                Message: "Configure MP_CLIENT_ID e MP_CLIENT_SECRET nas variáveis do servidor central.");
+        }
+
+        if (_platformTokenStore is null)
+            throw new DomainException("Armazenamento OAuth da plataforma não configurado neste servidor.");
+
+        CleanupExpiredOAuthStates();
+        var stateToken = "platform." + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        _pendingOAuthStates[stateToken] = new PendingOAuthState(
+            "_youlink_platform_",
+            callbackRedirectUri,
+            DateTimeOffset.UtcNow.AddMinutes(15),
+            IsPlatformOwner: true);
+
+        var authUrl = _mercadoPagoPixService.BuildAuthorizationUrl(callbackRedirectUri, stateToken);
+        return new MercadoPagoOAuthStartResponse(
+            IsConfigured: true,
+            AuthorizationUrl: authUrl,
+            StateToken: stateToken,
+            Message: "Abra o link para conectar a conta Mercado Pago do dono da plataforma (recebimento dos planos YouLink).");
     }
 
     public async Task<MercadoPagoOAuthCallbackResult> CompleteMercadoPagoOAuthCallbackAsync(
@@ -331,6 +366,32 @@ public sealed class MultiTenantGatewayService
         }
 
         var expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(300, tokenResult.ExpiresInSeconds));
+        if (pending.IsPlatformOwner)
+        {
+            if (_platformTokenStore is null)
+            {
+                return new MercadoPagoOAuthCallbackResult(
+                    false,
+                    pending.StoreSlug,
+                    string.Empty,
+                    "Armazenamento de tokens da plataforma indisponível.");
+            }
+
+            await _platformTokenStore.SaveOAuthTokensAsync(
+                tokenResult.AccessToken,
+                tokenResult.RefreshToken,
+                tokenResult.ExpiresInSeconds,
+                tokenResult.UserId,
+                tokenResult.AccountLabel,
+                ct);
+
+            return new MercadoPagoOAuthCallbackResult(
+                true,
+                pending.StoreSlug,
+                tokenResult.AccountLabel ?? "Conta Plataforma Mercado Pago",
+                "Conta Mercado Pago da plataforma conectada! Agora o YouLink recebe automaticamente Pix e Cartão nas contratações de planos.");
+        }
+
         await _storeResolver.SaveMercadoPagoTokensAsync(
             pending.StoreSlug,
             tokenResult.AccessToken,
@@ -553,7 +614,7 @@ public sealed class MultiTenantGatewayService
         }
     }
 
-    private static (string? PaymentId, string? Topic) ExtractPaymentNotification(
+    public static (string? PaymentId, string? Topic) ExtractPaymentNotification(
         string? queryDataId,
         string? queryTopic,
         string? rawBodyJson)
@@ -603,7 +664,8 @@ public sealed class MultiTenantGatewayService
     private sealed record PendingOAuthState(
         string StoreSlug,
         string RedirectUri,
-        DateTimeOffset ExpiresAt);
+        DateTimeOffset ExpiresAt,
+        bool IsPlatformOwner = false);
 }
 
 public sealed record MercadoPagoOAuthCallbackResult(

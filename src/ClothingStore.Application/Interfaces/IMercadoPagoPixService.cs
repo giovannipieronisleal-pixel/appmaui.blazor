@@ -40,8 +40,75 @@ public sealed record MercadoPagoPaymentLookupResult(
         string.Equals(Status, "approved", StringComparison.OrdinalIgnoreCase);
 }
 
+public sealed record MercadoPagoCheckoutPreferenceResult(
+    bool Success,
+    string PreferenceId,
+    string InitPoint,
+    string? SandboxInitPoint,
+    string? ErrorMessage);
+
+public sealed record MercadoPagoSubscriptionResult(
+    bool Success,
+    string SubscriptionId,
+    string InitPoint,
+    string Status,
+    string? ErrorMessage);
+
+public sealed record MercadoPagoPreapprovalLookupResult(
+    string PreapprovalId,
+    string Status,
+    string? ExternalReference,
+    string? PayerEmail,
+    decimal? TransactionAmount,
+    DateTimeOffset? NextPaymentDate)
+{
+    public bool IsAuthorized =>
+        string.Equals(Status, "authorized", StringComparison.OrdinalIgnoreCase);
+}
+
+public sealed record MercadoPagoAuthorizedPaymentLookupResult(
+    string AuthorizedPaymentId,
+    string? PreapprovalId,
+    string? PaymentId,
+    string Status,
+    string? ExternalReference,
+    decimal? TransactionAmount)
+{
+    public bool IsApproved =>
+        string.Equals(Status, "processed", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(Status, "authorized", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(Status, "approved", StringComparison.OrdinalIgnoreCase);
+}
+
+public sealed record PlatformMercadoPagoConnectionStatus(
+    bool IsAppConfigured,
+    bool IsConnected,
+    string? AccountLabel,
+    bool UsingEnvironmentToken);
+
 /// <summary>
-/// Cliente oficial de integração Mercado Pago (OAuth + Pix Dinâmico + Verificação de Pagamento/Webhook).
+/// Armazena de forma criptografada (AES-GCM) ou via variável de ambiente (`MP_PLATFORM_ACCESS_TOKEN`)
+/// a conta Mercado Pago do dono da plataforma que recebe assinaturas e compras de planos do YouLink.
+/// </summary>
+public interface IPlatformMercadoPagoTokenStore
+{
+    Task<string?> GetValidAccessTokenAsync(IMercadoPagoPixService? refreshService = null, CancellationToken ct = default);
+
+    Task<PlatformMercadoPagoConnectionStatus> GetConnectionStatusAsync(bool isAppConfigured, CancellationToken ct = default);
+
+    Task SaveOAuthTokensAsync(
+        string accessToken,
+        string? refreshToken,
+        int expiresInSeconds,
+        string? userId,
+        string? accountLabel,
+        CancellationToken ct = default);
+
+    Task ClearOAuthTokensAsync(CancellationToken ct = default);
+}
+
+/// <summary>
+/// Cliente oficial de integração Mercado Pago (OAuth + Pix Dinâmico + Checkout Pro + Assinaturas + Webhook).
 /// Usado exclusivamente pelo servidor/API — nenhum secret fica no navegador ou aplicativo do comprador.
 /// </summary>
 public interface IMercadoPagoPixService
@@ -73,6 +140,44 @@ public interface IMercadoPagoPixService
     Task<MercadoPagoPaymentLookupResult?> GetPaymentStatusAsync(
         string accessToken,
         string paymentId,
+        CancellationToken ct = default);
+
+    Task<MercadoPagoPaymentLookupResult?> SearchLatestPaymentByExternalReferenceAsync(
+        string accessToken,
+        string externalReference,
+        CancellationToken ct = default);
+
+    Task<MercadoPagoCheckoutPreferenceResult> CreateCheckoutPreferenceAsync(
+        string accessToken,
+        decimal transactionAmount,
+        string title,
+        string orderNumber,
+        string? payerName,
+        string? payerEmail,
+        string backUrlBase,
+        string? notificationUrl,
+        string idempotencyKey,
+        CancellationToken ct = default);
+
+    Task<MercadoPagoSubscriptionResult> CreatePreapprovalSubscriptionAsync(
+        string accessToken,
+        decimal recurringAmount,
+        int frequencyMonths,
+        string reason,
+        string orderNumber,
+        string payerEmail,
+        string backUrl,
+        string? notificationUrl,
+        CancellationToken ct = default);
+
+    Task<MercadoPagoPreapprovalLookupResult?> GetPreapprovalStatusAsync(
+        string accessToken,
+        string preapprovalId,
+        CancellationToken ct = default);
+
+    Task<MercadoPagoAuthorizedPaymentLookupResult?> GetAuthorizedPaymentAsync(
+        string accessToken,
+        string authorizedPaymentId,
         CancellationToken ct = default);
 
     bool VerifyWebhookSignature(

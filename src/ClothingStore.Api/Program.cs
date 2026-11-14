@@ -104,6 +104,8 @@ builder.Services.AddSingleton<IMultiTenantStoreResolver>(sp =>
         sp.GetRequiredService<IClothingStoreRepository>(),
         sp.GetRequiredService<IPasswordHasher>(),
         Path.GetDirectoryName(sharedDbPath)));
+builder.Services.AddSingleton<IPlatformMercadoPagoTokenStore>(_ =>
+    new PlatformMercadoPagoTokenStore(Path.GetDirectoryName(sharedDbPath)));
 
 builder.Services.AddSingleton<IMercadoPagoPixService>(sp =>
 {
@@ -143,8 +145,13 @@ builder.Services.AddScoped<MultiTenantGatewayService>(sp =>
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<IPasswordHasher>(),
         sp.GetRequiredService<IImageStorageService>(),
-        sp.GetService<IEmailService>()));
-builder.Services.AddScoped<PlatformSubscriptionService>();
+        sp.GetService<IEmailService>(),
+        sp.GetRequiredService<IPlatformMercadoPagoTokenStore>()));
+builder.Services.AddScoped<PlatformSubscriptionService>(sp =>
+    new PlatformSubscriptionService(
+        sp.GetRequiredService<IClothingStoreRepository>(),
+        sp.GetRequiredService<IMercadoPagoPixService>(),
+        sp.GetRequiredService<IPlatformMercadoPagoTokenStore>()));
 
 // Autenticação JWT + Policies de Autorização verificadas no Backend
 builder.Services.AddAuthentication(JwtBearerAuthenticationHandler.SchemeName)
@@ -1517,16 +1524,21 @@ app.MapGet("/api/platform-sync/gift-cards", async (
 app.MapGet("/api/platform-sync/plan-catalog", async (
     IClothingStoreRepository repository,
     MultiTenantGatewayService gateway,
+    IPlatformMercadoPagoTokenStore tokenStore,
     CancellationToken ct) =>
 {
     var settings = await repository.GetStoreSettingsAsync(ct);
+    var isAppConfigured = gateway.MercadoPago.GetConfiguredApp().IsOAuthConfigured;
+    var conn = await tokenStore.GetConnectionStatusAsync(isAppConfigured, ct);
     return Results.Ok(new PlatformPlanCatalogDto(
         BasicPlanMonthlyPrice: settings.BasicPlanMonthlyPrice,
         IntermediaryPlanMonthlyPrice: settings.IntermediaryPlanMonthlyPrice,
         PremiumPlanMonthlyPrice: settings.PremiumPlanMonthlyPrice,
         HasOfficialPixKey: !string.IsNullOrWhiteSpace(settings.PicpayPixKey),
         CentralCatalogServerUrl: settings.CentralCatalogBaseUrl,
-        HasMercadoPagoAppConfigured: gateway.MercadoPago.GetConfiguredApp().IsOAuthConfigured));
+        HasMercadoPagoAppConfigured: isAppConfigured,
+        HasPlatformMercadoPagoConnected: conn.IsConnected,
+        PlatformMercadoPagoAccountLabel: conn.AccountLabel));
 }).AllowAnonymous();
 
 app.MapPost("/api/platform-sync/gift-cards/sync", async (

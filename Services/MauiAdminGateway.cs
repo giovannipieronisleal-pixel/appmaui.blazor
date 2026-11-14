@@ -35,6 +35,7 @@ public sealed class MauiAdminGateway
     }
 
     private static readonly HttpClient FallbackDnsHttpClient = new() { Timeout = TimeSpan.FromSeconds(6) };
+    private static readonly HttpClient RemotePlatformBillingHttpClient = new() { Timeout = TimeSpan.FromSeconds(25) };
 
     private readonly AdminApiClient _apiClient;
     private readonly AuthService _authService;
@@ -61,6 +62,7 @@ public sealed class MauiAdminGateway
     public string? LastSyncedAccountsMessage { get; private set; }
     public bool IsRemoteApiOnline => DateTimeOffset.UtcNow >= _skipRemoteApiUntil;
     public string? LatestAdminCentralServerUrl { get; private set; }
+    public PlatformPlanCatalogDto? LatestPlatformCatalog { get; private set; }
     public string CurrentServerUrl => _apiClient.CurrentBaseAddress ?? string.Empty;
     public ApiCompatibilityStatusDto? LatestCompatibilityStatus { get; private set; }
 
@@ -917,27 +919,49 @@ public sealed class MauiAdminGateway
             ? await GetStoreSettingsAsync()
             : await _employeeAndSettingsService.GetAdminStoreSettingsAsync();
 
-        if (!ShouldTryRemoteApi)
-            return settings;
-
-        try
+        if (ShouldTryRemoteApi)
         {
-            var catalog = await _apiClient.GetPlatformPlanCatalogAsync();
-            await ApplyCatalogCentralServerUrlAsync(catalog.CentralCatalogServerUrl);
-            return settings with
+            try
             {
-                BasicPlanMonthlyPrice = catalog.BasicPlanMonthlyPrice > 0m ? catalog.BasicPlanMonthlyPrice : settings.BasicPlanMonthlyPrice,
-                IntermediaryPlanMonthlyPrice = catalog.IntermediaryPlanMonthlyPrice > 0m ? catalog.IntermediaryPlanMonthlyPrice : settings.IntermediaryPlanMonthlyPrice,
-                PremiumPlanMonthlyPrice = catalog.PremiumPlanMonthlyPrice > 0m ? catalog.PremiumPlanMonthlyPrice : settings.PremiumPlanMonthlyPrice
-            };
+                var catalog = await _apiClient.GetPlatformPlanCatalogAsync();
+                LatestPlatformCatalog = catalog;
+                await ApplyCatalogCentralServerUrlAsync(catalog.CentralCatalogServerUrl);
+                return settings with
+                {
+                    BasicPlanMonthlyPrice = catalog.BasicPlanMonthlyPrice > 0m ? catalog.BasicPlanMonthlyPrice : settings.BasicPlanMonthlyPrice,
+                    IntermediaryPlanMonthlyPrice = catalog.IntermediaryPlanMonthlyPrice > 0m ? catalog.IntermediaryPlanMonthlyPrice : settings.IntermediaryPlanMonthlyPrice,
+                    PremiumPlanMonthlyPrice = catalog.PremiumPlanMonthlyPrice > 0m ? catalog.PremiumPlanMonthlyPrice : settings.PremiumPlanMonthlyPrice
+                };
+            }
+            catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+            {
+                _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+            }
+            catch (InvalidOperationException)
+            {
+                // Mantém os preços locais se o servidor conectado ainda não expõe /api/platform-sync/plan-catalog.
+            }
         }
-        catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
+
+        var centralUrl = ResolveCentralBillingServerUrl(settings, allowDefaultFallback: false);
+        if (!string.IsNullOrWhiteSpace(centralUrl) &&
+            !string.Equals(centralUrl, _apiClient.CurrentBaseAddress, StringComparison.OrdinalIgnoreCase) &&
+            LatestPlatformCatalog?.HasPlatformMercadoPagoConnected != true)
         {
-            _skipRemoteApiUntil = DateTimeOffset.UtcNow.AddSeconds(60);
-        }
-        catch (InvalidOperationException)
-        {
-            // Mantém os preços locais se o servidor conectado ainda não expõe /api/platform-sync/plan-catalog.
+            try
+            {
+                var centralCatalog = await CreateCentralBillingClient(centralUrl).GetPlatformPlanCatalogAsync();
+                LatestPlatformCatalog = centralCatalog;
+                return settings with
+                {
+                    BasicPlanMonthlyPrice = centralCatalog.BasicPlanMonthlyPrice > 0m ? centralCatalog.BasicPlanMonthlyPrice : settings.BasicPlanMonthlyPrice,
+                    IntermediaryPlanMonthlyPrice = centralCatalog.IntermediaryPlanMonthlyPrice > 0m ? centralCatalog.IntermediaryPlanMonthlyPrice : settings.IntermediaryPlanMonthlyPrice,
+                    PremiumPlanMonthlyPrice = centralCatalog.PremiumPlanMonthlyPrice > 0m ? centralCatalog.PremiumPlanMonthlyPrice : settings.PremiumPlanMonthlyPrice
+                };
+            }
+            catch
+            {
+            }
         }
 
         return settings;
@@ -1403,7 +1427,13 @@ public sealed class MauiAdminGateway
         string DesiredDomain,
         string PixKeyUsed,
         string PixBrCode,
-        DateTimeOffset CreatedAt);
+        DateTimeOffset CreatedAt,
+        string PaymentMethod = "DirectPix",
+        string? MercadoPagoCheckoutUrl = null,
+        string? MercadoPagoQrCodeBase64 = null,
+        string? MercadoPagoPaymentId = null,
+        string? MercadoPagoPreapprovalId = null,
+        string? BillingServerUrl = null);
 
     public PlatformSubscriptionOrderDto? GetPendingPlanOrder()
     {
@@ -1435,7 +1465,14 @@ public sealed class MauiAdminGateway
             ticket.CreatedAt,
             null,
             null,
-            "Pedido aguardando confirmação do Pix pelo administrador.");
+            ticket.PaymentMethod == "DirectPix"
+                ? "Pedido aguardando confirmação do Pix pelo administrador."
+                : "Pedido aguardando confirmação automática do Mercado Pago.",
+            ticket.PaymentMethod,
+            ticket.MercadoPagoCheckoutUrl,
+            ticket.MercadoPagoQrCodeBase64,
+            ticket.MercadoPagoPaymentId,
+            ticket.MercadoPagoPreapprovalId);
     }
 
     public void ClearPendingPlanOrder()
@@ -1464,7 +1501,7 @@ public sealed class MauiAdminGateway
         }
     }
 
-    private static void SavePendingPlanOrderTicket(PlatformSubscriptionOrderDto order)
+    private static void SavePendingPlanOrderTicket(PlatformSubscriptionOrderDto order, string? billingServerUrl = null)
     {
         try
         {
@@ -1481,12 +1518,45 @@ public sealed class MauiAdminGateway
                 order.DesiredDomain,
                 order.PixKeyUsed,
                 order.PixBrCode,
-                order.CreatedAt);
+                order.CreatedAt,
+                order.PaymentMethod,
+                order.MercadoPagoCheckoutUrl,
+                order.MercadoPagoQrCodeBase64,
+                order.MercadoPagoPaymentId,
+                order.MercadoPagoPreapprovalId,
+                billingServerUrl);
             Preferences.Default.Set(PendingPlanOrderPreferenceKey, JsonSerializer.Serialize(ticket));
         }
         catch
         {
         }
+    }
+
+    private static AdminApiClient CreateCentralBillingClient(string serverUrl)
+    {
+        var client = new AdminApiClient(RemotePlatformBillingHttpClient);
+        client.UpdateBaseAddress(serverUrl);
+        return client;
+    }
+
+    private string? ResolveCentralBillingServerUrl(AdminStoreSettingsDto? settings = null, bool allowDefaultFallback = true)
+    {
+        var candidates = new[]
+        {
+            HasCustomServerUrl ? WhatsAppLinkBuilder.NormalizePublicServerUrl(_apiClient.CurrentBaseAddress) : null,
+            LatestAdminCentralServerUrl,
+            GoogleCloudSyncService.GetCachedCentralCatalogUrl(),
+            settings?.CentralCatalogBaseUrl
+        };
+
+        foreach (var raw in candidates)
+        {
+            var normalized = WhatsAppLinkBuilder.NormalizePublicServerUrl(raw);
+            if (!string.IsNullOrWhiteSpace(normalized))
+                return normalized;
+        }
+
+        return allowDefaultFallback ? AppUpdateCatalog.DefaultCentralPlatformServerUrl : null;
     }
 
     public async Task<PlatformSubscriptionOrderDto> CreatePlatformPlanPurchaseOrderAsync(
@@ -1495,13 +1565,27 @@ public sealed class MauiAdminGateway
     {
         EnsureAdminPermission();
 
+        var isMercadoPago = !string.Equals(request.PaymentMethod, "DirectPix", StringComparison.OrdinalIgnoreCase);
+        if (isMercadoPago)
+        {
+            var settings = await _employeeAndSettingsService.GetAdminStoreSettingsAsync(ct);
+            var centralUrl = ResolveCentralBillingServerUrl(settings);
+            if (!string.IsNullOrWhiteSpace(centralUrl))
+            {
+                var remoteClient = CreateCentralBillingClient(centralUrl);
+                var mpCreated = await remoteClient.CreatePlatformPlanOrderAsync(request, ct);
+                SavePendingPlanOrderTicket(mpCreated, centralUrl);
+                return mpCreated;
+            }
+        }
+
         PlatformSubscriptionOrderDto created;
         if (HasCustomServerUrl || ShouldTryRemoteApi)
         {
             try
             {
                 created = await _apiClient.CreatePlatformPlanOrderAsync(request, ct);
-                SavePendingPlanOrderTicket(created);
+                SavePendingPlanOrderTicket(created, _apiClient.CurrentBaseAddress);
                 return created;
             }
             catch (Exception ex) when (IsConnectionOrTimeoutError(ex))
@@ -1534,7 +1618,23 @@ public sealed class MauiAdminGateway
             return null;
 
         PlatformPlanOrderStatusDto? status = null;
-        if (HasCustomServerUrl || ShouldTryRemoteApi)
+        if (!string.IsNullOrWhiteSpace(ticket?.BillingServerUrl) &&
+            Uri.TryCreate(ticket.BillingServerUrl, UriKind.Absolute, out _))
+        {
+            try
+            {
+                var remoteClient = CreateCentralBillingClient(ticket.BillingServerUrl);
+                status = await remoteClient.GetPlatformPlanOrderStatusAsync(effectiveOrderNumber, effectiveClaimToken, ct);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (HttpRequestException)
+            {
+            }
+        }
+
+        if (status is null && (HasCustomServerUrl || ShouldTryRemoteApi))
         {
             try
             {

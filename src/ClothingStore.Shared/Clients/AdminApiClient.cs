@@ -756,6 +756,26 @@ public sealed class AdminApiClient
         return (await response.Content.ReadFromJsonAsync<PlatformPlanCatalogDto>(cancellationToken: ct))!;
     }
 
+    public Task<MercadoPagoOAuthStartResponse> StartPlatformMercadoPagoOAuthAsync(
+        string? syncSecret,
+        CancellationToken ct = default) =>
+        SendSyncRequestAsync<MercadoPagoOAuthStartResponse>(
+            HttpMethod.Post,
+            "/api/platform-sync/mercadopago/oauth/start",
+            syncSecret,
+            content: null,
+            ct);
+
+    public async Task DisconnectPlatformMercadoPagoAsync(
+        string? syncSecret,
+        CancellationToken ct = default) =>
+        await SendSyncRequestAsync<JsonElement>(
+            HttpMethod.Post,
+            "/api/platform-sync/mercadopago/disconnect",
+            syncSecret,
+            content: null,
+            ct);
+
     private async Task<T> SendSyncRequestAsync<T>(
         HttpMethod method,
         string relativePath,

@@ -1,6 +1,7 @@
 @page "/contratar-plano"
 @page "/contratar-plano/{PlanTier?}"
 @using ClothingStore.Application.Services
+@using ClothingStore.Domain.Entities
 @using ClothingStore.Shared.Helpers
 @implements IDisposable
 @inject MauiAdminGateway Gateway
@@ -365,22 +366,75 @@ else
             }
             else if (_activePlanOrder is null)
             {
-                <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-border); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.45rem;">
-                    <div style="font-size: 0.85rem; font-weight: 800; color: var(--adm-text);">
-                        🔒 A chave Pix aparece somente após você confirmar a compra abaixo
+                <div style="display: flex; flex-direction: column; gap: 0.55rem;">
+                    <div style="font-size: 0.82rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--adm-muted);">
+                        Escolha como deseja pagar o plano:
                     </div>
-                    <div style="font-size: 0.79rem; color: var(--adm-muted); line-height: 1.45;">
-                        Quando você clicar no botão abaixo, geraremos o pedido e mostraremos a chave Pix oficial + QR Code exato (@TotalOrderAmount.ToString("C")).
-                        Assim que o pagamento for confirmado, a sua versão paga chega automaticamente no aplicativo — sem precisar digitar código!
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 215px), 1fr)); gap: 0.55rem;">
+                        <button type="button"
+                                class="theme-card-option @(_selectedPaymentMethod == PlatformSubscriptionOrder.MethodMercadoPagoPix ? "active" : string.Empty)"
+                                @onclick="() => SelectPaymentMethod(PlatformSubscriptionOrder.MethodMercadoPagoPix)">
+                            <div style="font-weight: 800; font-size: 0.88rem;">⚡ Pix Automático (Mercado Pago)</div>
+                            <div style="font-size: 0.77rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                                QR Code na tela. Pagou, o plano libera sozinho em segundos!
+                            </div>
+                        </button>
+
+                        <button type="button"
+                                class="theme-card-option @(_selectedPaymentMethod == PlatformSubscriptionOrder.MethodMercadoPagoCheckoutPro ? "active" : string.Empty)"
+                                @onclick="() => SelectPaymentMethod(PlatformSubscriptionOrder.MethodMercadoPagoCheckoutPro)">
+                            <div style="font-weight: 800; font-size: 0.88rem;">💳 Cartão ou Conta Mercado Pago</div>
+                            <div style="font-size: 0.77rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                                Cartão de crédito/débito, saldo Mercado Pago ou Pix no checkout oficial.
+                            </div>
+                        </button>
+
+                        <button type="button"
+                                class="theme-card-option @(_selectedPaymentMethod == PlatformSubscriptionOrder.MethodMercadoPagoSubscription ? "active" : string.Empty)"
+                                @onclick="() => SelectPaymentMethod(PlatformSubscriptionOrder.MethodMercadoPagoSubscription)">
+                            <div style="font-weight: 800; font-size: 0.88rem;">🔄 Assinatura Mensal no Cartão</div>
+                            <div style="font-size: 0.77rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                                Cobrança recorrente automática no cartão todo ciclo pelo Mercado Pago.
+                            </div>
+                        </button>
+
+                        <button type="button"
+                                class="theme-card-option @(_selectedPaymentMethod == PlatformSubscriptionOrder.MethodDirectPix ? "active" : string.Empty)"
+                                @onclick="() => SelectPaymentMethod(PlatformSubscriptionOrder.MethodDirectPix)">
+                            <div style="font-weight: 800; font-size: 0.88rem;">🏦 Pix Direto (Aprovação Admin)</div>
+                            <div style="font-size: 0.77rem; color: var(--adm-muted); margin-top: 0.25rem;">
+                                Chave Pix direta do administrador com ativação após confirmação.
+                            </div>
+                        </button>
                     </div>
                 </div>
+
+                @if (_selectedPaymentMethod == PlatformSubscriptionOrder.MethodDirectPix)
+                {
+                    <div style="background: var(--adm-surface-subtle); border: 1px dashed var(--adm-border); border-radius: 10px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.45rem;">
+                        <div style="font-size: 0.85rem; font-weight: 800; color: var(--adm-text);">
+                            🔒 A chave Pix aparece somente após você confirmar a compra abaixo
+                        </div>
+                        <div style="font-size: 0.79rem; color: var(--adm-muted); line-height: 1.45;">
+                            Quando você clicar no botão abaixo, geraremos o pedido e mostraremos a chave Pix oficial + QR Code exato (@TotalOrderAmount.ToString("C")).
+                            Assim que o pagamento for confirmado, a sua versão paga chega automaticamente no aplicativo — sem precisar digitar código!
+                        </div>
+                    </div>
+                }
+                else if (_selectedPaymentMethod == PlatformSubscriptionOrder.MethodMercadoPagoSubscription)
+                {
+                    <div style="background: rgba(182, 145, 88, 0.1); border: 1px solid var(--adm-accent); border-radius: 10px; padding: 0.8rem; font-size: 0.79rem; color: var(--adm-text); line-height: 1.45;">
+                        🔄 <strong>Assinatura Automática Mercado Pago:</strong> certifique-se de preencher um <strong>e-mail válido</strong> no campo <em>Usuário / Gmail de Acesso</em> ao lado para autorizar a renovação no cartão.
+                    </div>
+                }
 
                 <button type="button"
                         class="adm-btn adm-btn-success"
                         style="text-align: center; padding: 0.95rem; font-size: 0.96rem; font-weight: 800;"
                         disabled="@_creatingPlanOrder"
                         @onclick="ConfirmDirectMobilePlanOrderAsync">
-                    @(_creatingPlanOrder ? "Gerando pedido e liberando chave Pix..." : $"💳 Confirmar Compra e Liberar Chave Pix ({TotalOrderAmount.ToString("C")})")
+                    @GetPrimaryCheckoutButtonLabel()
                 </button>
             }
             else
@@ -388,26 +442,59 @@ else
                 <div style="background: var(--adm-surface-subtle); border: 1.5px solid var(--adm-accent); border-radius: 10px; padding: 0.95rem; display: flex; flex-direction: column; gap: 0.7rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                         <div style="font-size: 0.88rem; font-weight: 800;">
-                            💸 Chave Pix Liberada — Pedido @_activePlanOrder.OrderNumber
+                            @(_activePlanOrder.PaymentMethod == PlatformSubscriptionOrder.MethodDirectPix ? "💸 Chave Pix Liberada" : "💳 Pagamento Mercado Pago") — Pedido @_activePlanOrder.OrderNumber
                         </div>
-                        <span class="pill-badge pill-gold">Aguardando Pix</span>
+                        <span class="pill-badge pill-gold">
+                            @(_activePlanOrder.PaymentMethod == PlatformSubscriptionOrder.MethodDirectPix ? "Aguardando Pix" : "Aguardando Pagamento")
+                        </span>
                     </div>
 
-                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                        <code style="flex: 1; font-size: 0.94rem; padding: 0.5rem 0.65rem; border-radius: 6px; background: var(--adm-card); border: 1px solid var(--adm-border); overflow-wrap: anywhere;">
-                            @_activePlanOrder.PixKeyUsed
-                        </code>
-                        <button type="button"
-                                class="adm-btn adm-btn-outline"
-                                style="white-space: nowrap;"
-                                @onclick="CopyPixKeyAsync">
-                            @(_copiedPix ? "✓ Chave Copiada!" : "📋 Copiar Chave Pix")
-                        </button>
-                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_activePlanOrder.MercadoPagoCheckoutUrl))
+                    {
+                        <div style="display: flex; flex-direction: column; gap: 0.55rem; padding: 0.75rem; border-radius: 8px; background: var(--adm-card); border: 1px solid var(--adm-border);">
+                            <div style="font-size: 0.82rem; font-weight: 700; color: var(--adm-text);">
+                                @(_activePlanOrder.PaymentMethod == PlatformSubscriptionOrder.MethodMercadoPagoSubscription
+                                    ? "Conclua a autorização mensal do cartão na página oficial do Mercado Pago:"
+                                    : "Conclua o pagamento com Cartão, Conta Mercado Pago ou Pix no ambiente seguro do Mercado Pago:")
+                            </div>
+                            <button type="button"
+                                    class="adm-btn adm-btn-primary"
+                                    style="font-weight: 800;"
+                                    @onclick="OpenMercadoPagoCheckoutUrlAsync">
+                                🌐 Abrir Página Segura do Mercado Pago (@_activePlanOrder.Amount.ToString("C"))
+                            </button>
+                            <div style="display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;">
+                                <input type="text" readonly class="adm-input" value="@_activePlanOrder.MercadoPagoCheckoutUrl" style="flex: 1 1 200px; font-family: monospace; font-size: 0.73rem;" />
+                                <button type="button" class="adm-btn adm-btn-outline" style="white-space: nowrap;" @onclick="CopyCheckoutUrlAsync">
+                                    @(_copiedCheckoutUrl ? "✓ Link Copiado!" : "📋 Copiar Link")
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(_activePlanOrder.PixKeyUsed))
+                    {
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <code style="flex: 1; font-size: 0.94rem; padding: 0.5rem 0.65rem; border-radius: 6px; background: var(--adm-card); border: 1px solid var(--adm-border); overflow-wrap: anywhere;">
+                                @_activePlanOrder.PixKeyUsed
+                            </code>
+                            @if (_activePlanOrder.PaymentMethod == PlatformSubscriptionOrder.MethodDirectPix)
+                            {
+                                <button type="button"
+                                        class="adm-btn adm-btn-outline"
+                                        style="white-space: nowrap;"
+                                        @onclick="CopyPixKeyAsync">
+                                    @(_copiedPix ? "✓ Chave Copiada!" : "📋 Copiar Chave Pix")
+                                </button>
+                            }
+                        </div>
+                    }
 
                     @if (!string.IsNullOrWhiteSpace(_activePlanOrder.PixBrCode))
                     {
-                        var planPixQrUri = ClothingStore.Shared.Helpers.WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(_activePlanOrder.PixBrCode);
+                        var planPixQrUri = !string.IsNullOrWhiteSpace(_activePlanOrder.MercadoPagoQrCodeBase64)
+                            ? $"data:image/png;base64,{_activePlanOrder.MercadoPagoQrCodeBase64}"
+                            : ClothingStore.Shared.Helpers.WhatsAppLinkBuilder.GenerateQrCodeSvgDataUri(_activePlanOrder.PixBrCode);
                         <div style="border-top: 1px solid var(--adm-border); padding-top: 0.65rem; display: flex; flex-direction: column; gap: 0.55rem;">
                             <div style="font-size: 0.79rem; font-weight: 700; color: var(--adm-success);">
                                 ✅ Pix Copia e Cola no valor exato (@_activePlanOrder.Amount.ToString("C")):
@@ -430,7 +517,14 @@ else
                     }
 
                     <div style="border-top: 1px solid var(--adm-border); padding-top: 0.6rem; font-size: 0.79rem; color: var(--adm-muted); line-height: 1.45;">
-                        ⏳ <strong>Verificação automática ativa:</strong> assim que você transferir e o administrador confirmar no painel, a sua versão paga será entregue automaticamente aqui neste aparelho.
+                        @if (_activePlanOrder.PaymentMethod == PlatformSubscriptionOrder.MethodDirectPix)
+                        {
+                            <span>⏳ <strong>Verificação automática ativa:</strong> assim que você transferir e o administrador confirmar no painel, a sua versão paga será entregue automaticamente aqui neste aparelho.</span>
+                        }
+                        else
+                        {
+                            <span>⚡ <strong>Liberação 100% automática:</strong> assim que o Mercado Pago aprovar o Pix ou cartão, o YouLink libera seu plano sozinho em poucos segundos.</span>
+                        }
                     </div>
 
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -597,7 +691,9 @@ else
     private string _giftCardCode = string.Empty;
     private string? _error;
     private string? _successMessage;
+    private string _selectedPaymentMethod = PlatformSubscriptionOrder.MethodMercadoPagoPix;
     private bool _copiedPlanBrCode;
+    private bool _copiedCheckoutUrl;
     private bool _creatingPlanOrder;
     private bool _checkingOrderStatus;
     private PlatformSubscriptionOrderDto? _activePlanOrder;
@@ -843,6 +939,68 @@ else
         }
     }
 
+    private void SelectPaymentMethod(string paymentMethod)
+    {
+        _selectedPaymentMethod = PlatformSubscriptionOrder.NormalizePaymentMethod(paymentMethod);
+        _error = null;
+    }
+
+    private string GetPrimaryCheckoutButtonLabel()
+    {
+        if (_creatingPlanOrder)
+            return "Gerando cobrança e preparando pagamento...";
+
+        return _selectedPaymentMethod switch
+        {
+            PlatformSubscriptionOrder.MethodMercadoPagoPix =>
+                $"⚡ Gerar Pix Automático Mercado Pago ({TotalOrderAmount.ToString("C")})",
+            PlatformSubscriptionOrder.MethodMercadoPagoCheckoutPro =>
+                $"💳 Pagar no Cartão / Mercado Pago ({TotalOrderAmount.ToString("C")})",
+            PlatformSubscriptionOrder.MethodMercadoPagoSubscription =>
+                _durationMonths switch
+                {
+                    3 => $"🔄 Assinar no Cartão a cada 3 meses ({TotalOrderAmount.ToString("C")})",
+                    12 => $"🔄 Assinar Anual Automático no Cartão ({TotalOrderAmount.ToString("C")})",
+                    _ => $"🔄 Assinar Mensal Automático no Cartão ({TotalOrderAmount.ToString("C")}/mês)"
+                },
+            _ => $"💳 Confirmar Compra e Liberar Chave Pix ({TotalOrderAmount.ToString("C")})"
+        };
+    }
+
+    private async Task OpenMercadoPagoCheckoutUrlAsync()
+    {
+        var url = _activePlanOrder?.MercadoPagoCheckoutUrl;
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        try
+        {
+            await Launcher.Default.OpenAsync(new Uri(url));
+        }
+        catch (Exception ex)
+        {
+            _error = $"Não foi possível abrir o navegador automaticamente ({ex.Message}). Copie o link do Mercado Pago abaixo.";
+        }
+    }
+
+    private async Task CopyCheckoutUrlAsync()
+    {
+        var url = _activePlanOrder?.MercadoPagoCheckoutUrl;
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        try
+        {
+            await Clipboard.Default.SetTextAsync(url);
+            _copiedCheckoutUrl = true;
+            _successMessage = "Link de pagamento do Mercado Pago copiado!";
+        }
+        catch
+        {
+            _successMessage = $"Copie o link do Mercado Pago: {url}";
+        }
+    }
+
     private async Task ConfirmDirectMobilePlanOrderAsync()
     {
         if (_settings is null)
@@ -864,6 +1022,10 @@ else
             var store = string.IsNullOrWhiteSpace(_customerStoreName) ? _settings.StoreName : _customerStoreName.Trim();
             var slug = ClothingStore.Domain.Entities.Category.GenerateSlug(store);
             var domainText = string.IsNullOrWhiteSpace(_desiredDomain) ? $"https://lojas.{slug}.com" : _desiredDomain.Trim();
+            var resolvedEmail = !string.IsNullOrWhiteSpace(_customerContact) && _customerContact.Contains('@', StringComparison.Ordinal)
+                ? _customerContact.Trim()
+                : Gateway.CurrentEmployee?.Email;
+
             var created = await Gateway.CreatePlatformPlanPurchaseOrderAsync(new CreatePlatformPlanOrderRequest(
                 PlanTier: _selectedTier,
                 DurationMonths: _durationMonths,
@@ -873,15 +1035,22 @@ else
                 DesiredDomain: domainText,
                 UseOwnDedicatedServer: _useOwnDedicatedServer,
                 BuyerUserId: Gateway.CurrentEmployee?.UserId,
-                BuyerUsername: Gateway.CurrentEmployee?.Username,
-                BuyerEmail: string.IsNullOrWhiteSpace(_customerContact) ? Gateway.CurrentEmployee?.Email : _customerContact.Trim(),
-                BuyerFullName: Gateway.CurrentEmployee?.FullName));
+                BuyerUsername: Gateway.CurrentEmployee?.EffectiveUsername ?? Gateway.CurrentEmployee?.Username,
+                BuyerEmail: resolvedEmail,
+                BuyerFullName: Gateway.CurrentEmployee?.FullName,
+                PaymentMethod: _selectedPaymentMethod));
 
             _activePlanOrder = created;
             _copiedPix = false;
             _copiedPlanBrCode = false;
+            _copiedCheckoutUrl = false;
             _successMessage = created.Message;
             StartPlanPollingLoop();
+
+            if (!string.IsNullOrWhiteSpace(created.MercadoPagoCheckoutUrl))
+            {
+                await OpenMercadoPagoCheckoutUrlAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -916,7 +1085,7 @@ else
                 _activePlanOrder = null;
                 _settings = await Gateway.GetPlanCatalogSettingsAsync();
                 BrandState.ApplyFromAdminSettings(_settings);
-                _successMessage = $"🎉 Pagamento Pix do pedido {status.OrderNumber} confirmado! Plano {GetPlanTitle(status.PlanTier)} liberado automaticamente.";
+                _successMessage = $"🎉 Pagamento do pedido {status.OrderNumber} confirmado! Plano {GetPlanTitle(status.PlanTier)} liberado automaticamente.";
             }
             else if (string.Equals(status.Status, "Cancelado", StringComparison.OrdinalIgnoreCase))
             {
@@ -979,7 +1148,7 @@ else
                             _activePlanOrder = null;
                             _settings = await Gateway.GetPlanCatalogSettingsAsync();
                             BrandState.ApplyFromAdminSettings(_settings);
-                            _successMessage = $"🎉 Pagamento Pix confirmado! Seu plano {GetPlanTitle(status.PlanTier)} foi liberado automaticamente!";
+                            _successMessage = $"🎉 Pagamento confirmado! Seu plano {GetPlanTitle(status.PlanTier)} foi liberado automaticamente!";
                             StateHasChanged();
                         });
                         break;

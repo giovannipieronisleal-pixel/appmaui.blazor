@@ -13,6 +13,22 @@ public sealed class PlatformSubscriptionOrder
     public const string StatusPaid = "Pago";
     public const string StatusCancelled = "Cancelado";
 
+    public const string MethodDirectPix = "DirectPix";
+    public const string MethodMercadoPagoPix = "MercadoPagoPix";
+    public const string MethodMercadoPagoCheckoutPro = "MercadoPagoCheckoutPro";
+    public const string MethodMercadoPagoSubscription = "MercadoPagoSubscription";
+
+    public static string NormalizePaymentMethod(string? method)
+    {
+        if (string.Equals(method, MethodMercadoPagoPix, StringComparison.OrdinalIgnoreCase))
+            return MethodMercadoPagoPix;
+        if (string.Equals(method, MethodMercadoPagoCheckoutPro, StringComparison.OrdinalIgnoreCase))
+            return MethodMercadoPagoCheckoutPro;
+        if (string.Equals(method, MethodMercadoPagoSubscription, StringComparison.OrdinalIgnoreCase))
+            return MethodMercadoPagoSubscription;
+        return MethodDirectPix;
+    }
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public string OrderNumber { get; set; } = string.Empty;
     public string ClaimToken { get; set; } = string.Empty;
@@ -34,6 +50,13 @@ public sealed class PlatformSubscriptionOrder
 
     public string PixKeyUsed { get; set; } = string.Empty;
     public string PixBrCode { get; set; } = string.Empty;
+    public string PaymentMethod { get; set; } = MethodDirectPix;
+    public string? MercadoPagoPaymentId { get; set; }
+    public string? MercadoPagoPreferenceId { get; set; }
+    public string? MercadoPagoPreapprovalId { get; set; }
+    public string? MercadoPagoCheckoutUrl { get; set; }
+    public string? MercadoPagoQrCodeBase64 { get; set; }
+    public string? MercadoPagoStatus { get; set; }
 
     public string Status { get; set; } = StatusPending;
     public string? IssuedGiftCardCode { get; set; }
@@ -64,7 +87,8 @@ public sealed class PlatformSubscriptionOrder
         string? buyerFullName,
         string pixKeyUsed,
         string pixBrCode,
-        string? notes = null)
+        string? notes = null,
+        string paymentMethod = MethodDirectPix)
     {
         if (string.IsNullOrWhiteSpace(orderNumber))
             throw new DomainException("Número do pedido de plano é obrigatório.");
@@ -107,6 +131,7 @@ public sealed class PlatformSubscriptionOrder
                 : buyerFullName.Trim(),
             PixKeyUsed = (pixKeyUsed ?? string.Empty).Trim(),
             PixBrCode = (pixBrCode ?? string.Empty).Trim(),
+            PaymentMethod = NormalizePaymentMethod(paymentMethod),
             Status = StatusPending,
             Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim(),
             CreatedAt = DateTimeOffset.UtcNow

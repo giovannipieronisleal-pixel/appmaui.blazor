@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using ClothingStore.Application.Interfaces;
 using ClothingStore.Domain.Entities;
+using ClothingStore.Infrastructure.Security;
 
 namespace ClothingStore.Infrastructure.Persistence;
 
@@ -16,8 +17,6 @@ namespace ClothingStore.Infrastructure.Persistence;
 /// </summary>
 public sealed class MultiTenantStoreManager : IMultiTenantStoreResolver
 {
-    private const string EncryptedPrefix = "enc:v1:";
-
     private readonly IClothingStoreRepository _defaultRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly string _rootDirectory;
@@ -314,14 +313,14 @@ public sealed class MultiTenantStoreManager : IMultiTenantStoreResolver
                 }
             }
 
-            var key = GetOrCreateEncryptionKeyUnsafe();
+            var key = TokenProtectionHelper.GetOrCreateEncryptionKey(_keyStoreFilePath);
             return new TenantSecretCredentials
             {
                 StoreSlug = entry.StoreSlug,
                 PublishTokenHash = entry.PublishTokenHash,
                 OwnerEmail = entry.OwnerEmail,
-                MercadoPagoAccessToken = UnprotectSecret(entry.MercadoPagoAccessToken, key),
-                MercadoPagoRefreshToken = UnprotectSecret(entry.MercadoPagoRefreshToken, key),
+                MercadoPagoAccessToken = TokenProtectionHelper.UnprotectSecret(entry.MercadoPagoAccessToken, key),
+                MercadoPagoRefreshToken = TokenProtectionHelper.UnprotectSecret(entry.MercadoPagoRefreshToken, key),
                 MercadoPagoTokenExpiresAt = entry.MercadoPagoTokenExpiresAt,
                 MercadoPagoUserId = entry.MercadoPagoUserId,
                 MercadoPagoAccountLabel = entry.MercadoPagoAccountLabel,
@@ -355,7 +354,7 @@ public sealed class MultiTenantStoreManager : IMultiTenantStoreResolver
         try
         {
             var index = LoadIndexUnsafe();
-            var key = GetOrCreateEncryptionKeyUnsafe();
+            var key = TokenProtectionHelper.GetOrCreateEncryptionKey(_keyStoreFilePath);
             var now = DateTimeOffset.UtcNow;
 
             if (!index.Tenants.TryGetValue(normalized, out var entry))
@@ -368,9 +367,9 @@ public sealed class MultiTenantStoreManager : IMultiTenantStoreResolver
                 index.Tenants[normalized] = entry;
             }
 
-            entry.MercadoPagoAccessToken = ProtectSecret(accessToken.Trim(), key);
+            entry.MercadoPagoAccessToken = TokenProtectionHelper.ProtectSecret(accessToken.Trim(), key);
             if (!string.IsNullOrWhiteSpace(refreshToken))
-                entry.MercadoPagoRefreshToken = ProtectSecret(refreshToken.Trim(), key);
+                entry.MercadoPagoRefreshToken = TokenProtectionHelper.ProtectSecret(refreshToken.Trim(), key);
             entry.MercadoPagoTokenExpiresAt = expiresAt;
             entry.MercadoPagoUserId = string.IsNullOrWhiteSpace(userId) ? entry.MercadoPagoUserId : userId.Trim();
             entry.MercadoPagoAccountLabel = string.IsNullOrWhiteSpace(accountLabel) ? entry.MercadoPagoAccountLabel : accountLabel.Trim();
@@ -523,84 +522,6 @@ public sealed class MultiTenantStoreManager : IMultiTenantStoreResolver
         var tempPath = $"{_indexFilePath}.{Guid.NewGuid():N}.tmp";
         File.WriteAllText(tempPath, JsonSerializer.Serialize(state, JsonOptions), Encoding.UTF8);
         File.Move(tempPath, _indexFilePath, overwrite: true);
-    }
-
-    private byte[] GetOrCreateEncryptionKeyUnsafe()
-    {
-        var envKey = Environment.GetEnvironmentVariable("YOULINK_TOKEN_ENCRYPTION_KEY");
-        if (!string.IsNullOrWhiteSpace(envKey))
-            return SHA256.HashData(Encoding.UTF8.GetBytes(envKey.Trim()));
-
-        try
-        {
-            if (File.Exists(_keyStoreFilePath))
-            {
-                var bytes = Convert.FromBase64String(File.ReadAllText(_keyStoreFilePath, Encoding.UTF8).Trim());
-                if (bytes.Length == 32)
-                    return bytes;
-            }
-        }
-        catch
-        {
-        }
-
-        if (!Directory.Exists(_rootDirectory))
-            Directory.CreateDirectory(_rootDirectory);
-
-        var generated = RandomNumberGenerator.GetBytes(32);
-        var temp = $"{_keyStoreFilePath}.{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(temp, Convert.ToBase64String(generated), Encoding.UTF8);
-        File.Move(temp, _keyStoreFilePath, overwrite: true);
-        return generated;
-    }
-
-    private static string? ProtectSecret(string? plain, byte[] key)
-    {
-        if (string.IsNullOrWhiteSpace(plain))
-            return null;
-
-        var plainBytes = Encoding.UTF8.GetBytes(plain);
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var cipher = new byte[plainBytes.Length];
-        var tag = new byte[16];
-
-        using var aes = new AesGcm(key, 16);
-        aes.Encrypt(nonce, plainBytes, cipher, tag);
-
-        var payload = new byte[nonce.Length + tag.Length + cipher.Length];
-        Buffer.BlockCopy(nonce, 0, payload, 0, nonce.Length);
-        Buffer.BlockCopy(tag, 0, payload, nonce.Length, tag.Length);
-        Buffer.BlockCopy(cipher, 0, payload, nonce.Length + tag.Length, cipher.Length);
-        return EncryptedPrefix + Convert.ToBase64String(payload);
-    }
-
-    private static string? UnprotectSecret(string? stored, byte[] key)
-    {
-        if (string.IsNullOrWhiteSpace(stored))
-            return null;
-
-        if (!stored.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
-            return stored;
-
-        try
-        {
-            var payload = Convert.FromBase64String(stored[EncryptedPrefix.Length..]);
-            if (payload.Length < 29)
-                return null;
-
-            var nonce = payload.AsSpan(0, 12);
-            var tag = payload.AsSpan(12, 16);
-            var cipher = payload.AsSpan(28);
-            var plain = new byte[cipher.Length];
-
-            using var aes = new AesGcm(key, 16);
-            aes.Decrypt(nonce, cipher, tag, plain);
-            return Encoding.UTF8.GetString(plain);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static string GenerateSecretToken() =>

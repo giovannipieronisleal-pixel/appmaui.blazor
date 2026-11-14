@@ -51,6 +51,8 @@ builder.Services.AddSingleton<IMultiTenantStoreResolver>(sp =>
         sp.GetRequiredService<IClothingStoreRepository>(),
         sp.GetRequiredService<IPasswordHasher>(),
         Path.GetDirectoryName(sharedDbPath)));
+builder.Services.AddSingleton<IPlatformMercadoPagoTokenStore>(_ =>
+    new PlatformMercadoPagoTokenStore(Path.GetDirectoryName(sharedDbPath)));
 builder.Services.AddSingleton<IMercadoPagoPixService>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
@@ -86,8 +88,13 @@ builder.Services.AddScoped<MultiTenantGatewayService>(sp =>
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<IPasswordHasher>(),
         sp.GetRequiredService<IImageStorageService>(),
-        sp.GetService<IEmailService>()));
-builder.Services.AddScoped<PlatformSubscriptionService>();
+        sp.GetService<IEmailService>(),
+        sp.GetRequiredService<IPlatformMercadoPagoTokenStore>()));
+builder.Services.AddScoped<PlatformSubscriptionService>(sp =>
+    new PlatformSubscriptionService(
+        sp.GetRequiredService<IClothingStoreRepository>(),
+        sp.GetRequiredService<IMercadoPagoPixService>(),
+        sp.GetRequiredService<IPlatformMercadoPagoTokenStore>()));
 builder.Services.AddScoped<CatalogDataGateway>();
 
 var app = builder.Build();
@@ -421,15 +428,210 @@ app.MapGet("/api/public/stores/{storeSlug}/orders/{orderId:guid}/status", async 
 app.MapMethods("/api/public/webhooks/mercadopago", ["POST", "GET"], async (
     HttpContext ctx,
     MultiTenantGatewayService gateway,
+    PlatformSubscriptionService subscriptionService,
     CancellationToken ct) =>
-    await HandleMercadoPagoWebhookAsync(ctx, null, gateway, ct)).DisableAntiforgery();
+    await HandleMercadoPagoWebhookAsync(ctx, null, gateway, subscriptionService, ct)).DisableAntiforgery();
+
+app.MapMethods("/api/public/webhooks/mercadopago/platform", ["POST", "GET"], async (
+    HttpContext ctx,
+    MultiTenantGatewayService gateway,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+    await HandlePlatformMercadoPagoWebhookAsync(ctx, gateway.MercadoPago, subscriptionService, ct)).DisableAntiforgery();
 
 app.MapMethods("/api/public/webhooks/mercadopago/{storeSlug}", ["POST", "GET"], async (
     string storeSlug,
     HttpContext ctx,
     MultiTenantGatewayService gateway,
+    PlatformSubscriptionService subscriptionService,
     CancellationToken ct) =>
-    await HandleMercadoPagoWebhookAsync(ctx, storeSlug, gateway, ct)).DisableAntiforgery();
+    await HandleMercadoPagoWebhookAsync(ctx, storeSlug, gateway, subscriptionService, ct)).DisableAntiforgery();
+
+app.MapGet("/api/platform-sync/plan-catalog", async (
+    HttpContext ctx,
+    IClothingStoreRepository repository,
+    IMercadoPagoPixService mercadoPago,
+    IPlatformMercadoPagoTokenStore tokenStore,
+    CancellationToken ct) =>
+{
+    var settings = await repository.GetStoreSettingsAsync(ct);
+    var isAppConfigured = mercadoPago.GetConfiguredApp().IsOAuthConfigured;
+    var conn = await tokenStore.GetConnectionStatusAsync(isAppConfigured, ct);
+    var resolvedCentral = WhatsAppLinkBuilder.NormalizePublicServerUrl(settings.CentralCatalogBaseUrl)
+                          ?? WhatsAppLinkBuilder.NormalizePublicServerUrl(GetPublicOrigin(ctx));
+
+    return Results.Ok(new PlatformPlanCatalogDto(
+        BasicPlanMonthlyPrice: settings.BasicPlanMonthlyPrice,
+        IntermediaryPlanMonthlyPrice: settings.IntermediaryPlanMonthlyPrice,
+        PremiumPlanMonthlyPrice: settings.PremiumPlanMonthlyPrice,
+        HasOfficialPixKey: !string.IsNullOrWhiteSpace(settings.PicpayPixKey),
+        CentralCatalogServerUrl: resolvedCentral,
+        HasMercadoPagoAppConfigured: isAppConfigured,
+        HasPlatformMercadoPagoConnected: conn.IsConnected,
+        PlatformMercadoPagoAccountLabel: conn.AccountLabel));
+});
+
+app.MapPost("/api/platform-sync/plan-orders", async (
+    HttpContext ctx,
+    CreatePlatformPlanOrderRequest request,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var created = await subscriptionService.CreatePlanOrderAsync(request, GetPublicOrigin(ctx), ct);
+        return Results.Created($"/api/platform-sync/plan-orders/{created.Id}", created);
+    }
+    catch (ClothingStore.Domain.Exceptions.DomainException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).DisableAntiforgery();
+
+app.MapGet("/api/platform-sync/plan-orders/status", async (
+    string orderNumber,
+    string claimToken,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    try
+    {
+        return Results.Ok(await subscriptionService.GetPlanOrderStatusAsync(orderNumber, claimToken, ct));
+    }
+    catch (ClothingStore.Domain.Exceptions.DomainException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/platform-sync/plan-orders", async (
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    if (!await IsAuthorizedSyncRequestAsync(httpContext, repository, ct))
+        return Results.Unauthorized();
+
+    return Results.Ok(await subscriptionService.GetAllOrdersAsync(ct));
+});
+
+app.MapPost("/api/platform-sync/plan-orders/{id:guid}/approve", async (
+    Guid id,
+    string? adminName,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    if (!await IsAuthorizedSyncRequestAsync(httpContext, repository, ct))
+        return Results.Unauthorized();
+
+    try
+    {
+        return Results.Ok(await subscriptionService.ApprovePlanOrderAsync(id, adminName ?? "Administrador", null, ct));
+    }
+    catch (ClothingStore.Domain.Exceptions.DomainException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).DisableAntiforgery();
+
+app.MapPost("/api/platform-sync/plan-orders/{id:guid}/cancel", async (
+    Guid id,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    if (!await IsAuthorizedSyncRequestAsync(httpContext, repository, ct))
+        return Results.Unauthorized();
+
+    try
+    {
+        return Results.Ok(await subscriptionService.CancelPlanOrderAsync(id, ct));
+    }
+    catch (ClothingStore.Domain.Exceptions.DomainException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).DisableAntiforgery();
+
+app.MapPost("/api/platform-sync/owner-pricing", async (
+    UpdateOwnerPricingSyncRequest request,
+    HttpContext httpContext,
+    IClothingStoreRepository repository,
+    EmployeeAndSettingsService settingsService,
+    CancellationToken ct) =>
+{
+    if (!await IsAuthorizedSyncRequestAsync(httpContext, repository, ct))
+        return Results.Unauthorized();
+
+    var updated = await settingsService.SyncOwnerPricingAsync(request, ct);
+    return Results.Ok(updated);
+}).DisableAntiforgery();
+
+app.MapPost("/api/platform-sync/mercadopago/oauth/start", async (
+    HttpContext ctx,
+    MultiTenantGatewayService gateway,
+    CancellationToken ct) =>
+{
+    if (!await IsAuthorizedSyncRequestAsync(ctx, gateway.StoreResolver.DefaultRepository, ct))
+        return Results.Unauthorized();
+
+    try
+    {
+        var callbackUri = $"{GetPublicOrigin(ctx).TrimEnd('/')}/api/payments/mercadopago/oauth/callback";
+        var resp = gateway.StartPlatformOwnerMercadoPagoOAuth(callbackUri);
+        return Results.Ok(resp);
+    }
+    catch (ClothingStore.Domain.Exceptions.DomainException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).DisableAntiforgery();
+
+app.MapPost("/api/platform-sync/mercadopago/disconnect", async (
+    HttpContext ctx,
+    IClothingStoreRepository repository,
+    IPlatformMercadoPagoTokenStore tokenStore,
+    CancellationToken ct) =>
+{
+    if (!await IsAuthorizedSyncRequestAsync(ctx, repository, ct))
+        return Results.Unauthorized();
+
+    await tokenStore.ClearOAuthTokensAsync(ct);
+    return Results.Ok(new { disconnected = true });
+}).DisableAntiforgery();
+
+app.MapGet("/planos/retorno", async (
+    string? orderNumber,
+    string? status,
+    IClothingStoreRepository repository,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct) =>
+{
+    var isApproved = string.Equals(status, "approved", StringComparison.OrdinalIgnoreCase);
+    var planTitle = "Plano YouLink";
+    var message = isApproved
+        ? "Recebemos a confirmação inicial do Mercado Pago. Volte ao aplicativo YouLink para concluir a ativação."
+        : "Sua solicitação foi enviada ao Mercado Pago. Assim que o pagamento for aprovado, seu plano libera automaticamente no YouLink.";
+
+    if (!string.IsNullOrWhiteSpace(orderNumber))
+    {
+        var order = await repository.GetPlatformSubscriptionOrderByNumberAsync(orderNumber.Trim(), ct);
+        if (order is not null)
+        {
+            planTitle = order.PlanTier;
+            var refreshed = await subscriptionService.GetPlanOrderStatusAsync(order.OrderNumber, order.ClaimToken, ct);
+            isApproved = refreshed.IsApproved;
+            message = refreshed.Message;
+        }
+    }
+
+    var html = MercadoPagoPixService.BuildSubscriptionReturnHtml(isApproved, orderNumber, planTitle, message);
+    return Results.Content(html, "text/html; charset=utf-8");
+});
 
 app.MapGet("/api/cloud/status", async (
     HttpContext ctx,
@@ -783,10 +985,8 @@ static string GetPublicOrigin(HttpContext ctx)
     return string.IsNullOrWhiteSpace(hostValue) ? string.Empty : $"{scheme}://{hostValue}";
 }
 
-static async Task<IResult> HandleMercadoPagoWebhookAsync(
+static async Task<(string RawBody, string? QueryDataId, string? QueryTopic, string? XSignature, string? XRequestId)> ReadWebhookEnvelopeAsync(
     HttpContext ctx,
-    string? storeSlug,
-    MultiTenantGatewayService gateway,
     CancellationToken ct)
 {
     string rawBody = string.Empty;
@@ -802,6 +1002,17 @@ static async Task<IResult> HandleMercadoPagoWebhookAsync(
                      ?? ctx.Request.Query["type"].FirstOrDefault();
     var xSignature = ctx.Request.Headers["x-signature"].FirstOrDefault();
     var xRequestId = ctx.Request.Headers["x-request-id"].FirstOrDefault();
+    return (rawBody, queryDataId, queryTopic, xSignature, xRequestId);
+}
+
+static async Task<IResult> HandleMercadoPagoWebhookAsync(
+    HttpContext ctx,
+    string? storeSlug,
+    MultiTenantGatewayService gateway,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct)
+{
+    var (rawBody, queryDataId, queryTopic, xSignature, xRequestId) = await ReadWebhookEnvelopeAsync(ctx, ct);
 
     var res = await gateway.ProcessMercadoPagoWebhookAsync(
         storeSlug, queryDataId, queryTopic, xSignature, xRequestId, rawBody, ct);
@@ -809,10 +1020,47 @@ static async Task<IResult> HandleMercadoPagoWebhookAsync(
     if (res.IsUnauthorized)
         return Results.Unauthorized();
 
+    if (string.IsNullOrWhiteSpace(storeSlug) && !res.OrderConfirmed)
+    {
+        var (dataId, topic) = MultiTenantGatewayService.ExtractPaymentNotification(queryDataId, queryTopic, rawBody);
+        var platformRes = await subscriptionService.HandleMercadoPagoWebhookAsync(topic, dataId, ct);
+        if (platformRes.Handled)
+        {
+            return Results.Ok(new
+            {
+                received = true,
+                confirmed = platformRes.OrderApproved,
+                message = platformRes.Message
+            });
+        }
+    }
+
     return Results.Ok(new
     {
         received = true,
         confirmed = res.OrderConfirmed,
+        message = res.Message
+    });
+}
+
+static async Task<IResult> HandlePlatformMercadoPagoWebhookAsync(
+    HttpContext ctx,
+    IMercadoPagoPixService mercadoPago,
+    PlatformSubscriptionService subscriptionService,
+    CancellationToken ct)
+{
+    var (rawBody, queryDataId, queryTopic, xSignature, xRequestId) = await ReadWebhookEnvelopeAsync(ctx, ct);
+    var (dataId, topic) = MultiTenantGatewayService.ExtractPaymentNotification(queryDataId, queryTopic, rawBody);
+
+    if (!mercadoPago.VerifyWebhookSignature(null, xSignature, xRequestId, queryDataId ?? dataId))
+        return Results.Unauthorized();
+
+    var res = await subscriptionService.HandleMercadoPagoWebhookAsync(topic, dataId, ct);
+    return Results.Ok(new
+    {
+        received = true,
+        handled = res.Handled,
+        confirmed = res.OrderApproved,
         message = res.Message
     });
 }

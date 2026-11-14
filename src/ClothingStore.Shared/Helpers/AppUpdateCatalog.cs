@@ -29,7 +29,8 @@ public sealed record AppUpdateReleaseInfo(
 /// </summary>
 public static class AppUpdateCatalog
 {
-    public const string CurrentAppVersion = "1.0.23";
+    public const string CurrentAppVersion = "1.0.24";
+    public const string DefaultCentralPlatformServerUrl = "https://youlink-loja.onrender.com";
     public const string GitHubOwner = "giovannipieronisleal-pixel";
     public const string GitHubRepo = "yourlink";
     public const string GitHubLatestReleaseApiUrl =

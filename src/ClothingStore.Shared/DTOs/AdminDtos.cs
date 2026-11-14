@@ -422,7 +422,8 @@ public sealed record CreatePlatformPlanOrderRequest(
     Guid? BuyerUserId = null,
     string? BuyerUsername = null,
     string? BuyerEmail = null,
-    string? BuyerFullName = null);
+    string? BuyerFullName = null,
+    string PaymentMethod = "DirectPix");
 
 public sealed record PlatformSubscriptionOrderDto(
     Guid Id,
@@ -448,7 +449,12 @@ public sealed record PlatformSubscriptionOrderDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? ApprovedAt,
     string? ApprovedByAdminName,
-    string Message);
+    string Message,
+    string PaymentMethod = "DirectPix",
+    string? MercadoPagoCheckoutUrl = null,
+    string? MercadoPagoQrCodeBase64 = null,
+    string? MercadoPagoPaymentId = null,
+    string? MercadoPagoPreapprovalId = null);
 
 public sealed record PlatformPlanOrderStatusDto(
     string OrderNumber,
@@ -460,7 +466,9 @@ public sealed record PlatformPlanOrderStatusDto(
     string? IssuedGiftCardCode,
     DateTimeOffset? ApprovedAt,
     string Message,
-    string? DesiredDomain = null);
+    string? DesiredDomain = null,
+    string PaymentMethod = "DirectPix",
+    string? MercadoPagoStatus = null);
 
 public sealed record UpdateOwnerPricingSyncRequest(
     string PicpayPixKey,
@@ -511,7 +519,9 @@ public sealed record PlatformPlanCatalogDto(
     decimal PremiumPlanMonthlyPrice,
     bool HasOfficialPixKey,
     string? CentralCatalogServerUrl = null,
-    bool HasMercadoPagoAppConfigured = false);
+    bool HasMercadoPagoAppConfigured = false,
+    bool HasPlatformMercadoPagoConnected = false,
+    string? PlatformMercadoPagoAccountLabel = null);
 
 public sealed record CloudStorePublishResponse(
     bool Success,
