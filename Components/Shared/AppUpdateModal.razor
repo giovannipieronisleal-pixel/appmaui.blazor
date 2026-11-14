@@ -181,7 +181,13 @@
 
     private void OnUpdateStateChanged()
     {
-        InvokeAsync(StateHasChanged);
+        try
+        {
+            _ = InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
     }
 
     public void Dispose()

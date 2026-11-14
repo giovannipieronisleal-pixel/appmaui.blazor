@@ -3,6 +3,8 @@
 @inject MauiAdminGateway Gateway
 @inject CatalogService CatalogService
 @inject NavigationManager Navigation
+@inject AppUpdateService UpdateService
+@implements IDisposable
 
 <div class="adm-card" style="padding: 1.85rem 1.6rem; box-shadow: 0 20px 45px rgba(0,0,0,0.35); max-width: 490px; margin: 0 auto; border-radius: 16px;">
     <!-- Cabeçalho -->
@@ -72,6 +74,21 @@
                     style="flex: 1; border: none; padding: 0.6rem; font-size: 0.9rem; font-weight: 700;"
                     @onclick='() => SwitchTab("login")'>
                 🔑 Entrar
+            </button>
+        </div>
+    }
+
+    @if (UpdateService.AvailableRelease?.IsUpdateAvailable == true)
+    {
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.65rem; flex-wrap: wrap; padding: 0.72rem 0.9rem; margin-bottom: 1rem; border-radius: 10px; background: color-mix(in srgb, var(--adm-accent) 16%, var(--adm-input-bg)); border: 1.5px solid var(--adm-accent);">
+            <div style="font-size: 0.84rem; color: var(--adm-text); line-height: 1.35;">
+                ✨ <strong>Nova versão v@(UpdateService.AvailableRelease.LatestVersion) disponível</strong>
+            </div>
+            <button type="button"
+                    class="adm-btn adm-btn-accent"
+                    style="padding: 0.4rem 0.75rem; font-size: 0.8rem; font-weight: 800;"
+                    @onclick="UpdateService.OpenPopup">
+                🚀 Atualizar Agora
             </button>
         </div>
     }
@@ -344,6 +361,19 @@
             </a>
         </div>
     }
+
+    <div style="margin-top: 1.15rem; padding-top: 0.85rem; border-top: 1px solid var(--adm-border); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+        <span style="font-size: 0.76rem; color: var(--adm-muted);">
+            YouLink v@(UpdateService.CurrentVersion)
+        </span>
+        <button type="button"
+                class="adm-btn adm-btn-outline"
+                style="padding: 0.32rem 0.65rem; font-size: 0.76rem;"
+                disabled="@UpdateService.IsChecking"
+                @onclick="CheckUpdatesFromLoginAsync">
+            @(UpdateService.IsChecking ? "⏳ Procurando atualização..." : "🔄 Procurar Atualização")
+        </button>
+    </div>
 </div>
 
 <!-- ============================================================== -->
@@ -532,6 +562,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        UpdateService.StateChanged += OnLoginUpdateStateChanged;
+        _ = UpdateService.CheckForUpdatesAsync();
+
         try
         {
             var store = await CatalogService.GetPublicStoreSettingsAsync();
@@ -541,6 +574,23 @@
             _initStoreBio = store.StoreDescription;
             _initStoreWhatsapp = store.WhatsappNumber;
             SyncInitStoreDomain();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task CheckUpdatesFromLoginAsync()
+    {
+        await UpdateService.CheckForUpdatesAsync(manualTrigger: true);
+        UpdateService.OpenPopup();
+    }
+
+    private void OnLoginUpdateStateChanged()
+    {
+        try
+        {
+            _ = InvokeAsync(StateHasChanged);
         }
         catch
         {
@@ -861,5 +911,10 @@
         {
             _isBusy = false;
         }
+    }
+
+    public void Dispose()
+    {
+        UpdateService.StateChanged -= OnLoginUpdateStateChanged;
     }
 }

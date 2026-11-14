@@ -220,4 +220,51 @@ public class MobileMenuSecurityAndRenderTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.ErrorMessage));
         Assert.IsFalse(result.ErrorMessage!.Contains("OperationCanceled", StringComparison.Ordinal));
     }
+
+    [TestMethod]
+    public void AppUpdate_RedirectFallback_VersionNormalization_And_ResumeHooks_ShouldWork()
+    {
+        // Normalização de versão unpackaged do Windows (1.0.12.0 -> 1.0.12) evita falsa diferença vs tag GitHub
+        Assert.AreEqual("1.0.12", AppUpdateCatalog.NormalizeVersion("1.0.12.0"));
+        Assert.AreEqual("1.0.13", AppUpdateCatalog.NormalizeVersion("v1.0.13-rc1"));
+        Assert.IsFalse(AppUpdateCatalog.IsVersionNewer("1.0.12", "1.0.12.0"));
+        Assert.IsFalse(AppUpdateCatalog.IsVersionNewer("1.0.12.0", "1.0.12"));
+        Assert.IsTrue(AppUpdateCatalog.IsVersionNewer("1.0.13", "1.0.12.0"));
+
+        var androidRedirect = AppUpdateCatalog.ParseGitHubRedirectLocation(
+            "https://github.com/giovannipieronisleal-pixel/yourlink/releases/tag/v1.0.13",
+            "1.0.11",
+            isWindows: false,
+            isAndroid: true);
+        Assert.IsNotNull(androidRedirect);
+        Assert.IsTrue(androidRedirect!.IsUpdateAvailable);
+        Assert.AreEqual("1.0.13", androidRedirect.LatestVersion);
+        Assert.AreEqual("YouLink-Android.apk", androidRedirect.SelectedAssetName);
+        Assert.AreEqual("GitHubRedirect", androidRedirect.Source);
+
+        var setupRedirect = AppUpdateCatalog.ParseGitHubRedirectLocation(
+            "/giovannipieronisleal-pixel/yourlink/releases/tag/v1.0.13",
+            "1.0.12.0",
+            isWindows: true,
+            isAndroid: false,
+            preferWindowsSetup: true);
+        Assert.IsNotNull(setupRedirect);
+        Assert.IsTrue(setupRedirect!.IsUpdateAvailable);
+        Assert.AreEqual("YouLink-Setup-x64.exe", setupRedirect.SelectedAssetName);
+
+        var root = FindRepoRoot();
+        var appXamlCs = File.ReadAllText(Path.Combine(root, "App.xaml.cs"), Encoding.UTF8);
+        var updateServiceCs = File.ReadAllText(Path.Combine(root, "Services", "AppUpdateService.cs"), Encoding.UTF8);
+        var mainLayoutRazor = File.ReadAllText(Path.Combine(root, "Components", "Layout", "MainLayout.razor"), Encoding.UTF8);
+        var loginRazor = File.ReadAllText(Path.Combine(root, "Components", "Pages", "Login.razor"), Encoding.UTF8);
+
+        Assert.IsTrue(appXamlCs.Contains("CheckForUpdatesOnResumeAsync", StringComparison.Ordinal));
+        Assert.IsTrue(appXamlCs.Contains("Activated", StringComparison.Ordinal));
+        Assert.IsTrue(appXamlCs.Contains("Resumed", StringComparison.Ordinal));
+        Assert.IsTrue(updateServiceCs.Contains("TryResolveReleaseViaGitHubRedirectAsync", StringComparison.Ordinal));
+        Assert.IsTrue(updateServiceCs.Contains("StartBackgroundMonitor", StringComparison.Ordinal));
+        Assert.IsTrue(mainLayoutRazor.Contains("StartBackgroundMonitor", StringComparison.Ordinal));
+        Assert.IsTrue(loginRazor.Contains("CheckUpdatesFromLoginAsync", StringComparison.Ordinal));
+        Assert.IsTrue(loginRazor.Contains("UpdateService.OpenPopup", StringComparison.Ordinal));
+    }
 }

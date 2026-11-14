@@ -28,7 +28,7 @@ public sealed record AppUpdateReleaseInfo(
 /// </summary>
 public static class AppUpdateCatalog
 {
-    public const string CurrentAppVersion = "1.0.12";
+    public const string CurrentAppVersion = "1.0.13";
     public const string GitHubOwner = "giovannipieronisleal-pixel";
     public const string GitHubRepo = "yourlink";
     public const string GitHubLatestReleaseApiUrl =
@@ -54,10 +54,16 @@ public static class AppUpdateCatalog
             trimmed = trimmed[..separatorIndex];
         }
 
-        return Version.TryParse(trimmed, out var parsed)
+        if (!Version.TryParse(trimmed, out var parsed))
+            return trimmed;
+
+        return parsed.Revision > 0
             ? parsed.ToString()
-            : trimmed;
+            : $"{parsed.Major}.{Math.Max(0, parsed.Minor)}.{Math.Max(0, parsed.Build)}";
     }
+
+    private static Version NormalizeComparableVersion(Version version) =>
+        new(version.Major, Math.Max(0, version.Minor), Math.Max(0, version.Build), Math.Max(0, version.Revision));
 
     public static bool IsVersionNewer(string? candidateVersion, string? currentVersion)
     {
@@ -69,7 +75,7 @@ public static class AppUpdateCatalog
 
         return Version.TryParse(normalizedCandidate, out var candidate)
             && Version.TryParse(normalizedCurrent, out var current)
-            && candidate > current;
+            && NormalizeComparableVersion(candidate) > NormalizeComparableVersion(current);
     }
 
     public static bool IsWindowsSetupInstallation(string? baseDirectory)
@@ -210,6 +216,47 @@ public static class AppUpdateCatalog
         }
     }
 
+    public static AppUpdateReleaseInfo? ParseGitHubRedirectLocation(
+        string? redirectLocationOrUrl,
+        string currentVersion,
+        bool isWindows,
+        bool isAndroid,
+        bool preferWindowsSetup = false)
+    {
+        if (string.IsNullOrWhiteSpace(redirectLocationOrUrl))
+            return null;
+
+        var trimmed = redirectLocationOrUrl.Trim();
+        var tagMarkerIndex = trimmed.LastIndexOf("/releases/tag/", StringComparison.OrdinalIgnoreCase);
+        if (tagMarkerIndex < 0)
+            return null;
+
+        var rawTag = trimmed[(tagMarkerIndex + "/releases/tag/".Length)..];
+        var queryOrFragment = rawTag.IndexOfAny(['?', '#', '/']);
+        if (queryOrFragment >= 0)
+        {
+            rawTag = rawTag[..queryOrFragment];
+        }
+
+        var latestVersion = NormalizeVersion(Uri.UnescapeDataString(rawTag));
+        if (string.IsNullOrWhiteSpace(latestVersion) || !Version.TryParse(latestVersion, out _))
+            return null;
+
+        var releasePageUrl = trimmed.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : $"https://github.com/{GitHubOwner}/{GitHubRepo}/releases/tag/v{latestVersion}";
+
+        return BuildDeterministicReleaseInfo(
+            latestVersion: latestVersion,
+            currentVersion: currentVersion,
+            isWindows: isWindows,
+            isAndroid: isAndroid,
+            preferWindowsSetup: preferWindowsSetup,
+            releaseNotes: "Nova versão oficial disponível no GitHub Releases do YouLink.",
+            releasePageUrl: releasePageUrl,
+            source: "GitHubRedirect");
+    }
+
     public static AppUpdateReleaseInfo? MergeWithApiCompatibility(
         AppUpdateReleaseInfo? githubRelease,
         ApiCompatibilityStatusDto? apiCompat,
@@ -233,7 +280,35 @@ public static class AppUpdateCatalog
             ? ReleasesPageUrl
             : apiCompat.ReleaseUrl.Trim();
 
-        var tagBase = $"https://github.com/{GitHubOwner}/{GitHubRepo}/releases/download/v{apiLatest}";
+        return BuildDeterministicReleaseInfo(
+            latestVersion: apiLatest,
+            currentVersion: normalizedCurrent,
+            isWindows: isWindows,
+            isAndroid: isAndroid,
+            preferWindowsSetup: preferWindowsSetup,
+            releaseNotes: string.IsNullOrWhiteSpace(apiCompat.Message)
+                ? "Nova atualização oficial disponível."
+                : apiCompat.Message.Trim(),
+            releasePageUrl: releasePage,
+            source: "ApiCompatibility");
+    }
+
+    private static AppUpdateReleaseInfo BuildDeterministicReleaseInfo(
+        string latestVersion,
+        string currentVersion,
+        bool isWindows,
+        bool isAndroid,
+        bool preferWindowsSetup,
+        string releaseNotes,
+        string releasePageUrl,
+        string source)
+    {
+        var normalizedLatest = NormalizeVersion(latestVersion);
+        var normalizedCurrent = NormalizeVersion(currentVersion);
+        if (string.IsNullOrWhiteSpace(normalizedCurrent))
+            normalizedCurrent = CurrentAppVersion;
+
+        var tagBase = $"https://github.com/{GitHubOwner}/{GitHubRepo}/releases/download/v{normalizedLatest}";
         var windowsSetupUrl = $"{tagBase}/{WindowsSetupAssetName}";
         var windowsUrl = $"{tagBase}/{WindowsAssetName}";
         var androidUrl = $"{tagBase}/{AndroidAssetName}";
@@ -250,13 +325,11 @@ public static class AppUpdateCatalog
 
         return new AppUpdateReleaseInfo(
             CurrentVersion: normalizedCurrent,
-            LatestVersion: apiLatest,
-            IsUpdateAvailable: IsVersionNewer(apiLatest, normalizedCurrent),
-            ReleaseTitle: $"YouLink v{apiLatest}",
-            ReleaseNotes: string.IsNullOrWhiteSpace(apiCompat.Message)
-                ? "Nova atualização oficial disponível."
-                : apiCompat.Message.Trim(),
-            ReleasePageUrl: releasePage,
+            LatestVersion: normalizedLatest,
+            IsUpdateAvailable: IsVersionNewer(normalizedLatest, normalizedCurrent),
+            ReleaseTitle: $"YouLink v{normalizedLatest}",
+            ReleaseNotes: releaseNotes,
+            ReleasePageUrl: releasePageUrl,
             PublishedAt: null,
             WindowsDownloadUrl: preferWindowsSetup ? windowsSetupUrl : windowsUrl,
             WindowsAssetSizeBytes: null,
@@ -265,7 +338,7 @@ public static class AppUpdateCatalog
             SelectedAssetName: selectedName,
             SelectedDownloadUrl: selectedUrl,
             SelectedAssetSizeBytes: selectedSize,
-            Source: "ApiCompatibility");
+            Source: source);
     }
 
     public static string FormatFileSize(long? bytes)

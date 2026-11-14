@@ -66,6 +66,28 @@
                     </div>
 
                     <div class="adm-topbar-actions" style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                        @if (UpdateService.AvailableRelease?.IsUpdateAvailable == true)
+                        {
+                            <button type="button"
+                                    class="adm-btn adm-btn-accent"
+                                    style="padding: 0.4rem 0.68rem; min-height: 36px; font-size: 0.8rem; font-weight: 800;"
+                                    title="Há uma atualização pronta para baixar e instalar pelo app"
+                                    @onclick="UpdateService.OpenPopup">
+                                ⬆️ Atualizar v@(UpdateService.AvailableRelease.LatestVersion)
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button"
+                                    class="adm-btn adm-btn-outline adm-topbar-hide-sm"
+                                    style="padding: 0.4rem 0.6rem; min-height: 36px; font-size: 0.78rem;"
+                                    title="Verificar atualizações do aplicativo"
+                                    disabled="@UpdateService.IsChecking"
+                                    @onclick="CheckUpdatesManuallyFromTopbarAsync">
+                                @(UpdateService.IsChecking ? "⏳" : "🔄") v@(UpdateService.CurrentVersion)
+                            </button>
+                        }
+
                         <!-- Botão Alternador Rápido de Tema Claro / Escuro -->
                         <button type="button"
                                 class="adm-btn adm-btn-outline"
@@ -174,12 +196,13 @@
         CloudSync.OnSyncStatusChanged += OnSyncStatusChanged;
         UpdateService.StateChanged += OnUpdateStateChanged;
 
+        UpdateService.StartBackgroundMonitor();
         await Gateway.TryRestoreSessionAsync();
         await RefreshStoreInfoAsync();
         _ = RunStartupBackgroundChecksAsync();
     }
 
-    private async Task RunStartupBackgroundChecksAsync()
+    private async Task RefreshUpdatesInBackgroundAsync()
     {
         try
         {
@@ -189,6 +212,17 @@
         catch
         {
         }
+    }
+
+    private async Task CheckUpdatesManuallyFromTopbarAsync()
+    {
+        await UpdateService.CheckForUpdatesAsync(manualTrigger: true);
+        UpdateService.OpenPopup();
+    }
+
+    private async Task RunStartupBackgroundChecksAsync()
+    {
+        await RefreshUpdatesInBackgroundAsync();
 
         try
         {
@@ -224,11 +258,13 @@
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         await RefreshStoreInfoAsync();
+        _ = RefreshUpdatesInBackgroundAsync();
         await InvokeAsync(StateHasChanged);
     }
 
     private void OnAuthStateChanged()
     {
+        _ = RefreshUpdatesInBackgroundAsync();
         InvokeAsync(StateHasChanged);
     }
 

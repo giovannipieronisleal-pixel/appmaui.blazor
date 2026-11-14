@@ -14,13 +14,19 @@ public sealed class AppUpdateService
 {
     private const string IgnoredVersionPreferenceKey = "youlink_ignored_update_version_v1";
     private const long MinimumValidPackageBytes = 100 * 1024;
+    private static readonly TimeSpan AutoCheckCooldown = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan ResumeCheckCooldown = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan PeriodicMonitorInterval = TimeSpan.FromMinutes(3);
 
     private static readonly HttpClient DownloadHttpClient = CreateUpdateHttpClient();
+    private static readonly HttpClient RedirectProbeHttpClient = CreateRedirectProbeHttpClient();
     private readonly MauiAdminGateway _gateway;
     private readonly SemaphoreSlim _checkLock = new(1, 1);
 
     private DateTimeOffset _lastCheckedAt = DateTimeOffset.MinValue;
     private bool _sessionPopupShown;
+    private string? _lastAutoPromptedVersion;
+    private int _monitorStarted;
 
     public event Action? StateChanged;
 
@@ -45,16 +51,60 @@ public sealed class AppUpdateService
         _gateway = gateway;
     }
 
-    public async Task<AppUpdateReleaseInfo?> CheckForUpdatesAsync(
+    public void StartBackgroundMonitor()
+    {
+        if (Interlocked.CompareExchange(ref _monitorStarted, 1, 0) != 0)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            using var timer = new PeriodicTimer(PeriodicMonitorInterval);
+            try
+            {
+                while (await timer.WaitForNextTickAsync())
+                {
+                    if (IsChecking || IsDownloading || IsApplyingUpdate || IsPopupOpen)
+                        continue;
+
+                    await CheckForUpdatesAsync(manualTrigger: false, forceBypassCache: true);
+                }
+            }
+            catch
+            {
+            }
+        });
+    }
+
+    public async Task CheckForUpdatesOnResumeAsync(CancellationToken ct = default)
+    {
+        if (IsChecking || IsDownloading || IsApplyingUpdate || IsPopupOpen)
+            return;
+
+        if (AvailableRelease is not null && DateTimeOffset.UtcNow - _lastCheckedAt < ResumeCheckCooldown)
+            return;
+
+        await CheckForUpdatesAsync(manualTrigger: false, forceBypassCache: true, ct: ct);
+    }
+
+    public Task<AppUpdateReleaseInfo?> CheckForUpdatesAsync(
         bool manualTrigger = false,
+        CancellationToken ct = default)
+        => CheckForUpdatesAsync(manualTrigger, forceBypassCache: false, ct);
+
+    public async Task<AppUpdateReleaseInfo?> CheckForUpdatesAsync(
+        bool manualTrigger,
+        bool forceBypassCache,
         CancellationToken ct = default)
     {
         if (!manualTrigger &&
+            !forceBypassCache &&
             AvailableRelease is not null &&
-            DateTimeOffset.UtcNow - _lastCheckedAt < TimeSpan.FromMinutes(15))
+            DateTimeOffset.UtcNow - _lastCheckedAt < AutoCheckCooldown)
         {
-            if (ShouldAutoPrompt(AvailableRelease) && !_sessionPopupShown)
+            var isUnprompted = !string.Equals(_lastAutoPromptedVersion, AvailableRelease.LatestVersion, StringComparison.OrdinalIgnoreCase);
+            if (ShouldAutoPrompt(AvailableRelease) && (!_sessionPopupShown || isUnprompted))
             {
+                _lastAutoPromptedVersion = AvailableRelease.LatestVersion;
                 _sessionPopupShown = true;
                 IsPopupOpen = true;
                 NotifyChanged();
@@ -66,8 +116,9 @@ public sealed class AppUpdateService
         try
         {
             if (!manualTrigger &&
+                !forceBypassCache &&
                 AvailableRelease is not null &&
-                DateTimeOffset.UtcNow - _lastCheckedAt < TimeSpan.FromMinutes(15))
+                DateTimeOffset.UtcNow - _lastCheckedAt < AutoCheckCooldown)
             {
                 return AvailableRelease;
             }
@@ -112,6 +163,25 @@ public sealed class AppUpdateService
                 githubError = ex.Message;
             }
 
+            if (githubRelease is null)
+            {
+                try
+                {
+                    using var redirectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    redirectCts.CancelAfter(TimeSpan.FromSeconds(12));
+                    githubRelease = await TryResolveReleaseViaGitHubRedirectAsync(
+                        currentVersion,
+                        isWindows,
+                        isAndroid,
+                        preferWindowsSetup,
+                        redirectCts.Token);
+                }
+                catch (Exception ex)
+                {
+                    githubError ??= ex.Message;
+                }
+            }
+
             ApiCompatibilityStatusDto? apiCompat = null;
             try
             {
@@ -137,8 +207,10 @@ public sealed class AppUpdateService
                 if (resolved.IsUpdateAvailable)
                 {
                     StatusMessage = $"Nova versão v{resolved.LatestVersion} pronta para atualização.";
-                    if (manualTrigger || (ShouldAutoPrompt(resolved) && !_sessionPopupShown))
+                    var isUnprompted = !string.Equals(_lastAutoPromptedVersion, resolved.LatestVersion, StringComparison.OrdinalIgnoreCase);
+                    if (manualTrigger || (ShouldAutoPrompt(resolved) && (!_sessionPopupShown || isUnprompted)))
                     {
+                        _lastAutoPromptedVersion = resolved.LatestVersion;
                         _sessionPopupShown = true;
                         IsPopupOpen = true;
                     }
@@ -589,6 +661,48 @@ public sealed class AppUpdateService
         catch
         {
         }
+    }
+
+    private static async Task<AppUpdateReleaseInfo?> TryResolveReleaseViaGitHubRedirectAsync(
+        string currentVersion,
+        bool isWindows,
+        bool isAndroid,
+        bool preferWindowsSetup,
+        CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, AppUpdateCatalog.ReleasesPageUrl);
+        using var resp = await RedirectProbeHttpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        string? location = resp.Headers.Location?.ToString();
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            location = resp.RequestMessage?.RequestUri?.ToString();
+        }
+        else if (!location.StartsWith("http", StringComparison.OrdinalIgnoreCase) && resp.RequestMessage?.RequestUri is not null)
+        {
+            location = new Uri(resp.RequestMessage.RequestUri, location).ToString();
+        }
+
+        return AppUpdateCatalog.ParseGitHubRedirectLocation(
+            location,
+            currentVersion,
+            isWindows,
+            isAndroid,
+            preferWindowsSetup);
+    }
+
+    private static HttpClient CreateRedirectProbeHttpClient()
+    {
+        var handler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false
+        };
+        var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(12)
+        };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YouLink-App", AppUpdateCatalog.CurrentAppVersion));
+        return client;
     }
 
     private static HttpClient CreateUpdateHttpClient()
